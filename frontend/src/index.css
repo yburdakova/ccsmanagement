@@ -7,6 +7,10 @@
   --accent-color: #155883;
   --primary-color: #4292f3;
 }
+#root {
+  min-width: 100%;
+  display: flex;
+}
 
 body {
   background: var(--background-color);
