@@ -1,0 +1,72 @@
+.wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  margin-top: 60px;
+  max-width: 100%;
+}
+
+.container {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  justify-content: center;
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+}
+
+.logoBox {
+  margin: 40px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.logoBox img {
+   width: clamp(180px, 90vw, 380px);
+  height: auto;
+}
+
+.p {
+  margin-bottom: 20px;
+}
+
+.loginBox {
+  background-color: #fff;
+  border-radius: 20px;
+  padding: 40px;
+  position: relative;
+  height: 240px;
+  max-width: 100%;
+}
+
+.loginBtn {
+  margin-top: 50px;
+  border: 1px solid #57606E;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 1rem;
+  border-radius: 8px;
+}
+
+.loginTitle {
+    margin: 40px 0;
+}
+
+.error {
+  position: absolute;
+  font-size: 12px;
+  left: 0;
+  max-width: 100%;
+  min-width: 80%;
+  margin-top: 8px;
+  padding: 0 40px;
+  color: red;
+  visibility: hidden;
+}
+
+.error.active {
+  visibility: visible;
+}
+
