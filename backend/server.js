@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import http from 'http';
 
-import authRoutes from './routes/auth.routes.js';
+import loginRoutes from './routes/login.routes.js';
 
 dotenv.config();
 
@@ -13,6 +13,10 @@ const dbname = process.env.DB_NAME;
 
 app.use(cors());
 app.use(express.json());
+
+app.use('/api/login', loginRoutes);
+
+
 
 http.createServer(app).listen(PORT, () => {
     console.log(`API HTTP server running on port ${PORT}`);
