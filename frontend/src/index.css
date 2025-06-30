@@ -8,6 +8,7 @@
   --primary-color: #4292f3;
 }
 #root {
+  margin-top: 20px;
   min-width: 100%;
   display: flex;
 }
@@ -16,10 +17,11 @@ body {
   background: var(--background-color);
   color: var(--font-color);
   margin: 0;
-  padding: 20px;
+  padding: 0 20px;
   display: flex;
   justify-content: center;
   align-items: center;
+
 }
 
 .gg-icon {

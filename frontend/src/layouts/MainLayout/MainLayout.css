@@ -3,17 +3,22 @@
   height: 100vh;
   min-width: 100%;
   font-family: 'Poppins', sans-serif;
+
 }
 
 .sidebar {
-  width: 220px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 0 10px;
+    width:240px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 0 10px;
+    height: 100vh;
+    overflow: hidden;
+    
 }
 
 .logo {
+
   display: flex;
   justify-content: left;
 }
@@ -24,45 +29,58 @@
 }
 
 .navBox{
-    height: 100%;
-    margin-top: 80px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .nav {
+    margin-top: 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
 .navItem {
     all: unset;
-  padding: 10px;
-  font-weight: 600;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: transform 0.2s ease;
+    padding: 10px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform 0.2s ease;
 }
 
 .navItem:hover {
-  background-color: #C4DFF3;
-   color: var(--accent-color);
+    background-color: #C4DFF3;
+    color: var(--accent-color);
 }
 
 .navItem span {
-  transition: transform 0.2s ease;
+    transition: transform 0.2s ease;
 }
 
 .navItem:hover span{
- transform: scale(1.15);
+    transform: scale(1.15);
 }
 
-.projectList{
-    margin-top: 40px;
-    font-size: 14px;
+.projectBox{
+    margin-top: 10px;
+      flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+    
 }
+.projectList{
+    overflow-y: auto;
+    font-size: 14px;
+  max-height: 100%;
+  padding-right: 6px;
+}
+
 .projectList h4{
     font-size: 16px;
     color: var(--accent-color)
@@ -106,6 +124,7 @@
 
 .content {
   flex: 1;
-  padding: 20px;
+  padding: 0 20px;
+  margin-top: 20px;
   overflow-y: auto;
 }

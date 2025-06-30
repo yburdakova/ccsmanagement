@@ -14,14 +14,15 @@ const AppRouter = () => {
       <Routes>
         <Route path="/" element={<LoginPage />} />
 
-        <Route path="/" element={<MainLayout />}>
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="projects" element={<ProjectsPage />} />
-          <Route path="customers" element={<CustomersPage />} />
-          <Route path="users" element={<UsersPage />} />
-          <Route path="data" element={<DataPage />} />
-          <Route index element={<Navigate to="dashboard" replace />} />
+        <Route element={<MainLayout />}>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/users" element={<UsersPage />} />
+          <Route path="/data" element={<DataPage />} />
         </Route>
+
+        <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { NavLink } from 'react-router-dom';
 import Logo from '../../assets/Logo.png';
 import './MainLayout.css';
@@ -7,6 +7,7 @@ import './MainLayout.css';
 const MainLayout = () => {
   const location = useLocation();
   const [time, setTime] = useState(new Date());
+  const navigate = useNavigate();
 
   const userName = 'Yana Burdakova'; // временно
 
@@ -33,8 +34,11 @@ const MainLayout = () => {
   };
 
   const logout = () => {
-    console.log('Login button clicked');
+    console.log("MainLayout: Logout is working");
+    localStorage.clear();
+    navigate('/');
   }
+  
 
   const formatDate = (date: Date) =>
     date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -67,11 +71,29 @@ const MainLayout = () => {
                 </NavLink>
                 
             </nav>
-            <div className="projectList">
+            <div className="projectBox">
                 <h4>Available Projects</h4>
-                <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Prince Williams, 24</div>
-                <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Alexandria, 25</div>
-                <div className="navItem"><span className="gg-icon">content_paste_search</span>IM Russell, 24</div>
+                <div className="projectList">
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Prince Williams, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Alexandria, 25</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span>IM Russell, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Prince Williams, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Alexandria, 25</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span>IM Russell, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Prince Williams, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Alexandria, 25</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span>IM Russell, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Prince Williams, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Alexandria, 25</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span>IM Russell, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Prince Williams, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Alexandria, 25</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span>IM Russell, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Prince Williams, 24</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span> CFS Alexandria, 25</div>
+                    <div className="navItem"><span className="gg-icon">content_paste_search</span>IM Russell, 24</div>
+                </div>
+                
             </div>
         </div>
 
@@ -90,7 +112,7 @@ const MainLayout = () => {
             <div className="userName">{userName}</div>
             <button type="button" className="logoutBtn" onClick={logout}>
                 <span className="gg-icon">logout</span>
-          </button>
+            </button>
           </div>
           
         </header>
