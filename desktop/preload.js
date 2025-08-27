@@ -9,4 +9,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAllProjectRoles: () => ipcRenderer.invoke('get-ref-project-roles'),
 
   startUnallocated: (userId) => ipcRenderer.invoke('start-unallocated', userId),
+  syncQueue: () => ipcRenderer.invoke('sync-queue'),
 });

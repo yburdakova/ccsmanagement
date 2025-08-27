@@ -81,6 +81,14 @@ db.serialize(() => {
       note TEXT
     )
   `);
+
+    db.run(`
+    CREATE TABLE IF NOT EXISTS sync_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        payload TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    `);
 });
 
 function saveUsersToLocal(users) {
@@ -227,21 +235,77 @@ function startUnallocatedActivityLocal(userId, activityId, startTime) {
   const dateStr = startTime.toISOString().split('T')[0];
   const timeStr = formatMySQLDatetime(startTime);
 
+  // save to local db
   db.run(`
     INSERT INTO users_time_tracking (
       user_id, date, project_id, activity_id, task_id, item_id,
       start_time, end_time, duration, is_completed_project_task, note
     ) VALUES (?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
-  `, [ userId, dateStr, activityId, timeStr], 
-  (err) => {
+  `, [userId, dateStr, activityId, timeStr], (err) => {
     if (err) {
       console.error('[local-db] Clock-in failed:', err.message);
     } else {
       console.log('[local-db] Clock-in recorded');
+
+      // add to line for sync
+      const payload = {
+        user_id: userId,
+        activity_id: activityId,
+        timestamp: startTime.toISOString()
+      };
+
+      db.run(`
+        INSERT INTO sync_queue (payload)
+        VALUES (?)
+      `, [JSON.stringify(payload)], (err) => {
+        if (err) {
+          console.error('[local-db] Failed to queue for sync:', err.message);
+        } else {
+          console.log('[local-db] Added to sync_queue');
+        }
+      });
     }
   });
 }
 
+
+async function syncQueue() {
+  const { db } = module.exports;
+  const { startUnallocatedActivityGlobal } = require('./db'); // for server
+
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT * FROM sync_queue`, async (err, rows) => {
+      if (err) {
+        console.error('[syncQueue] Failed to read queue:', err.message);
+        return reject({ success: false, error: err.message });
+      }
+
+      let syncedCount = 0;
+
+      for (const row of rows) {
+        try {
+          const payload = JSON.parse(row.payload);
+          const result = await startUnallocatedActivityGlobal(
+            payload.user_id,
+            payload.activity_id,
+            new Date(payload.timestamp)
+          );
+
+          if (result.success) {
+            db.run(`DELETE FROM sync_queue WHERE id = ?`, [row.id]);
+            syncedCount++;
+          } else {
+            console.warn('[syncQueue] Failed to sync record:', result.error);
+          }
+        } catch (err) {
+          console.error('[syncQueue] Error during sync:', err.message);
+        }
+      }
+
+      resolve({ success: true, synced: syncedCount });
+    });
+  });
+}
 
 
 module.exports = {
@@ -251,5 +315,6 @@ module.exports = {
     saveProjectUsersToLocal,
     saveRefProjectRolesToLocal,
     saveRefProjectRolesToLocal,
-    startUnallocatedActivityLocal
+    startUnallocatedActivityLocal,
+    syncQueue
 };

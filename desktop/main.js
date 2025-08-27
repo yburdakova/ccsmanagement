@@ -126,3 +126,13 @@ ipcMain.handle('start-unallocated', async (event, userId) => {
   }
 });
 
+ipcMain.handle('sync-queue', async () => {
+  const { syncQueue } = require('./api/db-local');
+  try {
+    const result = await syncQueue();
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+

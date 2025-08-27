@@ -3,6 +3,17 @@ window.network = {
     return navigator.onLine;
   },
 
+  async syncQueueIfOnline() {
+    if (this.isOnline()) {
+      const result = await window.electronAPI.syncQueue();
+      if (result.success) {
+        console.log(`[network] Synced ${result.synced} records`);
+      } else {
+        console.warn('[network] Sync error:', result.error);
+      }
+    }
+  },
+
   updateConnectionIndicator() {
     const dot = document.getElementById('connection-dot');
     const label = document.getElementById('connection-label');
@@ -10,13 +21,15 @@ window.network = {
 
     dot.style.color = online ? 'green' : 'red';
     label.textContent = online ? 'Online' : 'Offline';
+
+     if (online) {
+      this.syncQueueIfOnline();
+    }
   },
 
   startConnectionMonitoring() {
-    // первичная проверка
     this.updateConnectionIndicator();
 
-    // автообновление при смене состояния
     window.addEventListener('online', () => this.updateConnectionIndicator());
     window.addEventListener('offline', () => this.updateConnectionIndicator());
   }
