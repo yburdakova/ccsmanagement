@@ -53,7 +53,7 @@ db.serialize(() => {
         id INTEGER PRIMARY KEY,
         project_id INTEGER,
         user_id INTEGER,
-        role_id INTEGER
+        project_role_id INTEGER
         )
     `);
 
@@ -65,6 +65,22 @@ db.serialize(() => {
         )
     `);
   
+    db.run(`
+    CREATE TABLE IF NOT EXISTS users_time_tracking (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      date DATE,
+      project_id INTEGER,
+      activity_id INTEGER,
+      task_id INTEGER,
+      item_id INTEGER,
+      start_time DATETIME,
+      end_time DATETIME,
+      duration INTEGER,
+      is_completed_project_task INTEGER,
+      note TEXT
+    )
+  `);
 });
 
 function saveUsersToLocal(users) {
@@ -146,7 +162,7 @@ function saveProjectUsersToLocal(projectUsers) {
     db.run('DELETE FROM project_users');
 
     const stmt = db.prepare(`
-      INSERT INTO project_users (id, user_id, project_id, role_id)
+      INSERT INTO project_users (id, user_id, project_id, project_role_id)
       VALUES (?, ?, ?, ?)
     `);
 
@@ -157,7 +173,7 @@ function saveProjectUsersToLocal(projectUsers) {
         pu.id,
         pu.user_id,
         pu.project_id,
-        pu.role_id,
+        pu.project_role_id,
         (err) => {
           if (err) {
             console.error(`[local-db] Failed to insert project_user ${pu.id}:`, err.message);
@@ -201,6 +217,32 @@ function saveRefProjectRolesToLocal(roles) {
   });
 }
 
+function formatMySQLDatetime(date) {
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function startUnallocatedActivityLocal(userId, activityId, startTime) {
+  const { db } = module.exports;
+
+  const dateStr = startTime.toISOString().split('T')[0];
+  const timeStr = formatMySQLDatetime(startTime);
+
+  db.run(`
+    INSERT INTO users_time_tracking (
+      user_id, date, project_id, activity_id, task_id, item_id,
+      start_time, end_time, duration, is_completed_project_task, note
+    ) VALUES (?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
+  `, [ userId, dateStr, activityId, timeStr], 
+  (err) => {
+    if (err) {
+      console.error('[local-db] Clock-in failed:', err.message);
+    } else {
+      console.log('[local-db] Clock-in recorded');
+    }
+  });
+}
+
+
 
 module.exports = {
   db,
@@ -208,5 +250,6 @@ module.exports = {
     saveProjectsToLocal,
     saveProjectUsersToLocal,
     saveRefProjectRolesToLocal,
-    saveRefProjectRolesToLocal
+    saveRefProjectRolesToLocal,
+    startUnallocatedActivityLocal
 };

@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain } = require('electron'); // ← добавлено ipcMain
+const { app, BrowserWindow, ipcMain } = require('electron'); 
 const path = require('path');
+const { isOnline } = require('./utils/network-status');
 
 require('./api/db-local');
 
@@ -99,6 +100,29 @@ ipcMain.handle('login-with-code', async (event, code) => {
   } catch (error) {
     console.error('Login failed:', error);
     return null;
+  }
+});
+
+ipcMain.handle('start-unallocated', async (event, userId) => {
+  const { startUnallocatedActivityLocal: startLocal } = require('./api/db-local');
+  const { startUnallocatedActivityGlobal: startServer } = require('./api/db');
+
+  const now = new Date();
+  const activityId = 4; // unallocated
+  const isConnected = await isOnline();
+
+  try {
+    if (isConnected) {
+      const res = await startServer(userId, activityId, now);
+      if (!res.success) throw new Error(res.error);
+    }
+
+    await startLocal(userId, activityId, now);
+
+    return { success: true };
+  } catch (error) {
+    console.error('[main] start-unallocated error:', error.message);
+    return { success: false, error: error.message };
   }
 });
 

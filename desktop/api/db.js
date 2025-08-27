@@ -43,10 +43,38 @@ async function getAllProjectRoles() {
   return rows;
 }
 
+function formatMySQLDatetime(date) {
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+async function startUnallocatedActivityGlobal(userId, activityId, startTime) {
+  const dateStr = startTime.toISOString().split('T')[0];
+  const timeStr = formatMySQLDatetime(startTime);
+
+  try {
+    await pool.query(
+      `
+      INSERT INTO users_time_tracking (
+        user_id, date, project_id, activity_id, task_id, item_id,
+        start_time, end_time, duration, is_completed_project_task, note
+      )
+      VALUES (?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
+      `,
+      [userId, dateStr, activityId, timeStr]
+    );
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+
 module.exports = {
   getAllUsers,
   loginByAuthCode,
   getAllProjects,
   getAllProjectUsers, 
-  getAllProjectRoles
+  getAllProjectRoles,
+  startUnallocatedActivityGlobal
 };

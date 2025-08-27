@@ -7,4 +7,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAllProjects: () => ipcRenderer.invoke('get-all-projects'),
   getAllProjectUsers: () => ipcRenderer.invoke('get-all-project-users'),
   getAllProjectRoles: () => ipcRenderer.invoke('get-ref-project-roles'),
+
+  startUnallocated: (userId) => ipcRenderer.invoke('start-unallocated', userId),
 });
