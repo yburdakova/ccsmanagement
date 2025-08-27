@@ -13,6 +13,7 @@
   "dependencies": {
     "dotenv": "^17.2.0",
     "electron": "^37.2.1",
-    "mysql2": "^3.14.2"
+    "mysql2": "^3.14.2",
+    "sqlite3": "^5.1.7"
   }
 }

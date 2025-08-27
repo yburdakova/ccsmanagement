@@ -1,5 +1,10 @@
+
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getUsers: () => ipcRenderer.invoke('get-users'),
+  loginWithCode: (code) => ipcRenderer.invoke('login-with-code', code),
+  getAllProjects: () => ipcRenderer.invoke('get-all-projects'),
+  getAllProjectUsers: () => ipcRenderer.invoke('get-all-project-users'),
+  getAllProjectRoles: () => ipcRenderer.invoke('get-ref-project-roles'),
 });

@@ -1,13 +1,20 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>CCS Desktop App</title>
-</head>
 <body>
-  <h1>Active Users</h1>
-  <ul id="user-list"></ul>
+  <div id="login-screen">
+    <h1>Login</h1>
+    <input type="text" id="authcode-input" placeholder="Enter Auth Code" />
+    <button id="start-button">Start</button>
+    <p id="login-error" style="color: red; display: none;">Invalid code</p>
+  </div>
+
+  <div id="main-screen" style="display: none;">
+    <h2 id="welcome-text">Welcome</h2>
+    <div id="connection-status">
+      <span id="connection-dot" style="color: green;">●</span>
+      <span id="connection-label">Online</span>
+    </div>
+    <button id="clockin-button">CLOCK-IN</button>
+  </div>
 
   <script src="renderer.js"></script>
+  <script src="network.js"></script>
 </body>
-</html>

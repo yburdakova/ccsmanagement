@@ -13,13 +13,40 @@ const pool = mysql.createPool({
 
 async function getAllUsers() {
   const [rows] = await pool.query(`
-    SELECT id, first_name, last_name, login, role
+    SELECT id, first_name, last_name, login, authcode, system_role, is_active
     FROM users
     WHERE is_active = 1
   `);
   return rows;
 }
 
+async function loginByAuthCode(code) {
+  const [rows] = await pool.query(
+    `SELECT id, first_name, last_name, login FROM users WHERE authcode = ? AND is_active = 1 LIMIT 1`,
+    [code]
+  );
+  return rows[0]; 
+}
+
+async function getAllProjects() {
+  const [rows] = await pool.query(`SELECT * FROM projects`);
+  return rows;
+}
+
+async function getAllProjectUsers() {
+  const [rows] = await pool.query(`SELECT * FROM project_users`);
+  return rows;
+}
+
+async function getAllProjectRoles() {
+  const [rows] = await pool.query(`SELECT * FROM ref_project_roles`);
+  return rows;
+}
+
 module.exports = {
   getAllUsers,
+  loginByAuthCode,
+  getAllProjects,
+  getAllProjectUsers, 
+  getAllProjectRoles
 };
