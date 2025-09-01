@@ -103,28 +103,28 @@ ipcMain.handle('login-with-code', async (event, code) => {
   }
 });
 
-ipcMain.handle('start-unallocated', async (event, userId) => {
+ipcMain.handle('start-unallocated', async (event, {userId}) => {
   const { startUnallocatedActivityLocal: startLocal } = require('./api/db-local');
   const { startUnallocatedActivityGlobal: startServer } = require('./api/db');
 
-  const now = new Date();
-  const activityId = 4; // unallocated
+  const activityId = 4;
   const isConnected = await isOnline();
 
   try {
+    const { uuid } = await startLocal(userId, activityId);
+
     if (isConnected) {
-      const res = await startServer(userId, activityId, now);
+      const res = await startServer({ uuid, user_id: userId, activity_id: activityId });
       if (!res.success) throw new Error(res.error);
     }
 
-    await startLocal(userId, activityId, now);
-
-    return { success: true };
+    return { success: true, uuid };
   } catch (error) {
     console.error('[main] start-unallocated error:', error.message);
     return { success: false, error: error.message };
   }
 });
+
 
 ipcMain.handle('sync-queue', async () => {
   const { syncQueue } = require('./api/db-local');
@@ -135,4 +135,39 @@ ipcMain.handle('sync-queue', async () => {
     return { success: false, error: error.message };
   }
 });
+
+ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskCompleted }) => {
+  const { completeActiveActivityLocal: completeLocal } = require('./api/db-local');
+  const { completeActiveActivityGlobal: completeServer } = require('./api/db');
+  const isConnected = await isOnline();
+
+  try {
+    const localResult = await completeLocal({
+      uuid,
+      is_completed_project_task: isTaskCompleted,
+      timestamp: new Date().toISOString()
+    });
+
+    if (!localResult.success) {
+      throw new Error(localResult.error || 'Local completion failed');
+    }
+
+    if (isConnected) {
+      const result = await completeServer({
+        uuid: localResult.uuid,
+        user_id: userId,
+        is_completed_project_task: isTaskCompleted,
+        timestamp: localResult.endTime.toISOString()
+      });
+
+      if (!result.success) throw new Error(result.error);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('[main] complete-activity error:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
 

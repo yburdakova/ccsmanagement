@@ -60,18 +60,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+let currentSessionUuid = null;
+
 document.getElementById('clockin-button').addEventListener('click', async () => {
-  const result = await window.electronAPI.startUnallocated(currentUser.id);
+  const button = document.getElementById('clockin-button');
 
-  if (!result.success) {
-    alert('Clock-in failed: ' + result.error);
-    return;
+  if (button.textContent === 'CLOCK-IN') {
+    const result = await window.electronAPI.startUnallocated({ userId: currentUser.id });
+
+    if (!result.success) {
+      alert('Clock-in failed: ' + result.error);
+      return;
+    }
+
+    currentSessionUuid = result.uuid;
+
+    button.textContent = 'CLOCK-OUT';
+    alert(`Clock-in successful! (uuid=${currentSessionUuid})`);
+  } else {
+    if (!currentSessionUuid) {
+      alert('No active session UUID found!');
+      return;
+    }
+
+    const result = await window.electronAPI.completeActiveActivity({
+      uuid: currentSessionUuid,
+      userId: currentUser.id,
+      isTaskCompleted: false
+    });
+
+    if (!result.success) {
+      alert('Clock-out failed: ' + result.error);
+      return;
+    }
+
+    button.textContent = 'CLOCK-IN';
+    alert(`Clock-out successful! (uuid=${currentSessionUuid})`);
+
+    currentSessionUuid = null;
   }
-
-  document.getElementById('clockin-button').textContent = 'CLOCK-OUT';
-  alert('Clock-in successful!');
 });
-  
 
+  
 });
 

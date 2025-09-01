@@ -1,5 +1,6 @@
 const mysql = require('mysql2/promise');
 require('dotenv').config();
+const { parseMysqlDate, diffMinutes, formatMySQLDatetime } = require('../utils/time');
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -43,32 +44,83 @@ async function getAllProjectRoles() {
   return rows;
 }
 
-function formatMySQLDatetime(date) {
-  return date.toISOString().slice(0, 19).replace('T', ' ');
-}
-
-async function startUnallocatedActivityGlobal(userId, activityId, startTime) {
-  const dateStr = startTime.toISOString().split('T')[0];
+async function startUnallocatedActivityGlobal({ uuid, user_id, activity_id, timestamp }) {
+  const startTime = timestamp ? new Date(timestamp) : new Date();
+  const dateStr = startTime.toISOString().split('T')[0]; // YYYY-MM-DD
   const timeStr = formatMySQLDatetime(startTime);
 
   try {
     await pool.query(
       `
       INSERT INTO users_time_tracking (
-        user_id, date, project_id, activity_id, task_id, item_id,
+        uuid, user_id, date, project_id, activity_id, task_id, item_id,
         start_time, end_time, duration, is_completed_project_task, note
       )
-      VALUES (?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
+      VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
       `,
-      [userId, dateStr, activityId, timeStr]
+      [uuid, user_id, dateStr, activity_id, timeStr]
     );
-
+    console.log(`[server-db] ✅ Clock-in recorded (uuid=${uuid})`);
     return { success: true };
   } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      console.warn(`[server-db] ⚠️ Duplicate uuid ignored (uuid=${uuid})`);
+      return { success: true, duplicate: true };
+    }
+    console.error('[server-db] ❌ Clock-in failed:', error.message);
     return { success: false, error: error.message };
   }
 }
 
+
+async function completeActiveActivityGlobal({ uuid, is_completed_project_task, timestamp }) {
+  const endTime = timestamp ? new Date(timestamp) : new Date();
+  const conn = await pool.getConnection();
+  const endStr = formatMySQLDatetime(endTime);
+
+  try {
+    const [rows] = await conn.query(
+      `SELECT id, start_time, end_time FROM users_time_tracking WHERE uuid = ?`,
+      [uuid]
+    );
+
+    if (rows.length === 0) {
+      conn.release();
+      console.warn(`[server-db] ⚠️ No activity found for uuid=${uuid}, ignoring`);
+      return { success: true, ignored: true }; // считаем успешным, чтобы очередь очистилась
+    }
+
+    const activity = rows[0];
+
+    // если уже завершено → не надо повторно апдейтить
+    if (activity.end_time) {
+      conn.release();
+      console.warn(`[server-db] ⚠️ Activity already completed (uuid=${uuid}), skipping`);
+      return { success: true, duplicate: true }; // тоже success, чтобы очистить очередь
+    }
+
+    const start = parseMysqlDate(activity.start_time);
+    const durationMin = diffMinutes(start, endTime);
+
+    console.log(`[server-db] Completing activity (uuid=${uuid}), isTaskCompleted=${is_completed_project_task}`);
+
+    await conn.query(
+      `
+      UPDATE users_time_tracking
+      SET end_time = ?, duration = ?, is_completed_project_task = ?
+      WHERE uuid = ?
+      `,
+      [endStr, durationMin, is_completed_project_task ? 1 : 0, uuid]
+    );
+
+    conn.release();
+    return { success: true };
+  } catch (err) {
+    conn.release();
+    console.error('[server-db] ❌ Complete activity failed:', err.message);
+    return { success: false, error: err.message };
+  }
+}
 
 module.exports = {
   getAllUsers,
@@ -76,5 +128,6 @@ module.exports = {
   getAllProjects,
   getAllProjectUsers, 
   getAllProjectRoles,
-  startUnallocatedActivityGlobal
+  startUnallocatedActivityGlobal,
+  completeActiveActivityGlobal
 };

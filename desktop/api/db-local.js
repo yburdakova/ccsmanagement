@@ -1,17 +1,16 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const sqlite3 = require('sqlite3').verbose();
+const { formatMySQLDatetime, parseSqliteDate, diffMinutes } = require('../utils/time');
 
-// путь к папке db
 const dbDir = path.join(__dirname, '../db');
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir);
 }
 
-// путь к файлу базы
 const dbPath = path.join(dbDir, 'local.db');
 
-// создаём или открываем базу
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('Failed to connect to local SQLite:', err);
@@ -20,7 +19,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
   }
 });
 
-// создаём таблицы
 db.serialize(() => {
 
     db.run(`
@@ -68,6 +66,7 @@ db.serialize(() => {
     db.run(`
     CREATE TABLE IF NOT EXISTS users_time_tracking (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uuid TEXT UNIQUE,
       user_id INTEGER,
       date DATE,
       project_id INTEGER,
@@ -225,53 +224,12 @@ function saveRefProjectRolesToLocal(roles) {
   });
 }
 
-function formatMySQLDatetime(date) {
-  return date.toISOString().slice(0, 19).replace('T', ' ');
-}
-
-function startUnallocatedActivityLocal(userId, activityId, startTime) {
-  const { db } = module.exports;
-
-  const dateStr = startTime.toISOString().split('T')[0];
-  const timeStr = formatMySQLDatetime(startTime);
-
-  // save to local db
-  db.run(`
-    INSERT INTO users_time_tracking (
-      user_id, date, project_id, activity_id, task_id, item_id,
-      start_time, end_time, duration, is_completed_project_task, note
-    ) VALUES (?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
-  `, [userId, dateStr, activityId, timeStr], (err) => {
-    if (err) {
-      console.error('[local-db] Clock-in failed:', err.message);
-    } else {
-      console.log('[local-db] Clock-in recorded');
-
-      // add to line for sync
-      const payload = {
-        user_id: userId,
-        activity_id: activityId,
-        timestamp: startTime.toISOString()
-      };
-
-      db.run(`
-        INSERT INTO sync_queue (payload)
-        VALUES (?)
-      `, [JSON.stringify(payload)], (err) => {
-        if (err) {
-          console.error('[local-db] Failed to queue for sync:', err.message);
-        } else {
-          console.log('[local-db] Added to sync_queue');
-        }
-      });
-    }
-  });
-}
-
-
 async function syncQueue() {
   const { db } = module.exports;
-  const { startUnallocatedActivityGlobal } = require('./db'); // for server
+  const {
+    startUnallocatedActivityGlobal,
+    completeActiveActivityGlobal
+  } = require('./db');
 
   return new Promise((resolve, reject) => {
     db.all(`SELECT * FROM sync_queue`, async (err, rows) => {
@@ -285,20 +243,40 @@ async function syncQueue() {
       for (const row of rows) {
         try {
           const payload = JSON.parse(row.payload);
-          const result = await startUnallocatedActivityGlobal(
-            payload.user_id,
-            payload.activity_id,
-            new Date(payload.timestamp)
-          );
+          const type = payload.type;
+          let result;
 
-          if (result.success) {
-            db.run(`DELETE FROM sync_queue WHERE id = ?`, [row.id]);
+          if (type === 'start') {
+            result = await startUnallocatedActivityGlobal(payload);
+          } else if (type === 'complete') {
+            result = await completeActiveActivityGlobal(payload);
+          } else {
+            console.warn('[syncQueue] Unknown payload type:', type);
+            continue;
+          }
+
+          if (result.success || result.error === 'No active activity') {
+            db.run(
+              `DELETE FROM sync_queue WHERE id = ?`,
+              [row.id],
+              (err2) => {
+                if (err2) {
+                  console.error('[syncQueue] Failed to clear synced record:', err2.message);
+                } else {
+                  console.log(
+                    `[syncQueue] Record synced and cleared: user=${payload.user_id}, uuid=${payload.uuid}, type=${payload.type}`
+                  );
+                }
+              }
+            );
             syncedCount++;
           } else {
-            console.warn('[syncQueue] Failed to sync record:', result.error);
+            console.warn(
+              `[syncQueue] Failed to sync record (user=${payload.user_id}, uuid=${payload.uuid}, type=${payload.type}): ${result.error}`
+            );
           }
-        } catch (err) {
-          console.error('[syncQueue] Error during sync:', err.message);
+        } catch (err2) {
+          console.error('[syncQueue] Error during sync:', err2.message);
         }
       }
 
@@ -307,6 +285,135 @@ async function syncQueue() {
   });
 }
 
+function startUnallocatedActivityLocal(userId, activityId) {
+  const { db } = module.exports;
+  const startTime = new Date();
+  const dateStr = startTime.toISOString().split('T')[0];
+  const timeStr = formatMySQLDatetime(startTime);
+  const uuid = crypto.randomUUID();
+
+  return new Promise((resolve, reject) => {
+    db.run(`
+      INSERT INTO users_time_tracking (  
+        uuid, user_id, date, project_id, activity_id, task_id, item_id,
+        start_time, end_time, duration, is_completed_project_task, note
+      ) VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
+    `, [uuid, userId, dateStr, activityId, timeStr], (err) => {
+      if (err) {
+        console.error('[local-db] Clock-in failed:', err.message);
+        return reject(err);
+      } else {
+        console.log(`[local-db] Clock-in recorded (uuid=${uuid})`);
+
+        const { isOnline } = require('../utils/network-status');
+        isOnline().then((online) => {
+          if (!online) {
+            const payload = {
+              type: 'start',
+              uuid,
+              user_id: userId,
+              activity_id: activityId,
+              timestamp: startTime.toISOString()
+            };
+
+            db.run(
+              `INSERT INTO sync_queue (payload) VALUES (?)`,
+              [JSON.stringify(payload)],
+              (err) => {
+                if (err) {
+                  console.error('[local-db] Failed to queue clock-in:', err.message);
+                } else {
+                  console.log('[local-db] Offline mode: queued clock-in');
+                }
+              }
+            );
+          } else {
+            console.log('[local-db] Online mode: skipping sync_queue');
+          }
+        });
+
+        resolve({ uuid });
+      }
+    });
+  });
+}
+
+function completeActiveActivityLocal({ uuid, is_completed_project_task, timestamp }) {
+  const { db } = module.exports;
+  const endTime = timestamp ? new Date(timestamp) : new Date();
+  const endStr = formatMySQLDatetime(endTime);
+
+  return new Promise((resolve, reject) => {
+    db.get(
+       `SELECT id, uuid, user_id, start_time 
+        FROM users_time_tracking 
+        WHERE uuid = ? AND end_time IS NULL 
+        ORDER BY start_time DESC 
+        LIMIT 1`,
+        [uuid],
+      (err, row) => {
+        if (err) {
+          console.error('[local-db] Failed to find active activity:', err.message);
+          return reject(err);
+        }
+
+        if (!row) {
+          console.warn('[local-db] No active activity to complete');
+          return resolve({ success: false, error: 'No active activity' });
+        }
+
+        const start = parseSqliteDate(row.start_time);
+        const durationMin = diffMinutes(start, endTime);
+
+        console.log(
+          `[local-db] Completing activity (uuid=${uuid}), end=${endStr}, isTaskCompleted=${is_completed_project_task}`
+        );
+
+        db.run(
+          `UPDATE users_time_tracking
+           SET end_time = ?, duration = ?, is_completed_project_task = ?
+           WHERE uuid = ?`,
+          [endStr, durationMin, is_completed_project_task ? 1 : 0, uuid],
+          (err2) => {
+            if (err2) {
+              console.error('[local-db] Failed to complete activity:', err2.message);
+              return reject(err2);
+            }
+
+            const { isOnline } = require('../utils/network-status');
+            isOnline().then((online) => {
+              if (!online) {
+                const payload = {
+                  type: 'complete',
+                  uuid,
+                  user_id: row.user_id,  
+                  is_completed_project_task,
+                  timestamp: endTime.toISOString()
+                };
+
+                db.run(
+                  `INSERT INTO sync_queue (payload) VALUES (?)`,
+                  [JSON.stringify(payload)],
+                  (err3) => {
+                    if (err3) {
+                      console.error('[local-db] Failed to queue clock-out:', err3.message);
+                    } else {
+                      console.log('[local-db] Offline mode: queued clock-out');
+                    }
+                  }
+                );
+              } else {
+                console.log('[local-db] Online mode: skipping sync_queue for complete');
+              }
+            });
+
+            return resolve({ success: true, uuid, endTime });
+          }
+        );
+      }
+    );
+  });
+}
 
 module.exports = {
   db,
@@ -314,7 +421,7 @@ module.exports = {
     saveProjectsToLocal,
     saveProjectUsersToLocal,
     saveRefProjectRolesToLocal,
-    saveRefProjectRolesToLocal,
     startUnallocatedActivityLocal,
-    syncQueue
+    syncQueue,
+    completeActiveActivityLocal
 };
