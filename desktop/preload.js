@@ -8,6 +8,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAllProjectUsers: () => ipcRenderer.invoke('get-all-project-users'),
   getAllProjectRoles: () => ipcRenderer.invoke('get-ref-project-roles'),
 
+  getAllTasks: () => ipcRenderer.invoke('get-all-tasks'),
+  getAllProjectTasks: () => ipcRenderer.invoke('get-all-project-tasks'),
+  getAllProjectTaskRoles: () => ipcRenderer.invoke('get-all-project-task-roles'),
+  getAvailableTasks: (userId, projectId) => ipcRenderer.invoke('get-available-tasks', { userId, projectId }),
+
   startUnallocated: (userId) => ipcRenderer.invoke('start-unallocated', userId),
   completeActiveActivity: (payload) => ipcRenderer.invoke('complete-activity', payload),
   syncQueue: () => ipcRenderer.invoke('sync-queue'),

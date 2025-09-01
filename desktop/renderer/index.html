@@ -13,15 +13,24 @@
       <span id="connection-label">Online</span>
     </div>
 
+    <button id="clockin-button">CLOCK-IN</button>
+
     <div class="project-selector-section">
       <label for="project-select">Select Project:</label>
       <select id="project-select">
         <option value="">— Select Project —</option>
       </select>
       <p id="project-role" style="font-style: italic; margin-top: 5px;"></p>
+
+      <div id="task-selector-section" style="margin-top: 10px; display: none;">
+        <label for="task-select">Select Task:</label>
+        <select id="task-select">
+          <option value="">— Select Task —</option>
+        </select>
+      </div>
+      
     </div>
 
-    <button id="clockin-button">CLOCK-IN</button>
   </div>
 
   <script src="renderer.js"></script>

@@ -44,6 +44,21 @@ async function getAllProjectRoles() {
   return rows;
 }
 
+async function getAllTasks() {
+  const [rows] = await pool.query('SELECT * FROM tasks');
+  return rows;
+}
+
+async function getAllProjectTasks() {
+  const [rows] = await pool.query('SELECT * FROM project_tasks');
+  return rows;
+}
+
+async function getAllProjectTaskRoles() {
+  const [rows] = await pool.query('SELECT * FROM project_task_roles');
+  return rows;
+}
+
 async function startUnallocatedActivityGlobal({ uuid, user_id, activity_id, timestamp }) {
   const startTime = timestamp ? new Date(timestamp) : new Date();
   const dateStr = startTime.toISOString().split('T')[0]; // YYYY-MM-DD
@@ -128,6 +143,9 @@ module.exports = {
   getAllProjects,
   getAllProjectUsers, 
   getAllProjectRoles,
+  getAllTasks,
+  getAllProjectTasks,
+  getAllProjectTaskRoles,
   startUnallocatedActivityGlobal,
   completeActiveActivityGlobal
 };

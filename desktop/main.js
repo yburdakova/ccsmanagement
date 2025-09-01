@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { isOnline } = require('./utils/network-status');
 
-require('./api/db-local');
+const { initializeLocalDb } = require('./api/db-local');
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -19,8 +19,9 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow();
+  await initializeLocalDb();
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -91,6 +92,63 @@ ipcMain.handle('get-ref-project-roles', async () => {
   }
 });
 
+ipcMain.handle('get-all-tasks', async () => {
+  const { getAllTasks } = require('./api/db');
+  const { saveTasksToLocal } = require('./api/db-local');
+
+  try {
+    const tasks = await getAllTasks();
+    saveTasksToLocal(tasks);
+    console.log('Fetched and saved tasks locally:', tasks.length);
+    return tasks;
+  } catch (error) {
+    console.error('Error fetching tasks:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('get-all-project-tasks', async () => {
+  const { getAllProjectTasks } = require('./api/db');
+  const { saveProjectTasksToLocal } = require('./api/db-local');
+
+  try {
+    const projectTasks = await getAllProjectTasks();
+    saveProjectTasksToLocal(projectTasks);
+    console.log('Fetched and saved project_tasks locally:', projectTasks.length);
+    return projectTasks;
+  } catch (error) {
+    console.error('Error fetching project_tasks:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('get-all-project-task-roles', async () => {
+  const { getAllProjectTaskRoles } = require('./api/db');
+  const { saveProjectTaskRolesToLocal } = require('./api/db-local');
+
+  try {
+    const projectTaskRoles = await getAllProjectTaskRoles();
+    saveProjectTaskRolesToLocal(projectTaskRoles);
+    console.log('Fetched and saved project_task_roles locally:', projectTaskRoles.length);
+    return projectTaskRoles;
+  } catch (error) {
+    console.error('Error fetching project_task_roles:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
+  const { getAvailableTasksForUser } = require('./api/db-local');
+
+  try {
+    const tasks = await getAvailableTasksForUser(userId, projectId);
+    console.log(`Fetched available tasks for user=${userId}, project=${projectId}:`, tasks.length);
+    return tasks;
+  } catch (error) {
+    console.error('Error fetching available tasks:', error);
+    return [];
+  }
+});
 
 ipcMain.handle('login-with-code', async (event, code) => {
   const { loginByAuthCode } = require('./api/db');
@@ -124,7 +182,6 @@ ipcMain.handle('start-unallocated', async (event, {userId}) => {
     return { success: false, error: error.message };
   }
 });
-
 
 ipcMain.handle('sync-queue', async () => {
   const { syncQueue } = require('./api/db-local');
@@ -170,4 +227,29 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
   }
 });
 
+app.on('will-quit', async (event) => {
+  event.preventDefault();
 
+  try {
+    const { completeActiveActivityLocal: completeLocal, syncQueue } = require('./api/db-local');
+
+    const result = await completeLocal({
+      uuid: null,
+      is_completed_project_task: false,
+      timestamp: new Date().toISOString()
+    });
+
+    if (result.success) {
+      console.log(`[main] Queued auto-complete for uuid=${result.uuid}`);
+      const syncResult = await syncQueue();
+      console.log(`[main] Sync on quit finished: ${syncResult.synced} record(s) synced`);
+    }
+  } catch (err) {
+    console.error('[main] Failed to auto-complete on quit:', err.message);
+  } finally {
+    // ⚡ небольшая задержка, чтобы дать SQLite очистить соединение
+    setTimeout(() => {
+      process.exit(0); // жёсткий выход без лишних коллизий
+    }, 200);
+  }
+});

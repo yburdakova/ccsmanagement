@@ -2,7 +2,6 @@
 // Time utils
 // ================================
 
-
 function formatMySQLDatetime(date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000) 
     .toISOString()
@@ -10,7 +9,6 @@ function formatMySQLDatetime(date) {
     .replace('T', ' ');
 }
 
-// SQLite local time
 function parseSqliteDate(raw) {
   if (!raw) return null;
   if (typeof raw === 'string') {
@@ -20,7 +18,6 @@ function parseSqliteDate(raw) {
   throw new Error('Unsupported date format: ' + raw);
 }
 
-// MySQL UTC
 function parseMysqlDate(raw) {
   if (!raw) return null;
   if (typeof raw === 'string') {
@@ -30,9 +27,9 @@ function parseMysqlDate(raw) {
   throw new Error('Unsupported date format: ' + raw);
 }
 
-// duration mins
 function diffMinutes(start, end) {
-  return Math.floor((end.getTime() - start.getTime()) / 60000);
+  return Math.round(((end.getTime() - start.getTime()) / 60000) * 100) / 100;
+
 }
 
 module.exports = {

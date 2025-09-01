@@ -6,101 +6,122 @@ document.addEventListener('DOMContentLoaded', async () => {
   const allProjectUsers = await window.electronAPI.getAllProjectUsers();
   const projectRoles = await window.electronAPI.getAllProjectRoles();
 
-   let currentUser = null;
+  let currentUser = null;
+  let currentSessionUuid = null;
+
+  const projectSection = document.querySelector('.project-selector-section');
+  projectSection.style.display = 'none';
+  const taskSection = document.getElementById('task-selector-section');
+  const taskSelect = document.getElementById('task-select');
+  taskSection.style.display = 'none';
 
   document.getElementById('start-button').addEventListener('click', async () => {
-    const code = document.getElementById('authcode-input').value.trim();
-    const errorEl = document.getElementById('login-error');
+      const code = document.getElementById('authcode-input').value.trim();
+      const errorEl = document.getElementById('login-error');
 
-    const user = await window.electronAPI.loginWithCode(code);
+      const user = await window.electronAPI.loginWithCode(code);
 
-    if (user) {
-      currentUser = user;
-      const userProjects = allProjectUsers
-    .filter(pu => pu.user_id === user.id)
-    .map(pu => {
-      const project = allProjects.find(p => p.id === pu.project_id);
-      const role = projectRoles.find(r => r.id === pu.project_role_id);
-      return {
-        project_id: project?.id,
-        name: project?.name,
-        role: role?.label || role?.name || 'Unknown'
-      };
-    })
-    .filter(p => !!p.project_id);
+      if (user) {
+        currentUser = user;
 
-    // <select>
-    const projectSelect = document.getElementById('project-select');
-    userProjects.forEach(p => {
-      const option = document.createElement('option');
-      option.value = p.project_id;
-      option.textContent = p.name;
-      projectSelect.appendChild(option);
-    });
+        errorEl.style.display = 'none';
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('main-screen').style.display = 'block';
 
-    // show role
-    const roleText = document.getElementById('project-role');
-    projectSelect.addEventListener('change', (e) => {
-      const selected = userProjects.find(p => p.project_id == e.target.value);
-      if (selected) {
-        roleText.textContent = `Your role: ${selected.role}`;
+        document.getElementById('welcome-text').textContent = `Welcome, ${user.first_name} ${user.last_name}`;
       } else {
-        roleText.textContent = '';
+        errorEl.style.display = 'block';
       }
     });
 
-      errorEl.style.display = 'none';
+  document.getElementById('clockin-button').addEventListener('click', async () => {
+      const button = document.getElementById('clockin-button');
 
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('main-screen').style.display = 'block';
+      if (button.textContent === 'CLOCK-IN') {
+        const result = await window.electronAPI.startUnallocated({ userId: currentUser.id });
 
-      document.getElementById('welcome-text').textContent = `Welcome, ${user.first_name} ${user.last_name}`;
-    } else {
-      errorEl.style.display = 'block';
-    }
-  });
+        if (!result.success) {
+          alert('Clock-in failed: ' + result.error);
+          return;
+        }
 
-let currentSessionUuid = null;
+        currentSessionUuid = result.uuid;
+        button.textContent = 'CLOCK-OUT';
+        alert(`Clock-in successful! (uuid=${currentSessionUuid})`);
 
-document.getElementById('clockin-button').addEventListener('click', async () => {
-  const button = document.getElementById('clockin-button');
+        const userProjects = allProjectUsers
+          .filter(pu => pu.user_id === currentUser.id)
+          .map(pu => {
+            const project = allProjects.find(p => p.id === pu.project_id);
+            const role = projectRoles.find(r => r.id === pu.project_role_id);
+            return {
+              project_id: project?.id,
+              name: project?.name,
+              role: role?.label || role?.name || 'Unknown'
+            };
+          })
+          .filter(p => !!p.project_id);
 
-  if (button.textContent === 'CLOCK-IN') {
-    const result = await window.electronAPI.startUnallocated({ userId: currentUser.id });
+        const projectSelect = document.getElementById('project-select');
+        projectSelect.innerHTML = '<option value="">— Select Project —</option>';
+        userProjects.forEach(p => {
+          const option = document.createElement('option');
+          option.value = p.project_id;
+          option.textContent = p.name;
+          projectSelect.appendChild(option);
+        });
 
-    if (!result.success) {
-      alert('Clock-in failed: ' + result.error);
-      return;
-    }
+       const roleText = document.getElementById('project-role');
+projectSelect.addEventListener('change', async (e) => {
+  const selected = userProjects.find(p => p.project_id == e.target.value);
 
-    currentSessionUuid = result.uuid;
+  roleText.textContent = selected ? `Your role: ${selected.role}` : '';
 
-    button.textContent = 'CLOCK-OUT';
-    alert(`Clock-in successful! (uuid=${currentSessionUuid})`);
-  } else {
-    if (!currentSessionUuid) {
-      alert('No active session UUID found!');
-      return;
-    }
+  if (selected) {
+    const tasks = await window.electronAPI.getAvailableTasks(currentUser.id, selected.project_id);
 
-    const result = await window.electronAPI.completeActiveActivity({
-      uuid: currentSessionUuid,
-      userId: currentUser.id,
-      isTaskCompleted: false
+    taskSelect.innerHTML = '<option value="">— Select Task —</option>';
+    tasks.forEach(t => {
+      const option = document.createElement('option');
+      option.value = t.id;
+      option.textContent = t.description || t.name;
+      taskSelect.appendChild(option);
     });
 
-    if (!result.success) {
-      alert('Clock-out failed: ' + result.error);
-      return;
-    }
-
-    button.textContent = 'CLOCK-IN';
-    alert(`Clock-out successful! (uuid=${currentSessionUuid})`);
-
-    currentSessionUuid = null;
+    taskSection.style.display = tasks.length > 0 ? 'block' : 'none';
+  } else {
+    taskSection.style.display = 'none';
   }
 });
 
-  
+
+        projectSection.style.display = 'block';
+      } else {
+        // clock-out
+        if (!currentSessionUuid) {
+          alert('No active session UUID found!');
+          return;
+        }
+
+        const result = await window.electronAPI.completeActiveActivity({
+          uuid: currentSessionUuid,
+          userId: currentUser.id,
+          isTaskCompleted: false
+        });
+
+        if (!result.success) {
+          alert('Clock-out failed: ' + result.error);
+          return;
+        }
+
+        button.textContent = 'CLOCK-IN';
+        alert(`Clock-out successful! (uuid=${currentSessionUuid})`);
+
+        currentSessionUuid = null;
+
+        projectSection.style.display = 'none';
+      }
+    });
+
 });
 
