@@ -1,6 +1,14 @@
 document.addEventListener('DOMContentLoaded', async () => {
 
-  
+  const authInput = document.getElementById('authcode-input');
+  authInput.focus();
+
+  authInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      document.getElementById('start-button').click();
+    }
+  });
+
   window.network.startConnectionMonitoring();
   const allProjects = await window.electronAPI.getAllProjects();
   const allProjectUsers = await window.electronAPI.getAllProjectUsers();
@@ -32,7 +40,43 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         errorEl.style.display = 'block';
       }
-    });
+  });
+    
+  document.getElementById('logout-button').addEventListener('click', async () => {
+    if (currentUser) {
+      await window.electronAPI.logout({ userId: currentUser.id });
+    }
+
+    currentUser = null;
+    currentSessionUuid = null;
+
+    // сброс кнопки
+    const button = document.getElementById('clockin-button');
+    button.textContent = 'CLOCK-IN';
+
+    // скрываем секции
+    projectSection.style.display = 'none';
+    taskSection.style.display = 'none';
+
+    // очищаем селекты
+    document.getElementById('project-select').innerHTML = '<option value="">— Select Project —</option>';
+    document.getElementById('project-role').textContent = '';
+    taskSelect.innerHTML = '<option value="">— Select Task —</option>';
+
+    // переключаем экраны
+    document.getElementById('login-screen').style.display = 'block';
+    document.getElementById('main-screen').style.display = 'none';
+
+    // чистим поле ввода
+    const authInput = document.getElementById('authcode-input');
+    authInput.value = '';
+
+    // небольшой трюк с фокусом
+    authInput.blur();
+    setTimeout(() => authInput.focus(), 50);
+
+    console.log('[renderer] User logged out and UI reset');
+  });
 
   document.getElementById('clockin-button').addEventListener('click', async () => {
       const button = document.getElementById('clockin-button');
@@ -121,7 +165,7 @@ projectSelect.addEventListener('change', async (e) => {
 
         projectSection.style.display = 'none';
       }
-    });
+  });
 
 });
 

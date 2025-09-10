@@ -227,6 +227,32 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
   }
 });
 
+ipcMain.handle('logout', async (event) => {
+  const { completeActiveActivityLocal: completeLocal, syncQueue } = require('./api/db-local');
+
+  try {
+    const result = await completeLocal({
+      uuid: null,
+      is_completed_project_task: false,
+      timestamp: new Date().toISOString()
+    });
+
+    if (result.success) {
+      console.log(`[main] Auto-complete on logout for uuid=${result.uuid}`);
+      const syncResult = await syncQueue();
+      console.log(`[main] Sync on logout finished: ${syncResult.synced} record(s) synced`);
+    } else {
+      console.log('[main] No active task to complete on logout');
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('[main] Logout auto-complete failed:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+
 app.on('will-quit', async (event) => {
   event.preventDefault();
 
