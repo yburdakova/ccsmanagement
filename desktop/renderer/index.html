@@ -1,40 +1,62 @@
+<head>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
 <body>
-  <div id="login-screen">
-    <h1>Login</h1>
-    <input type="text" id="authcode-input" placeholder="Enter Auth Code" />
-    <button id="start-button">Start</button>
-    <p id="login-error" style="color: red; display: none;">Invalid code</p>
-  </div>
-
-  <div id="main-screen" style="display: none;">
-    <h2 id="welcome-text">Welcome</h2>
-    <button id="logout-button" style="margin-left: 10px;">Logout</button>
-    <div id="connection-status">
-      <span id="connection-dot" style="color: green;">●</span>
-      <span id="connection-label">Online</span>
+  <div class="wrapper">
+    <div id="login-screen">
+        <h1>Login</h1>
+        <input type="text" id="authcode-input" placeholder="Enter Auth Code" />
+        <button id="start-button">Start</button>
+        <p id="login-error" style="color: red; display: none;">Invalid code</p>
     </div>
 
-    <button id="clockin-button">CLOCK-IN</button>
+    <div id="main-screen" style="display: none;">
+      <h2 id="welcome-text">Welcome</h2>
+      <button id="logout-button" style="margin-left: 10px;">Logout</button>
+      <div id="connection-status">
+        <span id="connection-dot" style="color: green;">●</span>
+        <span id="connection-label">Online</span>
+      </div>
 
-    <div class="project-selector-section">
-      <label for="project-select">Select Project:</label>
-      <select id="project-select">
-        <option value="">— Select Project —</option>
-      </select>
-      <p id="project-role" style="font-style: italic; margin-top: 5px;"></p>
+      <div class="clockin-section">
+        <h4 class="clockin-title">Clock-In Section</h4>
+        <button id="clockin-button">CLOCK-IN</button>
+      </div>
 
-      <div id="task-selector-section" style="margin-top: 10px; display: none;">
-        <label for="task-select">Select Task:</label>
-        <select id="task-select">
-          <option value="">— Select Task —</option>
-        </select>
+      <div class="activity-section">
+        <h4 class="clockin-title">Activities Section</h4>
+        <div class="btns-box">
+          <button id="" disabled>ADMINISTRATION</button>
+          <button id="" disabled>PRODUCTION</button>
+          <button id="" disabled>LUNCH</button>
+          <button id="" disabled>BREAK</button>
+        </div>
+  
+      </div>
 
-         <label for="item-input">Select Input:</label>
-         <input type="text" id="item-input" placeholder="put the item number"/>
+      <div class="production-section">
+        <h4 class="clockin-title">Production Section</h4>
+        <div class="project-selector-section">
+          <label for="project-select">Select Project:</label>
+          <select id="project-select">
+            <option value="">— Select Project —</option>
+          </select>
+          <p id="project-role" style="font-style: italic; margin-top: 5px;"></p>
+
+          <div id="task-selector-section" style="margin-top: 10px; display: none;">
+            <label for="task-select">Select Task:</label>
+            <select id="task-select">
+              <option value="">— Select Task —</option>
+            </select>
+            <label for="item-input">Select Input:</label>
+            <input type="text" id="item-input" placeholder="put the item number"/>
+          </div>
+        </div>
       </div>
       
-    </div>
 
+    </div>
   </div>
 
   <script src="renderer.js"></script>

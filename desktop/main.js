@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain } = require('electron'); 
+const { Menu } = require('electron');
+
 const path = require('path');
 const { isOnline } = require('./utils/network-status');
-
 const { initializeLocalDb } = require('./api/db-local');
 
 function createWindow() {
@@ -17,6 +18,7 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  Menu.setApplicationMenu(null);
 }
 
 app.whenReady().then(async () => {
