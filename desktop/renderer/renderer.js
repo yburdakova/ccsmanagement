@@ -116,32 +116,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
        const roleText = document.getElementById('project-role');
-projectSelect.addEventListener('change', async (e) => {
-  const selected = userProjects.find(p => p.project_id == e.target.value);
+        projectSelect.addEventListener('change', async (e) => {
+          const selected = userProjects.find(p => p.project_id == e.target.value);
 
-  roleText.textContent = selected ? `Your role: ${selected.role}` : '';
+          roleText.textContent = selected ? `Your role: ${selected.role}` : '';
 
-  if (selected) {
-    const tasks = await window.electronAPI.getAvailableTasks(currentUser.id, selected.project_id);
+          if (selected) {
+            const tasks = await window.electronAPI.getAvailableTasks(currentUser.id, selected.project_id);
 
-    taskSelect.innerHTML = '<option value="">— Select Task —</option>';
-    tasks.forEach(t => {
-      const option = document.createElement('option');
-      option.value = t.id;
-      option.textContent = t.description || t.name;
-      taskSelect.appendChild(option);
-    });
+            taskSelect.innerHTML = '<option value="">— Select Task —</option>';
 
-    taskSection.style.display = tasks.length > 0 ? 'block' : 'none';
-  } else {
-    taskSection.style.display = 'none';
-  }
-});
+            let defaultTaskId = null;
+
+            tasks.forEach(t => {
+              const option = document.createElement('option');
+              option.value = t.id;
+              option.textContent = t.description || t.name;
+              taskSelect.appendChild(option);
+
+              if (t.is_default === 1) {
+                defaultTaskId = t.id;
+              }
+            });
+
+            if (defaultTaskId) {
+              taskSelect.value = defaultTaskId;
+            }
+
+            taskSection.style.display = tasks.length > 0 ? 'block' : 'none';
+          } else {
+            taskSection.style.display = 'none';
+          }
+        });
 
 
         projectSection.style.display = 'block';
       } else {
-        // clock-out
         if (!currentSessionUuid) {
           alert('No active session UUID found!');
           return;

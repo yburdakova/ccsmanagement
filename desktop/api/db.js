@@ -35,7 +35,12 @@ async function getAllProjects() {
 }
 
 async function getAllProjectUsers() {
-  const [rows] = await pool.query(`SELECT * FROM project_users`);
+  const [rows] = await pool.query(`
+    SELECT pu.id, pu.project_id, pu.user_id, pu.project_role_id
+    FROM project_users pu
+    INNER JOIN projects p ON p.id = pu.project_id
+    WHERE p.project_status_id = 1
+  `);
   return rows;
 }
 

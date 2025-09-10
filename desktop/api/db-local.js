@@ -106,10 +106,11 @@ db.serialize(() => {
 
   db.run(`
     CREATE TABLE IF NOT EXISTS project_task_roles (
-      id TEXT PRIMARY KEY,             -- исправлено: MySQL VARCHAR → TEXT
+      id TEXT PRIMARY KEY,
       project_id INTEGER,
       task_id INTEGER,
-      role_id INTEGER
+      role_id INTEGER,
+      is_default INTEGER DEFAULT 0
     )`);
 });
 
@@ -359,8 +360,8 @@ function saveProjectTaskRolesToLocal(projectTaskRoles) {
     db.run('DELETE FROM project_task_roles');
 
     const stmt = db.prepare(`
-      INSERT INTO project_task_roles (id, project_id, task_id, role_id)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO project_task_roles (id, project_id, task_id, role_id, is_default)
+      VALUES (?, ?, ?, ?, ?)
     `);
 
     projectTaskRoles.forEach((ptr, i) => {
@@ -369,6 +370,7 @@ function saveProjectTaskRolesToLocal(projectTaskRoles) {
         ptr.project_id,
         ptr.task_id,
         ptr.role_id,
+        ptr.is_default ?? 0,   // ✅ если null, то 0
         (err) => {
           if (err) console.error(`[local-db] Failed to insert project_task_role ${ptr.id}:`, err.message);
         }
@@ -379,10 +381,11 @@ function saveProjectTaskRolesToLocal(projectTaskRoles) {
   });
 }
 
+
 function getAvailableTasksForUser(userId, projectId) {
   return new Promise((resolve, reject) => {
     db.all(`
-      SELECT t.id, t.name, t.description
+      SELECT t.id, t.name, t.description, ptr.is_default
       FROM project_users pu
       JOIN project_task_roles ptr 
         ON ptr.project_id = pu.project_id 
