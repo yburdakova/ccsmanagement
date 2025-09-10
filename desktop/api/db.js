@@ -61,7 +61,7 @@ async function getAllProjectTaskRoles() {
 
 async function startUnallocatedActivityGlobal({ uuid, user_id, activity_id, timestamp }) {
   const startTime = timestamp ? new Date(timestamp) : new Date();
-  const dateStr = startTime.toISOString().split('T')[0]; // YYYY-MM-DD
+  const dateStr = startTime.toISOString().split('T')[0];
   const timeStr = formatMySQLDatetime(startTime);
 
   try {
@@ -75,14 +75,14 @@ async function startUnallocatedActivityGlobal({ uuid, user_id, activity_id, time
       `,
       [uuid, user_id, dateStr, activity_id, timeStr]
     );
-    console.log(`[server-db] ✅ Clock-in recorded (uuid=${uuid})`);
+    console.log(`[server-db] Clock-in recorded (uuid=${uuid})`);
     return { success: true };
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') {
-      console.warn(`[server-db] ⚠️ Duplicate uuid ignored (uuid=${uuid})`);
+      console.warn(`[server-db] Duplicate uuid ignored (uuid=${uuid})`);
       return { success: true, duplicate: true };
     }
-    console.error('[server-db] ❌ Clock-in failed:', error.message);
+    console.error('[server-db] Clock-in failed:', error.message);
     return { success: false, error: error.message };
   }
 }
@@ -101,17 +101,16 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
 
     if (rows.length === 0) {
       conn.release();
-      console.warn(`[server-db] ⚠️ No activity found for uuid=${uuid}, ignoring`);
-      return { success: true, ignored: true }; // считаем успешным, чтобы очередь очистилась
+      console.warn(`[server-db] No activity found for uuid=${uuid}, ignoring`);
+      return { success: true, ignored: true };
     }
 
     const activity = rows[0];
 
-    // если уже завершено → не надо повторно апдейтить
     if (activity.end_time) {
       conn.release();
-      console.warn(`[server-db] ⚠️ Activity already completed (uuid=${uuid}), skipping`);
-      return { success: true, duplicate: true }; // тоже success, чтобы очистить очередь
+      console.warn(`[server-db]  Activity already completed (uuid=${uuid}), skipping`);
+      return { success: true, duplicate: true }; 
     }
 
     const start = parseMysqlDate(activity.start_time);
@@ -132,7 +131,7 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
     return { success: true };
   } catch (err) {
     conn.release();
-    console.error('[server-db] ❌ Complete activity failed:', err.message);
+    console.error('[server-db] Complete activity failed:', err.message);
     return { success: false, error: err.message };
   }
 }
