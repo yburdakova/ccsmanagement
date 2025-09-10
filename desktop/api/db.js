@@ -64,6 +64,22 @@ async function getAllProjectTaskRoles() {
   return rows;
 }
 
+async function getCfsItemsByProject(projectId) {
+  const [rows] = await pool.query(
+    `SELECT id, label AS name FROM cfs_items WHERE project_id = ?`,
+    [projectId]
+  );
+  return rows;
+}
+
+async function getImItemsByProject(projectId) {
+  const [rows] = await pool.query(
+    `SELECT id, label AS name FROM im_items WHERE project_id = ?`,
+    [projectId]
+  );
+  return rows;
+}
+
 async function startUnallocatedActivityGlobal({ uuid, user_id, activity_id, timestamp }) {
   const startTime = timestamp ? new Date(timestamp) : new Date();
   const dateStr = startTime.toISOString().split('T')[0];
@@ -91,7 +107,6 @@ async function startUnallocatedActivityGlobal({ uuid, user_id, activity_id, time
     return { success: false, error: error.message };
   }
 }
-
 
 async function completeActiveActivityGlobal({ uuid, is_completed_project_task, timestamp }) {
   const endTime = timestamp ? new Date(timestamp) : new Date();
@@ -150,6 +165,8 @@ module.exports = {
   getAllTasks,
   getAllProjectTasks,
   getAllProjectTaskRoles,
+  getCfsItemsByProject,
+  getImItemsByProject,
   startUnallocatedActivityGlobal,
   completeActiveActivityGlobal
 };

@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAllProjectTasks: () => ipcRenderer.invoke('get-all-project-tasks'),
   getAllProjectTaskRoles: () => ipcRenderer.invoke('get-all-project-task-roles'),
   getAvailableTasks: (userId, projectId) => ipcRenderer.invoke('get-available-tasks', { userId, projectId }),
+  getProjectItems: (projectId, projectTypeId) => ipcRenderer.invoke('get-project-items', { projectId, projectTypeId }),
 
   startUnallocated: (userId) => ipcRenderer.invoke('start-unallocated', userId),
   completeActiveActivity: (payload) => ipcRenderer.invoke('complete-activity', payload),

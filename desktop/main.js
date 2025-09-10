@@ -19,6 +19,7 @@ function createWindow() {
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   Menu.setApplicationMenu(null);
+  win.webContents.openDevTools();
 }
 
 app.whenReady().then(async () => {
@@ -254,6 +255,21 @@ ipcMain.handle('logout', async (event) => {
   }
 });
 
+ipcMain.handle('get-project-items', async (event, { projectId, projectTypeId }) => {
+  const { getCfsItemsByProject, getImItemsByProject } = require('./api/db');
+  try {
+    if (projectTypeId === 1) {
+      return await getCfsItemsByProject(projectId);
+    } else if (projectTypeId === 2) {
+      return await getImItemsByProject(projectId);
+    } else {
+      return [];
+    }
+  } catch (error) {
+    console.error('Error fetching project items:', error);
+    return [];
+  }
+});
 
 app.on('will-quit', async (event) => {
   event.preventDefault();
