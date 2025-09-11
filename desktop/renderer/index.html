@@ -12,11 +12,12 @@
     </div>
 
     <div id="main-screen" style="display: none;">
-      <h2 id="welcome-text">Welcome</h2>
-      <button id="logout-button" style="margin-left: 10px;">Logout</button>
-      <div id="connection-status">
-        <span id="connection-dot" style="color: green;">●</span>
-        <span id="connection-label">Online</span>
+      <div class="header">
+        <div id="connection-status"></div>
+        <div id="welcome-text">Welcome</div>
+        <button class="icon-btn" id="logout-button">
+          <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f"><path d="M200-120q-33 0-56.5-23.5T120-200v-160h80v160h560v-560H200v160h-80v-160q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm220-160-56-58 102-102H120v-80h346L364-622l56-58 200 200-200 200Z"/></svg>
+        </button>
       </div>
 
       <div class="clockin-section">
@@ -36,30 +37,67 @@
       </div>
 
       <div class="production-section">
+        
         <h4 class="clockin-title">Production Section</h4>
+        
         <div class="project-selector-section">
           <label for="project-select">Select Project:</label>
-          <select id="project-select">
-            <option value="">— Select Project —</option>
-          </select>
-          <p id="project-role" style="font-style: italic; margin-top: 5px;"></p>
-
-          <div id="task-selector-section" style="margin-top: 10px; display: none;">
-            <div class="task-box">
-              <label for="task-select">Select Task:</label>
-              <select id="task-select">
-                <option value="">— Select Task —</option>
-              </select>
-            </div>
-            
-            <div class="item-box">
-              <label for="item-input">Item:</label>
-              <input type="text" id="item-input" placeholder="Start typing..." />
-            </div>
-            
+          <div class="selection-with-saving-box">
+            <select id="project-select">
+              <option value="">— Select Project —</option>
+            </select>
+            <button id="save-project-button" style="margin-left: 10px;">Save Project</button>
           </div>
         </div>
+      
+
+        <p id="project-role" style="font-style: italic; margin-top: 5px;"></p>
+
+        <div id="task-selector-section" style="margin-top: 10px; display: none;">
+          <div class="task-box">
+            <label for="task-select">Select Task:</label>
+            <select id="task-select">
+              <option value="">— Select Task —</option>
+            </select>
+          </div>
+          
+          <div class="item-box">
+            <label for="item-input">Item:</label>
+            <input type="text" id="item-input" placeholder="Start typing..." />
+          </div>
+          
+
+          <div class="item-card">
+            <p id="">Book DEEDT-4-1</p>
+            <p id="">Record Category: Deed of Trust</p>
+            <p id="">Label: Book234</p>
+            <p id="">Binding: Bound</p>
+            <p id="">Source Type: Paper</p>
+            <p id="">Psysical Attributes: Photostat</p>
+            <p id="">Page size: 8.5 x 11</p>
+            <p id="">Text Type: Handwritten</p>
+            <p id="">Attachments %: 10%</p>
+            <p id="">Notes: Front of Book Index Need Scanned</p>
+            <button id="start-scan-button">Edit</button>
+          </div>
+        <div class="scanner-box">
+          <label for="scanner-select">Scan Method:</label>
+          <div class="selection-with-saving-box">
+            <select id="scanner-select">
+              <option value="">— Select Scanner —</option>
+              <option value="Contex">Contex</option>
+              <option value="Contex">High Speed</option>
+              <option value="Contex">Book scanner (Indus)</option>
+              <option value="Contex">Flatbed</option>
+              <option value="Contex">Photography</option>
+              <option value="Contex">Fujitsu High Speed</option>
+            </select>
+            <button id="save-project-button" style="margin-left: 10px;">Save Scan Method</button>
+          </div>
+          
+        </div>
       </div>
+
       
 
     </div>

@@ -112,6 +112,32 @@ db.serialize(() => {
       role_id INTEGER,
       is_default INTEGER DEFAULT 0
     )`);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS ref_item_status (
+        id INTEGER PRIMARY KEY,
+        name TEXT,
+        label TEXT
+      )
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS cfs_items (
+        id INTEGER PRIMARY KEY,
+        project_id INTEGER,
+        label TEXT,
+        task_status_id INTEGER
+      )
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS im_items (
+        id INTEGER PRIMARY KEY,
+        project_id INTEGER,
+        label TEXT,
+        task_status_id INTEGER
+      )
+    `);
 });
 
 async function initializeLocalDb() {
@@ -131,7 +157,13 @@ async function initializeLocalDb() {
       const tasks = await globalApi.getAllTasks();
       const projectTasks = await globalApi.getAllProjectTasks();
       const projectTaskRoles = await globalApi.getAllProjectTaskRoles();
+      const refItemStatus = await globalApi.getAllRefItemStatus();
+      const cfsItems = await globalApi.getAllCfsItems();
+      const imItems = await globalApi.getAllImItems();
 
+      saveRefItemStatusToLocal(refItemStatus);
+      saveCfsItemsToLocal(cfsItems);
+      saveImItemsToLocal(imItems);
       saveUsersToLocal(users);
       saveProjectsToLocal(projects);
       saveProjectUsersToLocal(projectUsers);
@@ -381,6 +413,71 @@ function saveProjectTaskRolesToLocal(projectTaskRoles) {
   });
 }
 
+function saveRefItemStatusToLocal(statuses) {
+  if (!statuses || statuses.length === 0) return;
+
+  db.serialize(() => {
+    console.log('[local-db] Clearing ref_item_status...');
+    db.run('DELETE FROM ref_item_status');
+
+    const stmt = db.prepare(`
+      INSERT INTO ref_item_status (id, name, label)
+      VALUES (?, ?, ?)
+    `);
+
+    statuses.forEach((s, i) => {
+      stmt.run(s.id, s.name, s.label, (err) => {
+        if (err) console.error(`[local-db] Failed to insert ref_item_status ${s.id}:`, err.message);
+      });
+    });
+
+    stmt.finalize();
+  });
+}
+
+function saveCfsItemsToLocal(items) {
+  if (!items || items.length === 0) return;
+
+  db.serialize(() => {
+    console.log('[local-db] Clearing cfs_items...');
+    db.run('DELETE FROM cfs_items');
+
+    const stmt = db.prepare(`
+      INSERT INTO cfs_items (id, project_id, label, task_status_id)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    items.forEach((item, i) => {
+      stmt.run(item.id, item.project_id, item.label, item.task_status_id, (err) => {
+        if (err) console.error(`[local-db] Failed to insert cfs_item ${item.id}:`, err.message);
+      });
+    });
+
+    stmt.finalize();
+  });
+}
+
+function saveImItemsToLocal(items) {
+  if (!items || items.length === 0) return;
+
+  db.serialize(() => {
+    console.log('[local-db] Clearing im_items...');
+    db.run('DELETE FROM im_items');
+
+    const stmt = db.prepare(`
+      INSERT INTO im_items (id, project_id, label, task_status_id)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    items.forEach((item, i) => {
+      stmt.run(item.id, item.project_id, item.label, item.task_status_id, (err) => {
+        if (err) console.error(`[local-db] Failed to insert im_item ${item.id}:`, err.message);
+      });
+    });
+
+    stmt.finalize();
+  });
+}
 
 function getAvailableTasksForUser(userId, projectId) {
   return new Promise((resolve, reject) => {
@@ -609,6 +706,9 @@ module.exports = {
   saveProjectTasksToLocal,
   saveProjectTaskRolesToLocal,
   startUnallocatedActivityLocal,
+  saveRefItemStatusToLocal,
+  saveCfsItemsToLocal,
+  saveImItemsToLocal,
   getAvailableTasksForUser,
   syncQueue,
   completeActiveActivityLocal,

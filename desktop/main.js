@@ -1,29 +1,53 @@
-const { app, BrowserWindow, ipcMain } = require('electron'); 
+const { app, screen, BrowserWindow, ipcMain, dialog } = require('electron'); 
 const { Menu } = require('electron');
 
 const path = require('path');
 const { isOnline } = require('./utils/network-status');
 const { initializeLocalDb } = require('./api/db-local');
 
-function createWindow() {
+function createWindow(screenWidth) {
   const win = new BrowserWindow({
     width: 400,
-    height: 800,
+    height: 900,
+    icon: path.join(__dirname, '/assets/LogoCC.png'),
+    title: 'CCS User Desktop Module',
+    x: screenWidth - 400,
+    y: 10,
+    alwaysOnTop: true,
+    resizable: false,
     webPreferences: {
-    preload: path.join(__dirname, 'preload.js'),
-    contextIsolation: true,
-    nodeIntegration: false
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
     },
 
   });
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   Menu.setApplicationMenu(null);
-  win.webContents.openDevTools();
+  // win.webContents.openDevTools();
+
+  win.on('close', (event) => {
+    event.preventDefault();
+
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      buttons: ['Cancel', 'Stop Work Time and Close the App'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Confirm Exit',
+      message: 'Are you sure you want to close the App? Your work time will be stopped!',
+    });
+
+    if (choice === 1) {
+      app.exit();
+    }
+  });
 }
 
 app.whenReady().then(async () => {
-  createWindow();
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  createWindow(width);
   await initializeLocalDb();
 
   app.on('activate', function () {

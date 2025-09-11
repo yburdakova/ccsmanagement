@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('main-screen').style.display = 'block';
       document.getElementById('welcome-text').textContent =
-        `Welcome, ${user.first_name} ${user.last_name}`;
+        `${user.first_name} ${user.last_name}`;
     } else {
       errorEl.style.display = 'block';
     }

@@ -72,12 +72,93 @@ async function getCfsItemsByProject(projectId) {
   return rows;
 }
 
+async function getAllRefItemStatus() {
+  const [rows] = await pool.query(`SELECT id, name, label FROM ref_item_status`);
+  return rows;
+}
+
+async function getAllCfsItems() {
+  const [rows] = await pool.query(`SELECT id, project_id, label, task_status_id FROM cfs_items`);
+  return rows;
+}
+
+async function getAllImItems() {
+  const [rows] = await pool.query(`SELECT id, project_id, label, task_status_id FROM im_items`);
+  return rows;
+}
+
 async function getImItemsByProject(projectId) {
   const [rows] = await pool.query(
     `SELECT id, label AS name FROM im_items WHERE project_id = ?`,
     [projectId]
   );
   return rows;
+}
+
+function getItemStatusLocal(itemId, projectTypeId) {
+  return new Promise((resolve, reject) => {
+    const table = projectTypeId === 1 ? 'cfs_items' : 'im_items';
+
+    db.get(`
+      SELECT i.id, i.label, i.task_status_id, s.name AS status_name, s.label AS status_label
+      FROM ${table} i
+      LEFT JOIN ref_item_status s ON s.id = i.task_status_id
+      WHERE i.id = ?
+    `, [itemId], (err, row) => {
+      if (err) {
+        console.error('[local-db] Failed to fetch item status:', err.message);
+        return reject(err);
+      }
+      resolve(row || null);
+    });
+  });
+}
+
+function updateItemStatusLocal(itemId, projectTypeId, newStatusId) {
+  return new Promise((resolve, reject) => {
+    const table = projectTypeId === 1 ? 'cfs_items' : 'im_items';
+
+    db.run(`
+      UPDATE ${table}
+      SET task_status_id = ?
+      WHERE id = ?
+    `, [newStatusId, itemId], (err) => {
+      if (err) {
+        console.error('[local-db] Failed to update item status:', err.message);
+        return reject(err);
+      }
+
+      console.log(`[local-db] Updated item ${itemId} in ${table} to status ${newStatusId}`);
+
+      const { isOnline } = require('../utils/network-status');
+      isOnline().then((online) => {
+        if (!online) {
+          const payload = {
+            type: 'update-item-status',
+            table,
+            item_id: itemId,
+            new_status_id: newStatusId
+          };
+
+          db.run(
+            `INSERT INTO sync_queue (payload) VALUES (?)`,
+            [JSON.stringify(payload)],
+            (err2) => {
+              if (err2) {
+                console.error('[local-db] Failed to queue item status update:', err2.message);
+              } else {
+                console.log('[local-db] Offline mode: queued item status update');
+              }
+            }
+          );
+        } else {
+          console.log('[local-db] Online mode: skipping sync_queue for item update');
+        }
+      });
+
+      resolve({ success: true });
+    });
+  });
 }
 
 async function startUnallocatedActivityGlobal({ uuid, user_id, activity_id, timestamp }) {
@@ -167,6 +248,11 @@ module.exports = {
   getAllProjectTaskRoles,
   getCfsItemsByProject,
   getImItemsByProject,
+  getAllRefItemStatus,
+  getAllCfsItems,
+  getAllImItems,
+  getItemStatusLocal,
+  updateItemStatusLocal,
   startUnallocatedActivityGlobal,
   completeActiveActivityGlobal
 };

@@ -5,6 +5,10 @@ body {
 .wrapper{
     margin: 10px;
 }
+.header{
+    display: flex;
+    justify-content: space-between;
+}
 
 #login-screen {
   display: flex;
@@ -25,6 +29,31 @@ button {
 button:hover {
   background: #005a9e;
 }
+
+button.icon-btn{
+
+  padding: 0;
+  background: none;
+}
+
+.icon-btn svg{
+  fill: #0078d4;
+  width: 36px;
+  height: 36px;
+}
+.icon-btn:hover svg{
+  fill: #384249;
+}
+
+#connection-status{
+    padding: 4px;
+    border: none;
+}
+#welcome-text{
+  font-size: 24px;
+  font-weight: bold;
+}
+
 
 .btns-box{
     display: grid;
