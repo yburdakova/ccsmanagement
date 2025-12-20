@@ -11,7 +11,13 @@ window.network = {
       } else {
         console.warn('[network] Sync error:', result.error);
       }
+
+      const refreshed = await window.electronAPI.initLocalDb();
+      if (refreshed.success) {
+        console.log('[network] Local DB refreshed after reconnect');
+      }
     }
+
   },
 
   updateConnectionIndicator() {

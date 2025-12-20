@@ -183,6 +183,26 @@ async function initializeLocalDb() {
   }
 }
 
+function loginByAuthCodeLocal(code) {
+  const { db } = module.exports;
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT id, first_name, last_name, login 
+       FROM local_users 
+       WHERE authcode = ? AND is_active = 1 
+       LIMIT 1`,
+      [code],
+      (err, row) => {
+        if (err) {
+          console.error('[local-db] Login query failed:', err.message);
+          return reject(err);
+        }
+        resolve(row || null);
+      }
+    );
+  });
+}
+
 function saveUsersToLocal(users) {
   if (!users || users.length === 0) {
     console.warn('[local-db] Skipping users update: empty dataset');
@@ -698,6 +718,7 @@ function completeActiveActivityLocal({ uuid, is_completed_project_task, timestam
 
 module.exports = {
   db,
+  loginByAuthCodeLocal,
   saveUsersToLocal,
   saveProjectsToLocal,
   saveProjectUsersToLocal,

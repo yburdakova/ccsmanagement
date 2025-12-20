@@ -2,6 +2,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  initLocalDb: () => ipcRenderer.invoke('init-local-db'),
+
   getUsers: () => ipcRenderer.invoke('get-users'),
   loginWithCode: (code) => ipcRenderer.invoke('login-with-code', code),
   getAllProjects: () => ipcRenderer.invoke('get-all-projects'),

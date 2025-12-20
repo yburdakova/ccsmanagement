@@ -18,6 +18,7 @@ body {
 }
 
 button {
+  font-family: 'Poppins', sans-serif;
   padding: 8px 14px;
   border-radius: 6px;
   border: none;
@@ -26,18 +27,83 @@ button {
   cursor: pointer;
 }
 
+.divider {
+  border: none;
+  height: 2px;
+  background: #afaeae;
+  margin: 16px 0;      
+}
+
+#project-role{
+  margin-top: 10px;
+  font-size: 14px;
+  color: #626c72;
+}
+.clockin-section{
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  align-items: center;
+  margin: 20px 0px;
+}
+
+button#clockin-button{
+  font-size: 20px;
+  font-weight: 600;
+  padding: 10px 20px;
+}
+
+.timer{
+  font-size: 36px;
+  font-weight: 900;
+  justify-self: center;
+  color: #626c72;
+}
+.selection-with-saving-box{
+  display: flex;
+  align-items: center;
+}
+select{
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid #005a9e;
+  font-family: 'Poppins', sans-serif;
+}
+select.project-select{
+    font-size: 16px;
+}
+.item-card{
+  border-radius: 10px;
+  background-color: #f0e4c5;
+  padding: 10px;
+  position: relative;
+}
+
+.item-title{
+  display: flex;
+  justify-content: space-between;
+}
+h3.item-type{
+  margin: 0;
+  margin-bottom: 10px;
+}
+.label{
+  font-weight: bold;
+  color: #384249;
+}
+.item-line{
+  margin-bottom: 10px;
+}
+
 button:hover {
   background: #005a9e;
 }
 
 button.icon-btn{
-
   padding: 0;
   background: none;
 }
 
 .icon-btn svg{
-  fill: #0078d4;
   width: 36px;
   height: 36px;
 }
@@ -58,5 +124,5 @@ button.icon-btn{
 .btns-box{
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
+    gap: 8px 20px;
 }

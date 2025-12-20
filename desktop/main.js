@@ -14,7 +14,7 @@ function createWindow(screenWidth) {
     x: screenWidth - 400,
     y: 10,
     alwaysOnTop: true,
-    resizable: false,
+    // resizable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -25,7 +25,7 @@ function createWindow(screenWidth) {
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   Menu.setApplicationMenu(null);
-  // win.webContents.openDevTools();
+  win.webContents.openDevTools();
 
   win.on('close', (event) => {
     event.preventDefault();
@@ -57,6 +57,17 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
+});
+
+ipcMain.handle('init-local-db', async () => {
+  const { initializeLocalDb } = require('./api/db-local');
+  try {
+    await initializeLocalDb();
+    return { success: true };
+  } catch (err) {
+    console.error('[main] init-local-db error:', err.message);
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('get-users', async () => {
@@ -179,14 +190,25 @@ ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
 
 ipcMain.handle('login-with-code', async (event, code) => {
   const { loginByAuthCode } = require('./api/db');
+  const { loginByAuthCodeLocal } = require('./api/db-local');
+  const { isOnline } = require('./utils/network-status');
+
+  const online = await isOnline();
+
   try {
-    const user = await loginByAuthCode(code);
-    return user || null;
+    if (online) {
+      const user = await loginByAuthCode(code);
+      return user || null;
+    } else {
+      const user = await loginByAuthCodeLocal(code);
+      return user || null;
+    }
   } catch (error) {
     console.error('Login failed:', error);
     return null;
   }
 });
+
 
 ipcMain.handle('start-unallocated', async (event, {userId}) => {
   const { startUnallocatedActivityLocal: startLocal } = require('./api/db-local');

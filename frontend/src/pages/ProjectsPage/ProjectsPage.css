@@ -1,0 +1,43 @@
+.project-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.project-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.project-table thead {
+  background: #e6eef5;
+  text-align: left;
+}
+
+.project-table th,
+.project-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.project-table tr:last-child td {
+  border-bottom: none;
+}
+
+.project-table tbody tr:hover {
+  background: #f6f9fc;
+}
+
+.btn-icon-small {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.btn-icon-small .material-symbols-outlined {
+  font-size: 20px;
+  color: #005b96;
+}

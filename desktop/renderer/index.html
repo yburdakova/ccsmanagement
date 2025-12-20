@@ -1,10 +1,11 @@
 <head>
   <link rel="stylesheet" href="styles.css">
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;900&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="wrapper">
     <div id="login-screen">
+      
         <h1>Login</h1>
         <input type="text" id="authcode-input" placeholder="Enter Auth Code" />
         <button id="start-button">Start</button>
@@ -16,49 +17,72 @@
         <div id="connection-status"></div>
         <div id="welcome-text">Welcome</div>
         <button class="icon-btn" id="logout-button">
-          <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f"><path d="M200-120q-33 0-56.5-23.5T120-200v-160h80v160h560v-560H200v160h-80v-160q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm220-160-56-58 102-102H120v-80h346L364-622l56-58 200 200-200 200Z"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#0078d4"><path d="M200-120q-33 0-56.5-23.5T120-200v-160h80v160h560v-560H200v160h-80v-160q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm220-160-56-58 102-102H120v-80h346L364-622l56-58 200 200-200 200Z"/></svg>
         </button>
       </div>
 
       <div class="clockin-section">
-        <h4 class="clockin-title">Clock-In Section</h4>
         <button id="clockin-button">CLOCK-IN</button>
+        <div class="timer">00:00</div>
       </div>
+      
+      <hr class="divider">
 
       <div class="activity-section">
-        <h4 class="clockin-title">Activities Section</h4>
         <div class="btns-box">
-          <button id="" disabled>ADMINISTRATION</button>
-          <button id="" disabled>PRODUCTION</button>
-          <button id="" disabled>LUNCH</button>
-          <button id="" disabled>BREAK</button>
+          <button id="prod-btn" disabled>PRODUCTION</button>
+          <button id="lunch-btn" disabled>LUNCH</button>
+          <button id="adm-btn" disabled>ADMINISTRATION</button>
+          <button id="break-btn" disabled>BREAK</button>
         </div>
-  
       </div>
 
+      <hr class="divider">
+
       <div class="production-section">
-        
-        <h4 class="clockin-title">Production Section</h4>
-        
+
         <div class="project-selector-section">
-          <label for="project-select">Select Project:</label>
           <div class="selection-with-saving-box">
-            <select id="project-select">
+            <select id="project-select" class="project-select">
               <option value="">— Select Project —</option>
             </select>
-            <button id="save-project-button" style="margin-left: 10px;">Save Project</button>
+            <button class="icon-btn" id="check-project-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#0078d4"><path d="M200-120v-640q0-33 23.5-56.5T280-840h240v80H280v518l200-86 200 86v-278h80v400L480-240 200-120Zm80-640h240-240Zm400 160v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80Z"/></svg>
+            </button>
+            <button class="icon-btn" id="uncheck-project-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="green"><path d="m438-400 198-198-57-56-141 141-57-57-57 57 114 113ZM200-120v-640q0-33 23.5-56.5T280-840h400q33 0 56.5 23.5T760-760v640L480-240 200-120Zm80-122 200-86 200 86v-518H280v518Zm0-518h400-400Z"/></svg>
+            </button>
           </div>
         </div>
       
 
-        <p id="project-role" style="font-style: italic; margin-top: 5px;"></p>
+        <p id="project-role"></p>
 
         <div id="task-selector-section" style="margin-top: 10px; display: none;">
           <div class="task-box">
-            <label for="task-select">Select Task:</label>
+            <label for="task-select">Task:</label>
             <select id="task-select">
               <option value="">— Select Task —</option>
             </select>
+          </div>
+
+          <div class="scanner-box">
+            <label for="scanner-select">Scan Method:</label>
+            <div class="selection-with-saving-box">
+              <select id="scanner-select">
+                <option value="">— Select Scanner —</option>
+                <option value="Contex">Contex</option>
+                <option value="Contex">High Speed</option>
+                <option value="Contex">Book scanner (Indus)</option>
+                <option value="Contex">Flatbed</option>
+                <option value="Contex">Photography</option>
+                <option value="Contex">Fujitsu High Speed</option>
+              </select>
+              <button class="icon-btn" id="save-project-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#0078d4"><path d="M200-120v-640q0-33 23.5-56.5T280-840h240v80H280v518l200-86 200 86v-278h80v400L480-240 200-120Zm80-640h240-240Zm400 160v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80Z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="green"><path d="m438-400 198-198-57-56-141 141-57-57-57 57 114 113ZM200-120v-640q0-33 23.5-56.5T280-840h400q33 0 56.5 23.5T760-760v640L480-240 200-120Zm80-122 200-86 200 86v-518H280v518Zm0-518h400-400Z"/></svg>
+              </button>
+            </div>
           </div>
           
           <div class="item-box">
@@ -68,34 +92,15 @@
           
 
           <div class="item-card">
-            <p id="">Book DEEDT-4-1</p>
-            <p id="">Record Category: Deed of Trust</p>
-            <p id="">Label: Book234</p>
-            <p id="">Binding: Bound</p>
-            <p id="">Source Type: Paper</p>
-            <p id="">Psysical Attributes: Photostat</p>
-            <p id="">Page size: 8.5 x 11</p>
-            <p id="">Text Type: Handwritten</p>
-            <p id="">Attachments %: 10%</p>
-            <p id="">Notes: Front of Book Index Need Scanned</p>
-            <button id="start-scan-button">Edit</button>
+            <div class="item-title">
+              <h3 class="item-type">Book</h3>
+            </div>
+            <div id="" class="item-line"><span class="label">Label: </span>Book234</div>
+            <div id="" class="item-line"><span class="label">UID: </span>DEEDT-4-1</div>
+            <div id="" class="item-line"><span class="label">Status: </span>Picked-Up</div>
           </div>
-        <div class="scanner-box">
-          <label for="scanner-select">Scan Method:</label>
-          <div class="selection-with-saving-box">
-            <select id="scanner-select">
-              <option value="">— Select Scanner —</option>
-              <option value="Contex">Contex</option>
-              <option value="Contex">High Speed</option>
-              <option value="Contex">Book scanner (Indus)</option>
-              <option value="Contex">Flatbed</option>
-              <option value="Contex">Photography</option>
-              <option value="Contex">Fujitsu High Speed</option>
-            </select>
-            <button id="save-project-button" style="margin-left: 10px;">Save Scan Method</button>
-          </div>
-          
-        </div>
+        
+
       </div>
 
       
