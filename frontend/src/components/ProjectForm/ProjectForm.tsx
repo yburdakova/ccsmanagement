@@ -18,6 +18,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
     const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
     const [taskRows, setTaskRows] = useState<TaskRow[]>([]);
     const [openRolesTaskId, setOpenRolesTaskId] = useState<string | null>(null);
+    const [taskRoleDrafts, setTaskRoleDrafts] = useState<Record<string, string[]>>({});
 
     const handleGeneralChange = (
         e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -94,21 +95,21 @@ const handleTaskRoleToggle = (
     roleId: string,
     checked: boolean
 ) => {
-    setTaskRows(prev =>
-        prev.map(row => {
-            if (row.id !== rowId) return row;
-
-            const updated = new Set(row.rolesId);
-            if (checked) updated.add(roleId);
-            else updated.delete(roleId);
-
-            return { ...row, roleIds: Array.from(updated) };
-        })
-    );
+    setTaskRoleDrafts((prev) => {
+        const current = prev[rowId] ?? [];
+        const updated = new Set(current);
+        if (checked) updated.add(roleId);
+        else updated.delete(roleId);
+        return { ...prev, [rowId]: Array.from(updated) };
+    });
 };
 
 const handleRemoveTaskRow = (rowId: string) => {
     setTaskRows(prev => prev.filter(r => r.id !== rowId));
+    setTaskRoleDrafts((prev) => {
+        const { [rowId]: _removed, ...rest } = prev;
+        return rest;
+    });
 
     // Если был открыт dropdown — закрыть
     if (openRolesTaskId === rowId) {
@@ -116,6 +117,30 @@ const handleRemoveTaskRow = (rowId: string) => {
     }
 };
 
+
+const handleOpenRoles = (rowId: string) => {
+    setOpenRolesTaskId((prev) => {
+        const next = prev === rowId ? null : rowId;
+        if (next) {
+            setTaskRoleDrafts((drafts) => ({
+                ...drafts,
+                [rowId]: drafts[rowId] ?? taskRows.find(r => r.id === rowId)?.rolesId ?? [],
+            }));
+        }
+        return next;
+    });
+};
+
+const handleApplyTaskRoles = (rowId: string) => {
+    setTaskRows((prev) =>
+        prev.map((row) =>
+            row.id === rowId
+                ? { ...row, rolesId: taskRoleDrafts[rowId] ?? [] }
+                : row
+        )
+    );
+    setOpenRolesTaskId(null);
+};
 
     return (
         <div className="project-form">
@@ -370,10 +395,7 @@ const handleRemoveTaskRow = (rowId: string) => {
                         <button
                             type="button"
                             className="roles-select-trigger"
-                            onClick={() =>
-                            setOpenRolesTaskId(
-                                openRolesTaskId === row.id ? null : row.id
-                            )}
+                            onClick={() => handleOpenRoles(row.id)}
                         >
                             <span className="roles-select-label">{selectedLabels}</span>
                             <span className="material-symbols-outlined">
@@ -385,7 +407,7 @@ const handleRemoveTaskRow = (rowId: string) => {
                             <div className="roles-select-dropdown">
                             {roleOptions.map((r) => {
                                 const id = String(r.id);
-                                const checked = row.rolesId.includes(id);
+                                const checked = (taskRoleDrafts[row.id] ?? row.rolesId).includes(id);
 
                                 return (
                                 <label
@@ -407,6 +429,15 @@ const handleRemoveTaskRow = (rowId: string) => {
                                 </label>
                                 );
                             })}
+                            <div className="roles-select-actions">
+                                <button
+                                    type="button"
+                                    className="roles-select-done"
+                                    onClick={() => handleApplyTaskRoles(row.id)}
+                                >
+                                    Done
+                                </button>
+                            </div>
                             </div>
                         )}
                         </div>

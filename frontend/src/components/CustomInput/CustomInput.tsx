@@ -1,15 +1,8 @@
 import { useState } from 'react';
 import './CustomInput.css';
+import type { CustomInputProps } from '../../types/components.types';
 
-type Props = {
-  label: string;
-  required?: boolean;
-  type?: string;
-  value: string;
-  onChange: (value: string) => void;
-};
-
-const CustomInput = ({ label, required = false, type = 'text', value, onChange }: Props) => {
+const CustomInput = ({ label, required = false, type = 'text', value, onChange }: CustomInputProps) => {
   const [isFocused, setIsFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 

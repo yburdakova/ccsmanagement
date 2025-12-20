@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './LoginPage.css';
 import CustomInput from '../../components/CustomInput/CustomInput';
 import Logo from '../../assets/CCSLogo.png';
+import { apiRequest } from '../../services/apiClient';
+import type { LoginResponse } from '../../types/login.types';
 
 const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isFetching, setIsFetching] = useState(false);
+  const navigate = useNavigate();
 
-  const isFetching = false;
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!username || !password) {
@@ -18,8 +21,23 @@ const LoginPage = () => {
       return;
     }
 
-    setError('');
-    // TODO: call login API
+    try {
+      setIsFetching(true);
+      setError('');
+
+      const user = await apiRequest<LoginResponse>('/login', {
+        method: 'POST',
+        body: { username, password },
+      });
+
+      localStorage.setItem('user', JSON.stringify(user));
+      navigate('/dashboard');
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Login failed';
+      setError(message);
+    } finally {
+      setIsFetching(false);
+    }
   };
 
   return (
