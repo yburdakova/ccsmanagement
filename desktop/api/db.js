@@ -245,6 +245,34 @@ async function startUnallocatedActivityGlobal({ uuid, user_id, activity_id, time
   }
 }
 
+async function startTaskActivityGlobal({ uuid, user_id, project_id, task_id, timestamp }) {
+  const startTime = timestamp ? new Date(timestamp) : new Date();
+  const dateStr = startTime.toISOString().split('T')[0];
+  const timeStr = formatMySQLDatetime(startTime);
+
+  try {
+    await pool.query(
+      `
+      INSERT INTO users_time_tracking (
+        uuid, user_id, date, project_id, activity_id, task_id, item_id,
+        start_time, end_time, duration, is_completed_project_task, note
+      )
+      VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, NULL, NULL)
+      `,
+      [uuid, user_id, dateStr, project_id, 2, task_id, timeStr]
+    );
+    console.log(`[server-db] Task start recorded (uuid=${uuid}, project=${project_id}, task=${task_id})`);
+    return { success: true };
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      console.warn(`[server-db] Duplicate uuid ignored (uuid=${uuid})`);
+      return { success: true, duplicate: true };
+    }
+    console.error('[server-db] Task start failed:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
 async function completeActiveActivityGlobal({ uuid, is_completed_project_task, timestamp }) {
   const endTime = timestamp ? new Date(timestamp) : new Date();
   const conn = await pool.getConnection();
@@ -314,5 +342,6 @@ module.exports = {
   getItemStatusLocal,
   updateItemStatusLocal,
   startUnallocatedActivityGlobal,
+  startTaskActivityGlobal,
   completeActiveActivityGlobal
 };

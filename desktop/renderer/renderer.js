@@ -8,6 +8,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const roleText = document.getElementById('project-role');
   const taskSection = document.getElementById('task-selector-section');
   const taskSelect = document.getElementById('task-select');
+  const startTaskButton = document.getElementById('start-task-button');
+  const finishTaskButton = document.getElementById('finish-task-button');
+  const taskOverlay = document.getElementById('task-overlay');
+  const taskOverlayName = document.getElementById('task-overlay-name');
+  const taskOverlayTimer = document.getElementById('task-overlay-timer');
   const projectSection = document.querySelector('.project-selector-section');
   const itemInput = document.getElementById('item-input');
   const timerEl = document.querySelector('.timer');
@@ -25,9 +30,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let currentUser = null;
   let currentSessionUuid = null;
+  let currentTaskUuid = null;
   let userProjects = [];
+  let userSelectedTask = false;
   let timerIntervalId = null;
   let timerStartMs = null;
+  let taskTimerIntervalId = null;
+  let taskTimerStartMs = null;
 
   // hiding sections initially
   projectSection.style.display = 'none';
@@ -47,7 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentUser = user;
       errorEl.style.display = 'none';
       document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('main-screen').style.display = 'block';
+      document.getElementById('main-screen').style.display = 'flex';
       document.getElementById('welcome-text').textContent =
         `${user.first_name} ${user.last_name}`;
     } else {
@@ -65,7 +74,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     currentUser = null;
     currentSessionUuid = null;
+    currentTaskUuid = null;
     stopTimer(true);
+    stopTaskTimer(true);
+    if (taskOverlay) taskOverlay.style.display = 'none';
 
     // reset UI
     clockinButton.textContent = 'CLOCK-IN';
@@ -75,6 +87,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     roleText.textContent = '';
     taskSelect.innerHTML = '<option value="">— Select Task —</option>';
     taskSelect.disabled = true;
+    updateStartButton();
     const dataList = document.getElementById('items-list');
     if (dataList) dataList.innerHTML = '';
     if (itemInput) itemInput.value = '';
@@ -149,7 +162,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       clockinButton.textContent = 'CLOCK-IN';
       alert(`Clock-out successful! (uuid=${currentSessionUuid})`);
       currentSessionUuid = null;
+      currentTaskUuid = null;
       stopTimer(true);
+      stopTaskTimer(true);
+      if (taskOverlay) taskOverlay.style.display = 'none';
 
       // reset UI after clock-out
       projectSection.style.display = 'none';
@@ -158,6 +174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       roleText.textContent = '';
       taskSelect.innerHTML = '<option value="">— Select Task —</option>';
       taskSelect.disabled = true;
+    updateStartButton();
       const dataList = document.getElementById('items-list');
       if (dataList) dataList.innerHTML = '';
       if (itemInput) itemInput.value = '';
@@ -178,6 +195,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateBookmarkButtons(false);
   });
 
+  startTaskButton?.addEventListener('click', async () => {
+    if (!taskOverlay || !taskOverlayName || !taskOverlayTimer) return;
+    if (!currentUser) return;
+    const selectedTask = taskSelect.options[taskSelect.selectedIndex]?.textContent?.trim() || '';
+    if (!selectedTask || taskSelect.value === '' || !projectSelect.value) return;
+
+    if (currentSessionUuid) {
+      const unallocatedResult = await window.electronAPI.completeActiveActivity({
+        uuid: currentSessionUuid,
+        userId: currentUser.id,
+        isTaskCompleted: false
+      });
+
+      if (!unallocatedResult.success) {
+        alert('Failed to stop unallocated time: ' + unallocatedResult.error);
+        return;
+      }
+      currentSessionUuid = null;
+    }
+
+    const result = await window.electronAPI.startTaskActivity(
+      currentUser.id,
+      Number(projectSelect.value),
+      Number(taskSelect.value)
+    );
+
+    if (!result.success) {
+      alert('Task start failed: ' + result.error);
+      return;
+    }
+
+    currentTaskUuid = result.uuid;
+    taskOverlayName.textContent = selectedTask;
+    taskOverlay.style.display = 'flex';
+    if (startTaskButton) startTaskButton.disabled = true;
+    startTaskTimer();
+  });
+
+  finishTaskButton?.addEventListener('click', async () => {
+    if (!currentUser || !currentTaskUuid) {
+      if (taskOverlay) taskOverlay.style.display = 'none';
+      stopTaskTimer(true);
+      updateStartButton();
+      return;
+    }
+
+    const result = await window.electronAPI.completeActiveActivity({
+      uuid: currentTaskUuid,
+      userId: currentUser.id,
+      isTaskCompleted: true
+    });
+
+    if (!result.success) {
+      alert('Task finish failed: ' + result.error);
+      return;
+    }
+
+    currentTaskUuid = null;
+    if (taskOverlay) taskOverlay.style.display = 'none';
+    stopTaskTimer(true);
+    updateStartButton();
+
+    const unallocatedResult = await window.electronAPI.startUnallocated(currentUser.id);
+    if (!unallocatedResult.success) {
+      alert('Failed to start unallocated time: ' + unallocatedResult.error);
+      return;
+    }
+    currentSessionUuid = unallocatedResult.uuid;
+  });
+
+  taskSelect?.addEventListener('change', () => {
+    userSelectedTask = taskSelect.selectedIndex > 0;
+    updateStartButton();
+  });
+
   // ==================
   // Project change
   // ==================
@@ -189,6 +281,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       taskSection.style.display = 'none';
       taskSelect.innerHTML = '<option value="">Select Task</option>';
       taskSelect.disabled = true;
+    updateStartButton();
       const dataList = document.getElementById('items-list');
       if (dataList) dataList.innerHTML = '';
       if (itemInput) itemInput.value = '';
@@ -199,6 +292,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     taskSection.style.display = 'block';
     await populateTasks(currentUser, selected);
+    userSelectedTask = false;
+    updateStartButton();
 
     if (selected.project_type_id === 1 || selected.project_type_id === 2) {
       await populateItems(selected);
@@ -271,6 +366,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     forgetButton.style.display = hasSaved ? 'inline-flex' : 'none';
   }
 
+  function updateStartButton() {
+    if (!startTaskButton) return;
+    const hasProject = !!projectSelect.value;
+    const hasTask =
+      userSelectedTask &&
+      !taskSelect.disabled &&
+      taskSelect.selectedIndex > 0 &&
+      !!taskSelect.value;
+    startTaskButton.disabled = !(hasProject && hasTask);
+  }
+
+  function startTaskTimer() {
+    stopTaskTimer();
+    taskTimerStartMs = Date.now();
+    updateTaskTimerDisplay();
+    taskTimerIntervalId = setInterval(updateTaskTimerDisplay, 1000);
+  }
+
+  function stopTaskTimer(reset) {
+    if (taskTimerIntervalId) {
+      clearInterval(taskTimerIntervalId);
+      taskTimerIntervalId = null;
+    }
+    taskTimerStartMs = null;
+    if (reset && taskOverlayTimer) taskOverlayTimer.textContent = '00:00:00';
+  }
+
+  function updateTaskTimerDisplay() {
+    if (!taskTimerStartMs || !taskOverlayTimer) return;
+    const elapsedMs = Date.now() - taskTimerStartMs;
+    const totalSeconds = Math.floor(elapsedMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    taskOverlayTimer.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
   function buildProjectList(allProjects, allProjectUsers, projectRoles, currentUserId) {
     return allProjectUsers
       .filter(pu => pu.user_id === currentUserId)
@@ -318,7 +450,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function populateItems(project) {
     if (!itemInput) return;
     const items = await window.electronAPI.getProjectItems(project.project_id, project.project_type_id);
-    console.log('[renderer] Available items:', items); // 👈 посмотри в консоль DevTools
+    console.log('[renderer] Available items:', items);
 
     let dataList = document.getElementById('items-list');
     if (!dataList) {
@@ -331,7 +463,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     dataList.innerHTML = '';
     items.forEach(item => {
       const option = document.createElement('option');
-      option.value = item.name;   // 👈 здесь теперь будет label
+      option.value = item.name; 
       dataList.appendChild(option);
     });
   }

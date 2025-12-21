@@ -1,9 +1,20 @@
+html, body {
+  height: 100%;
+}
+
 body {
   font-family: 'Poppins', sans-serif;
   background-color: #f4f4f4;
 }
 .wrapper{
     margin: 10px;
+    height: calc(100% - 20px);
+}
+
+#main-screen{
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 .header{
     display: flex;
@@ -98,6 +109,14 @@ button:hover {
   background: #005a9e;
 }
 
+button:disabled,
+select:disabled {
+  background: #c9d1d6;
+  color: #626c72;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
 button.icon-btn{
   padding: 0;
   background: none;
@@ -129,4 +148,56 @@ button.icon-btn{
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 8px 20px;
+}
+
+.production-section {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#start-task-button,
+#finish-task-button {
+  margin-top: 10px;
+  font-weight: 600;
+}
+
+.task-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+.task-overlay__content {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 16px 20px;
+  text-align: center;
+  width: 85%;
+  max-width: 320px;
+}
+
+.task-overlay__label {
+  font-size: 14px;
+  color: #626c72;
+  margin-bottom: 6px;
+}
+
+.task-overlay__name {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.task-overlay__timer {
+  font-size: 28px;
+  font-weight: 900;
+  color: #626c72;
+  margin-bottom: 12px;
 }

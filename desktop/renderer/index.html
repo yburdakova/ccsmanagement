@@ -30,10 +30,10 @@
 
       <div class="activity-section">
         <div class="btns-box">
-          <button id="prod-btn" disabled>BREAK</button>
-          <button id="lunch-btn" disabled>LUNCH</button>
-          <button id="adm-btn" disabled>ADMINISTRATION</button>
-          <button id="break-btn" disabled>TECHNICAL DELAY</button>
+          <button id="prod-btn">BREAK</button>
+          <button id="lunch-btn">LUNCH</button>
+          <button id="adm-btn">ADMINISTRATION</button>
+          <button id="break-btn">TECHNICAL DELAY</button>
         </div>
       </div>
 
@@ -62,9 +62,20 @@
           <div class="task-box">
             <label for="task-select">Task:</label>
             <select id="task-select">
-              <option value="">— Select Task —</option>
+              <option value="">? Select Task ?</option>
             </select>
           </div>
+          <button id="start-task-button" disabled>START</button>
+        </div>
+
+        <div id="task-overlay" class="task-overlay" style="display: none;">
+          <div class="task-overlay__content">
+            <div class="task-overlay__label">In progress</div>
+            <div id="task-overlay-name" class="task-overlay__name"></div>
+            <div id="task-overlay-timer" class="task-overlay__timer">00:00:00</div>
+            <button id="finish-task-button">FINISH</button>
+          </div>
+        </div>
       </div>
 
       

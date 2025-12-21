@@ -522,6 +522,7 @@ function getAvailableTasksForUser(userId, projectId) {
 async function syncQueue() {
   const {
     startUnallocatedActivityGlobal,
+    startTaskActivityGlobal,
     completeActiveActivityGlobal
   } = require('./db');
 
@@ -542,6 +543,8 @@ async function syncQueue() {
 
           if (type === 'start') {
             result = await startUnallocatedActivityGlobal(payload);
+          } else if (type === 'start-task') {
+            result = await startTaskActivityGlobal(payload);
           } else if (type === 'complete') {
             result = await completeActiveActivityGlobal(payload);
           } else {
@@ -582,6 +585,59 @@ async function syncQueue() {
       }
 
       resolve({ success: true, synced: syncedCount });
+    });
+  });
+}
+
+function startTaskActivityLocal(userId, projectId, taskId) {
+  const startTime = new Date();
+  const dateStr = startTime.toISOString().split('T')[0];
+  const timeStr = formatMySQLDatetime(startTime);
+  const uuid = crypto.randomUUID();
+
+  return new Promise((resolve, reject) => {
+    db.run(`
+      INSERT INTO users_time_tracking (  
+        uuid, user_id, date, project_id, activity_id, task_id, item_id,
+        start_time, end_time, duration, is_completed_project_task, note
+      ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, NULL, NULL)
+    `, [uuid, userId, dateStr, projectId, 2, taskId, timeStr], (err) => {
+      if (err) {
+        console.error('[local-db] Task start failed:', err.message);
+        return reject(err);
+      }
+
+      console.log(`[local-db] Task start recorded (uuid=${uuid}, project=${projectId}, task=${taskId})`);
+
+      const { isOnline } = require('../utils/network-status');
+      isOnline().then((online) => {
+        if (!online) {
+          const payload = {
+            type: 'start-task',
+            uuid,
+            user_id: userId,
+            project_id: projectId,
+            task_id: taskId,
+            timestamp: startTime.toISOString()
+          };
+
+          db.run(
+            `INSERT INTO sync_queue (payload) VALUES (?)`,
+            [JSON.stringify(payload)],
+            (err2) => {
+              if (err2) {
+                console.error('[local-db] Failed to queue task start:', err2.message);
+              } else {
+                console.log('[local-db] Offline mode: queued task start');
+              }
+            }
+          );
+        } else {
+          console.log('[local-db] Online mode: skipping sync_queue for task start');
+        }
+      });
+
+      resolve({ uuid });
     });
   });
 }
@@ -726,6 +782,7 @@ module.exports = {
   saveTasksToLocal,
   saveProjectTasksToLocal,
   saveProjectTaskRolesToLocal,
+  startTaskActivityLocal,
   startUnallocatedActivityLocal,
   saveRefItemStatusToLocal,
   saveCfsItemsToLocal,

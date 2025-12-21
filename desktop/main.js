@@ -241,6 +241,32 @@ ipcMain.handle('start-unallocated', async (event, {userId}) => {
   }
 });
 
+ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId }) => {
+  const { startTaskActivityLocal: startLocal } = require('./api/db-local');
+  const { startTaskActivityGlobal: startServer } = require('./api/db');
+  const isConnected = await isOnline();
+
+  try {
+    const { uuid } = await startLocal(userId, projectId, taskId);
+
+    if (isConnected) {
+      const res = await startServer({
+        uuid,
+        user_id: userId,
+        project_id: projectId,
+        task_id: taskId,
+        timestamp: new Date().toISOString()
+      });
+      if (!res.success) throw new Error(res.error);
+    }
+
+    return { success: true, uuid };
+  } catch (error) {
+    console.error('[main] start-task-activity error:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('sync-queue', async () => {
   const { syncQueue } = require('./api/db-local');
   try {
