@@ -31,7 +31,7 @@ const LoginPage = () => {
       });
 
       localStorage.setItem('user', JSON.stringify(user));
-      navigate('/dashboard');
+      navigate(user.role === 2 ? '/production-sheet' : '/dashboard');
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Login failed';
       setError(message);

@@ -308,7 +308,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Helpers
   // ==================
   async function handleClockIn(userId) {
-    const result = await window.electronAPI.startUnallocated({ userId });
+    const result = await window.electronAPI.startUnallocated(userId);
     if (!result.success) {
       alert('Clock-in failed: ' + result.error);
       return null;

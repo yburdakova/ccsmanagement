@@ -14,7 +14,7 @@ router.post('/', async (req, res) => {
     }
 
     try {
-        const query = `SELECT * FROM users WHERE login = ? AND password = ?`;
+        const query = `SELECT * FROM users WHERE login = ? AND password = ? LIMIT 1`;
         const [rows] = await pool.query(query, [username, password]);
 
         if (rows.length === 0) {
@@ -22,12 +22,21 @@ router.post('/', async (req, res) => {
         }
 
         const user = rows[0];
+        const id = user.id ?? user.ID ?? user.Id;
+        const firstName = user.first_name ?? user.FirstName ?? user.firstname ?? user.firstName;
+        const lastName = user.last_name ?? user.LastName ?? user.lastname ?? user.lastName;
+        const role =
+            user.system_role ??
+            user.SystemRoleID ??
+            user.user_role_id ??
+            user.UserRoleID ??
+            user.role;
 
         res.json({
-            id: user.ID,
-            first_name: user.FirstName,
-            last_name: user.LastName,
-            role: user.UserRoleID,
+            id,
+            first_name: firstName,
+            last_name: lastName,
+            role,
         });
     } catch (error) {
         console.error('Login database error:', error);

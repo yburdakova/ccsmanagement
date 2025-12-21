@@ -62,6 +62,12 @@
     transition: transform 0.2s ease;
 }
 
+.navItem svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
 .navItem:hover span{
     transform: scale(1.15);
 }

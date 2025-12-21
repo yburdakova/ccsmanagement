@@ -13,11 +13,12 @@ export async function apiRequest<T>(endpoint: string, options: ApiOptions = {}):
     body: body ? JSON.stringify(body) : undefined,
   });
 
+  const raw = await response.text();
   let data: any = null;
   try {
-    data = await response.json();
+    data = raw ? JSON.parse(raw) : null;
   } catch {
-    data = await response.text();
+    data = raw;
   }
 
   if (!response.ok) {

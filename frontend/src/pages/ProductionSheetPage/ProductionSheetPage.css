@@ -1,0 +1,50 @@
+.production-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.production-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.time-table {
+  display: grid;
+  gap: 8px;
+}
+
+.time-table__row {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 1fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #e3e6e8;
+  border-radius: 8px;
+}
+
+.time-table__row--header {
+  background: #f5f6f7;
+  font-weight: 700;
+}
+
+.time-table__empty {
+  padding: 12px;
+  color: #6b737a;
+}
+
+.note-btn {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #0078d4;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.note-btn:hover {
+  background: #005a9e;
+}
