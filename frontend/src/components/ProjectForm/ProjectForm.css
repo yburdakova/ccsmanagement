@@ -92,13 +92,20 @@
 }
 
 /* одна строка грида: # | Member | Role | delete */
-.project-team-row,
-.project-task-row {
+.project-team-row {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1fr) 40px;
   column-gap: 16px;
   align-items: center;
 }
+
+.project-task-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.4fr) 40px;
+  column-gap: 16px;
+  align-items: center;
+}
+
 
 .project-team-row--header,
 .project-task-row--header {
@@ -114,6 +121,52 @@
   border: 1px solid #dadada;
   padding: 4px 8px;
   font-size: 14px;
+}
+
+.project-task-input {
+  width: 100%;
+  height: 34px;
+  border-radius: 6px;
+  border: 1px solid #dadada;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+.project-task-autocomplete {
+  position: relative;
+  width: 100%;
+}
+
+.project-task-autocomplete .project-task-input {
+  box-sizing: border-box;
+}
+
+.project-task-suggestions {
+  position: absolute;
+  top: 38px;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #dadada;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  max-height: 200px;
+  overflow: auto;
+  z-index: 5;
+}
+
+.project-task-suggestion {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.project-task-suggestion:hover {
+  background: #f3f4f6;
 }
 
 .btn-icon-small {

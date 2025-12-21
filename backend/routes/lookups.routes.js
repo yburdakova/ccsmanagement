@@ -16,6 +16,7 @@ router.get('/project-form', async (req, res) => {
         [usersRows],
         [rolesRows],
         [tasksRows],
+        [taskCategoriesRows],
     ] = await Promise.all([
         pool.query(`
             SELECT id, code, label
@@ -61,10 +62,21 @@ router.get('/project-form', async (req, res) => {
         `),
 
         pool.query(`
-            SELECT id, description
-            FROM tasks
-            ORDER BY id;
+            SELECT t.id,
+                t.description,
+                t.category_id AS categoryId,
+                c.name AS categoryName
+            FROM tasks t
+            LEFT JOIN ref_task_category c
+                ON c.id = t.category_id
+            ORDER BY t.id;
       `),
+
+        pool.query(`
+            SELECT id, name
+            FROM ref_task_category
+            ORDER BY name;
+        `),
     ]);
 
     res.json({
@@ -76,9 +88,26 @@ router.get('/project-form', async (req, res) => {
       users: usersRows,
       roles: rolesRows,
       tasks: tasksRows,
+      taskCategories: taskCategoriesRows,
     });
   } catch (err) {
     console.error('Error fetching project form lookups:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/lookups/task-categories
+router.get('/task-categories', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT id, name
+      FROM ref_task_category
+      ORDER BY name;
+    `);
+
+    res.json(rows);
+  } catch (err) {
+    console.error('Error fetching task categories:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

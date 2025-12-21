@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import './ProjectsPage.css';
 import { apiRequest } from '../../services/apiClient';
 import ManagePage from '../../layouts/ManagePageLayout/ManagePageLayout';
-import type { Project, ProjectFormLookups, ProjectFormValue } from '../../types/project.types';
+import type { Project, ProjectFormLookups, ProjectFormValue, TaskRow, TeamRow } from '../../types/project.types';
 import ProjectForm from '../../components/ProjectForm/ProjectForm';
 
 
@@ -26,6 +26,8 @@ const ProjectsPage = () => {
   const [error, setError] = useState<string | null>(null);
 
   const [formValue, setFormValue] = useState<ProjectFormValue>(emptyFormValue);
+  const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
+  const [taskRows, setTaskRows] = useState<TaskRow[]>([]);
 
   const [lookups, setLookups] = useState<ProjectFormLookups | null>(null);
   const [lookupsLoading, setLookupsLoading] = useState(false);
@@ -60,7 +62,18 @@ const ProjectsPage = () => {
         const data = await apiRequest<ProjectFormLookups>(
           '/lookups/project-form'
         );
-        setLookups(data);
+        let taskCategories = data.taskCategories ?? [];
+        try {
+          taskCategories = await apiRequest<ProjectFormLookups['taskCategories']>(
+            '/lookups/task-categories'
+          );
+        } catch (e) {
+          console.warn('Task categories lookup failed, falling back to project-form data.', e);
+        }
+        setLookups({
+          ...data,
+          taskCategories,
+        });
       } catch (e) {
         console.error('Error loading project form lookups:', e);
         setLookupsError('Unable to load form data.');
@@ -76,31 +89,125 @@ const ProjectsPage = () => {
     setIsCreating(true);
     setIsEditing(false);
     setFormValue(emptyFormValue);
+    setTeamRows([]);
+    setTaskRows([]);
   };
 
-  const handleEditClick = (project: Project) => {
-    setIsEditing(true);
-    setIsCreating(false);
+  const handleEditClick = async (project: Project) => {
+    try {
+      setIsEditing(true);
+      setIsCreating(false);
+      setLoading(true);
+      setError(null);
 
-    setFormValue({
-      id: project.id,
-      name: project.name,
-      type_code: project.code,
-      project_status_id: null,
-      customer_id: null,
-      item_id: null,
-      unit_id: null, 
-    });
+      const detail = await apiRequest<{
+        project: ProjectFormValue;
+        team: { userId: number; roleId: number }[];
+        tasks: {
+          taskId: number;
+          taskTitle: string;
+          categoryId: number | null;
+          rolesId: number[];
+        }[];
+      }>(`/projects/${project.id}`);
+
+      setFormValue({
+        id: detail.project.id,
+        name: detail.project.name,
+        type_code: detail.project.type_code,
+        project_status_id: detail.project.project_status_id ?? null,
+        customer_id: detail.project.customer_id ?? null,
+        item_id: detail.project.item_id ?? null,
+        unit_id: detail.project.unit_id ?? null,
+      });
+
+      setTeamRows(
+        detail.team.map((row) => ({
+          id: crypto.randomUUID(),
+          userId: String(row.userId),
+          roleId: String(row.roleId),
+        }))
+      );
+
+      setTaskRows(
+        detail.tasks.map((row) => ({
+          id: crypto.randomUUID(),
+          taskId: String(row.taskId),
+          taskTitle: row.taskTitle,
+          categoryId: row.categoryId ? String(row.categoryId) : '',
+          rolesId: row.rolesId.map((roleId) => String(roleId)),
+        }))
+      );
+    } catch (e) {
+      console.error('Error loading project details:', e);
+      setError('Unable to load project details.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCancel = () => {
     setIsCreating(false);
     setIsEditing(false);
     setFormValue(emptyFormValue);
+    setTeamRows([]);
+    setTaskRows([]);
   };
 
-  const handleSave = () => {
-    console.log('Saving project...', formValue);
+  const handleSave = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const payload = {
+        project: {
+          ...formValue,
+          project_status_id: formValue.project_status_id ?? null,
+          customer_id: formValue.customer_id ?? null,
+          item_id: formValue.item_id ?? null,
+          unit_id: formValue.unit_id ?? null,
+        },
+        team: teamRows
+          .filter((row) => row.userId && row.roleId)
+          .map((row) => ({
+            userId: Number(row.userId),
+            roleId: Number(row.roleId),
+          })),
+        tasks: taskRows
+          .filter((row) => row.taskTitle.trim() || row.taskId)
+          .map((row) => ({
+            taskId: row.taskId ? Number(row.taskId) : null,
+            taskTitle: row.taskTitle.trim(),
+            categoryId: row.categoryId ? Number(row.categoryId) : null,
+            rolesId: row.rolesId.map((roleId) => Number(roleId)),
+          })),
+      };
+
+      if (isEditing && formValue.id) {
+        await apiRequest(`/projects/${formValue.id}`, {
+          method: 'PUT',
+          body: payload,
+        });
+      } else {
+        await apiRequest('/projects', {
+          method: 'POST',
+          body: payload,
+        });
+      }
+
+      const data = await apiRequest<Project[]>('/projects');
+      setProjects(data);
+      setIsCreating(false);
+      setIsEditing(false);
+      setFormValue(emptyFormValue);
+      setTeamRows([]);
+      setTaskRows([]);
+    } catch (e) {
+      console.error('Error saving project:', e);
+      setError('Unable to save project. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const listSlot = (
@@ -169,6 +276,10 @@ const ProjectsPage = () => {
               ...patch,
             }))
           }
+          onTeamRowsChange={setTeamRows}
+          onTaskRowsChange={setTaskRows}
+          initialTeamRows={teamRows}
+          initialTaskRows={taskRows}
           typeOptions={lookups.projectTypes}
           statusOptions={lookups.statuses}
           customerOptions={lookups.customers}
@@ -177,6 +288,7 @@ const ProjectsPage = () => {
           userOptions={lookups.users}
           roleOptions={lookups.roles}
           taskOptions={lookups.tasks}
+          taskCategoryOptions={lookups.taskCategories}
         />
       ) : (
         <div className="form-placeholder">

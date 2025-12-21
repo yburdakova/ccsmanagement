@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { ProjectFormProps, TaskRow, TeamRow } from '../../types/project.types';
 import './ProjectForm.css';
 
@@ -6,6 +6,10 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
     mode,
     value,
     onChange,
+    onTeamRowsChange,
+    onTaskRowsChange,
+    initialTeamRows,
+    initialTaskRows,
     typeOptions,
     statusOptions,
     customerOptions,
@@ -14,11 +18,58 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
     userOptions,
     roleOptions,
     taskOptions,
+    taskCategoryOptions,
 }) => {
+    const safeTaskOptions = taskOptions ?? [];
+    const safeTaskCategoryOptions = taskCategoryOptions ?? [];
     const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
     const [taskRows, setTaskRows] = useState<TaskRow[]>([]);
     const [openRolesTaskId, setOpenRolesTaskId] = useState<string | null>(null);
     const [taskRoleDrafts, setTaskRoleDrafts] = useState<Record<string, string[]>>({});
+    const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+    const syncingTeamRef = useRef(false);
+    const syncingTaskRef = useRef(false);
+    const lastTeamKeyRef = useRef('');
+    const lastTaskKeyRef = useRef('');
+
+    const getTeamKey = (rows: TeamRow[]) =>
+        rows.map((row) => `${row.id}:${row.userId}:${row.roleId}`).join('|');
+    const getTaskKey = (rows: TaskRow[]) =>
+        rows
+            .map(
+                (row) =>
+                    `${row.id}:${row.taskId}:${row.taskTitle}:${row.categoryId}:` +
+                    row.rolesId.join(',')
+            )
+            .join('|');
+
+    useEffect(() => {
+        if (!initialTeamRows) return;
+        const nextKey = getTeamKey(initialTeamRows);
+        if (nextKey === lastTeamKeyRef.current) return;
+        const currentKey = getTeamKey(teamRows);
+        if (nextKey === currentKey) {
+            lastTeamKeyRef.current = nextKey;
+            return;
+        }
+        syncingTeamRef.current = true;
+        lastTeamKeyRef.current = nextKey;
+        setTeamRows(initialTeamRows);
+    }, [initialTeamRows, teamRows]);
+
+    useEffect(() => {
+        if (!initialTaskRows) return;
+        const nextKey = getTaskKey(initialTaskRows);
+        if (nextKey === lastTaskKeyRef.current) return;
+        const currentKey = getTaskKey(taskRows);
+        if (nextKey === currentKey) {
+            lastTaskKeyRef.current = nextKey;
+            return;
+        }
+        syncingTaskRef.current = true;
+        lastTaskKeyRef.current = nextKey;
+        setTaskRows(initialTaskRows);
+    }, [initialTaskRows, taskRows]);
 
     const handleGeneralChange = (
         e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -72,6 +123,8 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
             {
             id: crypto.randomUUID(),
             taskId: '',
+            taskTitle: '',
+            categoryId: '',
             rolesId: [],
             },
         ]);
@@ -87,6 +140,43 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
         row.id === rowId ? { ...row, [field]: fieldValue } : row
         )
     );
+    };
+
+    const handleTaskInputChange = (rowId: string, nextTitle: string) => {
+        setFocusedTaskId(rowId);
+        const normalizedTitle = nextTitle.trim().toLowerCase();
+        const match = safeTaskOptions.find(
+            (t) => t.description.trim().toLowerCase() === normalizedTitle
+        );
+
+        setTaskRows((prev) =>
+            prev.map((row) => {
+                if (row.id !== rowId) return row;
+
+                const nextTaskId = match ? String(match.id) : '';
+                const shouldResetCategory = normalizedTitle.length === 0;
+                const shouldUpdateCategory =
+                    match && (row.taskId !== nextTaskId || row.categoryId === '');
+
+                return {
+                    ...row,
+                    taskId: nextTaskId,
+                    taskTitle: nextTitle,
+                    categoryId: shouldResetCategory
+                        ? ''
+                        : shouldUpdateCategory
+                        ? match?.categoryId
+                            ? String(match.categoryId)
+                            : ''
+                        : row.categoryId,
+                };
+            })
+        );
+    };
+
+    const handleTaskSuggestionSelect = (rowId: string, description: string) => {
+        handleTaskInputChange(rowId, description);
+        setFocusedTaskId(null);
     };
 
 
@@ -141,6 +231,22 @@ const handleApplyTaskRoles = (rowId: string) => {
     );
     setOpenRolesTaskId(null);
 };
+
+    useEffect(() => {
+        if (syncingTeamRef.current) {
+            syncingTeamRef.current = false;
+            return;
+        }
+        onTeamRowsChange?.(teamRows);
+    }, [teamRows, onTeamRowsChange]);
+
+    useEffect(() => {
+        if (syncingTaskRef.current) {
+            syncingTaskRef.current = false;
+            return;
+        }
+        onTaskRowsChange?.(taskRows);
+    }, [taskRows, onTaskRowsChange]);
 
     return (
         <div className="project-form">
@@ -357,6 +463,7 @@ const handleApplyTaskRoles = (rowId: string) => {
                 <div className="project-task-row project-task-row--header">
                     <div>#</div>
                     <div>Task</div>
+                    <div>Category</div>
                     <div>Roles</div>
                     <div></div>
                 </div>
@@ -370,22 +477,73 @@ const handleApplyTaskRoles = (rowId: string) => {
                             .map((r) => r.label)
                             .join(', ');
 
+                    const normalizedSearch = row.taskTitle.trim().toLowerCase();
+                    const taskSuggestions = normalizedSearch
+                        ? safeTaskOptions
+                            .map((t) => ({
+                                ...t,
+                                matchIndex: t.description.toLowerCase().indexOf(normalizedSearch),
+                            }))
+                            .filter((t) => t.matchIndex !== -1)
+                            .sort(
+                                (a, b) =>
+                                    a.matchIndex - b.matchIndex ||
+                                    a.description.localeCompare(b.description)
+                            )
+                            .slice(0, 20)
+                        : [];
+                    const showSuggestions =
+                        focusedTaskId === row.id && taskSuggestions.length > 0;
+
                     return (
                     <div key={row.id} className="project-task-row">
 
                         <div>{index + 1}</div>
 
                         <div>
+                        <div className="project-task-autocomplete">
+                            <input
+                                type="text"
+                                className="project-task-input"
+                                placeholder="Task title"
+                                value={row.taskTitle}
+                                onChange={(e) => handleTaskInputChange(row.id, e.target.value)}
+                                onFocus={() => setFocusedTaskId(row.id)}
+                                onBlur={() =>
+                                    setFocusedTaskId((prev) => (prev === row.id ? null : prev))
+                                }
+                            />
+                            {showSuggestions && (
+                                <div className="project-task-suggestions">
+                                    {taskSuggestions.map((task) => (
+                                        <button
+                                            key={task.id}
+                                            type="button"
+                                            className="project-task-suggestion"
+                                            onMouseDown={(e) => {
+                                                e.preventDefault();
+                                                handleTaskSuggestionSelect(row.id, task.description);
+                                            }}
+                                        >
+                                            {task.description}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        </div>
+
+                        <div>
                         <select
-                            value={row.taskId}
+                            value={row.categoryId}
                             onChange={(e) =>
-                            handleTaskFieldChange(row.id, 'taskId', e.target.value)
+                                handleTaskFieldChange(row.id, 'categoryId', e.target.value)
                             }
                         >
-                            <option value="">Select task…</option>
-                            {taskOptions.map((t) => (
-                            <option key={t.id} value={t.id}>
-                                {t.description}
+                            <option value="">Select category...</option>
+                            {safeTaskCategoryOptions.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                                {cat.name}
                             </option>
                             ))}
                         </select>

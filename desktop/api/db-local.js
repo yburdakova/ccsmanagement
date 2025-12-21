@@ -502,7 +502,7 @@ function saveImItemsToLocal(items) {
 function getAvailableTasksForUser(userId, projectId) {
   return new Promise((resolve, reject) => {
     db.all(`
-      SELECT t.id, t.name, t.description, ptr.is_default
+      SELECT t.id, t.name, t.description, ptr.is_default, ptr.role_id AS roleId
       FROM project_users pu
       JOIN project_task_roles ptr 
         ON ptr.project_id = pu.project_id 

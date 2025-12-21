@@ -177,10 +177,19 @@ ipcMain.handle('get-all-project-task-roles', async () => {
 
 ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
   const { getAvailableTasksForUser } = require('./api/db-local');
+  const { getAvailableTasksForUser: getAvailableTasksGlobal } = require('./api/db');
+  const { isOnline } = require('./utils/network-status');
 
   try {
+    const online = await isOnline();
+    if (online) {
+      const tasks = await getAvailableTasksGlobal(userId, projectId);
+      console.log(`[main] Fetched global tasks for user=${userId}, project=${projectId}:`, tasks.length);
+      return tasks;
+    }
+
     const tasks = await getAvailableTasksForUser(userId, projectId);
-    console.log(`Fetched available tasks for user=${userId}, project=${projectId}:`, tasks.length);
+    console.log(`[main] Fetched local tasks for user=${userId}, project=${projectId}:`, tasks.length);
     return tasks;
   } catch (error) {
     console.error('Error fetching available tasks:', error);

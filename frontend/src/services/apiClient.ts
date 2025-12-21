@@ -13,10 +13,21 @@ export async function apiRequest<T>(endpoint: string, options: ApiOptions = {}):
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const data = await response.json();
+  let data: any = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = await response.text();
+  }
 
   if (!response.ok) {
-    throw new Error(data.error || 'Request failed');
+    const message =
+      data && typeof data === 'object' && 'error' in data
+        ? data.error
+        : typeof data === 'string' && data.trim()
+          ? data
+          : 'Request failed';
+    throw new Error(message);
   }
 
   return data as T;

@@ -45,7 +45,8 @@ export type ProjectFormLookups = {
   units: { id: number; name: string }[];
   users: { id: number; fullName: string }[];
   roles: { id: number; label: string }[];
-  tasks: { id: number; description: string }[];
+  tasks: { id: number; description: string; categoryId: number | null; categoryName: string | null }[];
+  taskCategories: { id: number; name: string }[];
 };
 
 
@@ -56,12 +57,17 @@ export type ItemOption = { id: number; name: string };
 export type UnitOption = { id: number; name: string };
 export type UserOption = { id: number; fullName: string };
 export type RoleOption = { id: number; label: string };
-export type TaskOption = { id: number; description: string };
+export type TaskOption = { id: number; description: string; categoryId: number | null; categoryName: string | null };
+export type TaskCategoryOption = { id: number; name: string };
 
 export type ProjectFormProps = {
   mode: 'create' | 'edit';
   value: ProjectFormValue;
   onChange: (patch: Partial<ProjectFormValue>) => void;
+  onTeamRowsChange?: (rows: TeamRow[]) => void;
+  onTaskRowsChange?: (rows: TaskRow[]) => void;
+  initialTeamRows?: TeamRow[];
+  initialTaskRows?: TaskRow[];
 
     typeOptions: TypeOption[];
     statusOptions: StatusOption[];
@@ -71,6 +77,7 @@ export type ProjectFormProps = {
     userOptions: UserOption[];
     roleOptions: RoleOption[];
     taskOptions: TaskOption[];
+    taskCategoryOptions: TaskCategoryOption[];
 };
 
 export type TeamRow = {
@@ -82,5 +89,7 @@ export type TeamRow = {
 export type TaskRow = {
   id: string;
   taskId: string;
+  taskTitle: string;
+  categoryId: string;
   rolesId: string[];
 };

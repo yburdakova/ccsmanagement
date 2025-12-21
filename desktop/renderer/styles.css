@@ -111,6 +111,10 @@ button.icon-btn{
   fill: #384249;
 }
 
+#forget-project {
+  display: none;
+}
+
 #connection-status{
     padding: 4px;
     border: none;

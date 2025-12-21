@@ -64,35 +64,91 @@ async function getAllProjectTaskRoles() {
   return rows;
 }
 
-async function getCfsItemsByProject(projectId) {
+async function getAvailableTasksForUser(userId, projectId) {
   const [rows] = await pool.query(
-    `SELECT id, label AS name FROM cfs_items WHERE project_id = ?`,
-    [projectId]
+    `
+    SELECT t.id, t.description, 0 AS is_default, ptr.role_id AS roleId
+    FROM project_users pu
+    JOIN project_task_roles ptr
+      ON ptr.project_id = pu.project_id
+      AND ptr.role_id = pu.project_role_id
+    JOIN tasks t ON t.id = ptr.task_id
+    WHERE pu.user_id = ? AND pu.project_id = ?
+  `,
+    [userId, projectId]
   );
   return rows;
+}
+
+async function getCfsItemsByProject(projectId) {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, label AS name FROM cfs_items WHERE project_id = ?`,
+      [projectId]
+    );
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing cfs_items table, skipping.');
+      return [];
+    }
+    throw error;
+  }
 }
 
 async function getAllRefItemStatus() {
-  const [rows] = await pool.query(`SELECT id, name, label FROM ref_item_status`);
-  return rows;
+  try {
+    const [rows] = await pool.query(`SELECT id, name, label FROM ref_item_status`);
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing ref_item_status table, skipping.');
+      return [];
+    }
+    throw error;
+  }
 }
 
 async function getAllCfsItems() {
-  const [rows] = await pool.query(`SELECT id, project_id, label, task_status_id FROM cfs_items`);
-  return rows;
+  try {
+    const [rows] = await pool.query(`SELECT id, project_id, label, task_status_id FROM cfs_items`);
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing cfs_items table, skipping.');
+      return [];
+    }
+    throw error;
+  }
 }
 
 async function getAllImItems() {
-  const [rows] = await pool.query(`SELECT id, project_id, label, task_status_id FROM im_items`);
-  return rows;
+  try {
+    const [rows] = await pool.query(`SELECT id, project_id, label, task_status_id FROM im_items`);
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing im_items table, skipping.');
+      return [];
+    }
+    throw error;
+  }
 }
 
 async function getImItemsByProject(projectId) {
-  const [rows] = await pool.query(
-    `SELECT id, label AS name FROM im_items WHERE project_id = ?`,
-    [projectId]
-  );
-  return rows;
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, label AS name FROM im_items WHERE project_id = ?`,
+      [projectId]
+    );
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing im_items table, skipping.');
+      return [];
+    }
+    throw error;
+  }
 }
 
 function getItemStatusLocal(itemId, projectTypeId) {
@@ -216,6 +272,9 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
 
     const start = parseMysqlDate(activity.start_time);
     const durationMin = diffMinutes(start, endTime);
+    const maxDuration = 255;
+    const normalizedDuration = Number.isFinite(durationMin) && durationMin > 0 ? durationMin : 0;
+    const safeDurationMin = Math.min(normalizedDuration, maxDuration);
 
     console.log(`[server-db] Completing activity (uuid=${uuid}), isTaskCompleted=${is_completed_project_task}`);
 
@@ -225,7 +284,7 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
       SET end_time = ?, duration = ?, is_completed_project_task = ?
       WHERE uuid = ?
       `,
-      [endStr, durationMin, is_completed_project_task ? 1 : 0, uuid]
+      [endStr, safeDurationMin, is_completed_project_task ? 1 : 0, uuid]
     );
 
     conn.release();
@@ -246,6 +305,7 @@ module.exports = {
   getAllTasks,
   getAllProjectTasks,
   getAllProjectTaskRoles,
+  getAvailableTasksForUser,
   getCfsItemsByProject,
   getImItemsByProject,
   getAllRefItemStatus,

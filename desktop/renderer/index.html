@@ -30,10 +30,10 @@
 
       <div class="activity-section">
         <div class="btns-box">
-          <button id="prod-btn" disabled>PRODUCTION</button>
+          <button id="prod-btn" disabled>BREAK</button>
           <button id="lunch-btn" disabled>LUNCH</button>
           <button id="adm-btn" disabled>ADMINISTRATION</button>
-          <button id="break-btn" disabled>BREAK</button>
+          <button id="break-btn" disabled>TECHNICAL DELAY</button>
         </div>
       </div>
 
@@ -46,11 +46,11 @@
             <select id="project-select" class="project-select">
               <option value="">— Select Project —</option>
             </select>
-            <button class="icon-btn" id="check-project-btn">
+            <button class="icon-btn" id="remember-project">
               <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#0078d4"><path d="M200-120v-640q0-33 23.5-56.5T280-840h240v80H280v518l200-86 200 86v-278h80v400L480-240 200-120Zm80-640h240-240Zm400 160v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80Z"/></svg>
             </button>
-            <button class="icon-btn" id="uncheck-project-btn">
-              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="green"><path d="m438-400 198-198-57-56-141 141-57-57-57 57 114 113ZM200-120v-640q0-33 23.5-56.5T280-840h400q33 0 56.5 23.5T760-760v640L480-240 200-120Zm80-122 200-86 200 86v-518H280v518Zm0-518h400-400Z"/></svg>
+            <button class="icon-btn" id="forget-project">
+              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#000000"><path d="M840-680H600v-80h240v80ZM200-120v-640q0-33 23.5-56.5T280-840h240v80H280v518l200-86 200 86v-278h80v400L480-240 200-120Zm80-640h240-240Z"/></svg>
             </button>
           </div>
         </div>
@@ -65,42 +65,6 @@
               <option value="">— Select Task —</option>
             </select>
           </div>
-
-          <div class="scanner-box">
-            <label for="scanner-select">Scan Method:</label>
-            <div class="selection-with-saving-box">
-              <select id="scanner-select">
-                <option value="">— Select Scanner —</option>
-                <option value="Contex">Contex</option>
-                <option value="Contex">High Speed</option>
-                <option value="Contex">Book scanner (Indus)</option>
-                <option value="Contex">Flatbed</option>
-                <option value="Contex">Photography</option>
-                <option value="Contex">Fujitsu High Speed</option>
-              </select>
-              <button class="icon-btn" id="save-project-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#0078d4"><path d="M200-120v-640q0-33 23.5-56.5T280-840h240v80H280v518l200-86 200 86v-278h80v400L480-240 200-120Zm80-640h240-240Zm400 160v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80Z"/></svg>
-                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="green"><path d="m438-400 198-198-57-56-141 141-57-57-57 57 114 113ZM200-120v-640q0-33 23.5-56.5T280-840h400q33 0 56.5 23.5T760-760v640L480-240 200-120Zm80-122 200-86 200 86v-518H280v518Zm0-518h400-400Z"/></svg>
-              </button>
-            </div>
-          </div>
-          
-          <div class="item-box">
-            <label for="item-input">Item:</label>
-            <input type="text" id="item-input" placeholder="Start typing..." />
-          </div>
-          
-
-          <div class="item-card">
-            <div class="item-title">
-              <h3 class="item-type">Book</h3>
-            </div>
-            <div id="" class="item-line"><span class="label">Label: </span>Book234</div>
-            <div id="" class="item-line"><span class="label">UID: </span>DEEDT-4-1</div>
-            <div id="" class="item-line"><span class="label">Status: </span>Picked-Up</div>
-          </div>
-        
-
       </div>
 
       
@@ -111,3 +75,4 @@
   <script src="renderer.js"></script>
   <script src="network.js"></script>
 </body>
+
