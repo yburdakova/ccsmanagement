@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const finishActivityButton = document.getElementById('finish-activity-button');
   const breakButton = document.getElementById('break-btn');
   const prodBreakButton = document.getElementById('prod-btn');
+  const lunchButton = document.getElementById('lunch-btn');
   const activitySection = document.querySelector('.activity-section');
   const productionSection = document.querySelector('.production-section');
   const projectSection = document.querySelector('.project-selector-section');
@@ -220,7 +221,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateBookmarkButtons(false);
   });
 
-  const handleBreakClick = async () => {
+  const handleActivityClick = async (activityId, label) => {
     if (!currentUser) return;
 
     if (currentTaskUuid) {
@@ -256,18 +257,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentSessionUuid = null;
     }
 
-    const breakResult = await window.electronAPI.startUnallocated(currentUser.id, 3);
-    if (!breakResult.success) {
-      alert('Failed to start break: ' + breakResult.error);
+    const activityResult = await window.electronAPI.startUnallocated(currentUser.id, activityId);
+    if (!activityResult.success) {
+      alert(`Failed to start ${label.toLowerCase()}: ` + activityResult.error);
       return;
     }
 
-    currentSessionUuid = breakResult.uuid;
-    showActivityOverlay('Break');
+    currentSessionUuid = activityResult.uuid;
+    showActivityOverlay(label);
   };
+
+  const handleBreakClick = () => handleActivityClick(3, 'Break');
+  const handleLunchClick = () => handleActivityClick(1, 'Lunch');
 
   breakButton?.addEventListener('click', handleBreakClick);
   prodBreakButton?.addEventListener('click', handleBreakClick);
+  lunchButton?.addEventListener('click', handleLunchClick);
 
   startTaskButton?.addEventListener('click', async () => {
     if (!taskOverlay || !taskOverlayName || !taskOverlayTimer) return;

@@ -49,8 +49,11 @@ const ProductionSheetPage = () => {
     return parsed.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const getTaskLabel = (row: TimeSlice) =>
-    row.activity_id === 3 ? 'Break' : row.task_name || 'Unallocated';
+  const getTaskLabel = (row: TimeSlice) => {
+    if (row.activity_id === 3) return 'Break';
+    if (row.activity_id === 1) return 'Lunch';
+    return row.task_name || 'Unallocated';
+  };
 
   return (
     <div className="production-sheet">
@@ -74,7 +77,7 @@ const ProductionSheetPage = () => {
             <div>Start</div>
             <div>End</div>
             <div>Duration</div>
-            <div></div>
+            <div>Note</div>
           </div>
 
           {rows.length === 0 && (
