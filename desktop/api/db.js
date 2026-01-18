@@ -54,6 +54,19 @@ async function getAllTasks() {
   return rows;
 }
 
+async function getAllItemTypes() {
+  try {
+    const [rows] = await pool.query(`SELECT id, name FROM ref_item_types ORDER BY name`);
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing ref_item_types table, skipping.');
+      return [];
+    }
+    throw error;
+  }
+}
+
 async function getAllProjectTasks() {
   const [rows] = await pool.query('SELECT * FROM project_tasks');
   return rows;
@@ -101,6 +114,12 @@ async function getAllRefItemStatus() {
     const [rows] = await pool.query(`SELECT id, name, label FROM ref_item_status`);
     return rows;
   } catch (error) {
+    if (error.code === 'ER_BAD_FIELD_ERROR') {
+      const [rows] = await pool.query(
+        `SELECT id, label AS name, label FROM ref_item_status`
+      );
+      return rows;
+    }
     if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
       console.warn('[server-db] Missing ref_item_status table, skipping.');
       return [];
@@ -145,6 +164,52 @@ async function getImItemsByProject(projectId) {
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
       console.warn('[server-db] Missing im_items table, skipping.');
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function getItemsByProject(projectId) {
+  try {
+    const [rows] = await pool.query(
+      `
+        SELECT i.id,
+               i.label AS name,
+               s.label AS status_label
+        FROM items i
+        LEFT JOIN ref_item_status s ON s.id = i.status_id
+        WHERE i.project_id = ?
+        ORDER BY i.id
+      `,
+      [projectId]
+    );
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing items table, skipping.');
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function getItemTrackingTasksByProject(projectId) {
+  try {
+    const [rows] = await pool.query(
+      `
+        SELECT DISTINCT ist.task_id
+        FROM itemstatus_task ist
+        INNER JOIN ref_item_status ris ON ris.id = ist.item_status_id
+        WHERE ris.project_id = ?
+        ORDER BY ist.task_id
+      `,
+      [projectId]
+    );
+    return rows.map((row) => row.task_id);
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing item tracking tables, skipping.');
       return [];
     }
     throw error;
@@ -331,11 +396,14 @@ module.exports = {
   getAllProjectUsers, 
   getAllProjectRoles,
   getAllTasks,
+  getAllItemTypes,
   getAllProjectTasks,
   getAllProjectTaskRoles,
   getAvailableTasksForUser,
   getCfsItemsByProject,
   getImItemsByProject,
+  getItemsByProject,
+  getItemTrackingTasksByProject,
   getAllRefItemStatus,
   getAllCfsItems,
   getAllImItems,

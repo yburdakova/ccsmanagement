@@ -1,0 +1,136 @@
+.inventory-items-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.inventory-items-page__header h2 {
+  margin: 0;
+}
+
+.inventory-items-page__add-btn {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  background: #0078d4;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.inventory-items-page__add-btn:disabled {
+  background: #c9d1d6;
+  color: #626c72;
+  cursor: not-allowed;
+}
+
+.inventory-items-page__selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.inventory-items-page__selector select {
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #cfd6db;
+}
+
+.inventory-items-page__status {
+  color: #6b737a;
+  font-size: 14px;
+}
+
+.inventory-items-page__error {
+  color: #b42318;
+  font-size: 14px;
+}
+
+.inventory-items-page__table {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inventory-items-page__table-header,
+.inventory-items-page__table-row {
+  display: grid;
+  grid-template-columns: 0.3fr 1.4fr 1.4fr 1fr 1fr;
+  align-items: start;
+  gap: 12px;
+}
+
+.inventory-items-page__table-header {
+  font-weight: 600;
+  color: #1f1f1f;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e6e6e6;
+}
+
+.inventory-items-page__table-row {
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  color: #2a2a2a;
+}
+
+.inventory-items-page__table-row:last-child {
+  border-bottom: none;
+}
+
+.inventory-items-page__table-error {
+  color: #b42318;
+}
+
+.inventory-items-page__modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.inventory-items-page__modal-card {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 16px 20px;
+  width: 100%;
+  max-width: 360px;
+  display: grid;
+  gap: 12px;
+}
+
+.inventory-items-page__modal-card label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+  color: #2f3438;
+}
+
+.inventory-items-page__modal-card input,
+.inventory-items-page__modal-card select {
+  border: 1px solid #cfd6db;
+  border-radius: 6px;
+  padding: 8px;
+  font-family: inherit;
+}
+
+.inventory-items-page__modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.inventory-items-page__cancel-btn {
+  background: #6c757d;
+  color: #ffffff;
+}
+
+.inventory-items-page__cancel-btn:hover {
+  background: #596269;
+}

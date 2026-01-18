@@ -173,6 +173,14 @@ button.icon-btn{
   font-weight: 600;
 }
 
+#item-select {
+  height: 34px;
+  border-radius: 6px;
+  border: 1px solid #dadada;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
 .task-overlay {
   position: absolute;
   inset: 0;

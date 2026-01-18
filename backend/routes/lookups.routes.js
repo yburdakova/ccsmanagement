@@ -7,16 +7,55 @@ console.log('Lookups route loaded');
 // GET /api/lookups/project-form
 router.get('/project-form', async (req, res) => {
   try {
+    const loadUnits = async () => {
+      try {
+        const [rows] = await pool.query(`
+            SELECT id, name
+            FROM units
+            ORDER BY name;
+        `);
+        return rows;
+      } catch (err) {
+        if (err.code === 'ER_BAD_FIELD_ERROR') {
+          const [rows] = await pool.query(`
+              SELECT id, label AS name
+              FROM units
+              ORDER BY label;
+          `);
+          return rows;
+        }
+        if (err.code === 'ER_NO_SUCH_TABLE' || err.code === 'ER_BAD_TABLE_ERROR') {
+          const [rows] = await pool.query(`
+              SELECT id, name
+              FROM ref_unit_types
+              ORDER BY name;
+          `);
+          return rows;
+        }
+        throw err;
+      }
+    };
+
+    let unitsRows = await loadUnits();
+    if (!unitsRows || unitsRows.length === 0) {
+      const [fallbackRows] = await pool.query(`
+          SELECT id, name
+          FROM ref_unit_types
+          ORDER BY name;
+      `);
+      unitsRows = fallbackRows;
+    }
+
     const [
         [projectTypesRows],
         [statusRows],
         [customersRows],
         [itemsRows],
-        [unitsRows],
         [usersRows],
         [rolesRows],
         [tasksRows],
         [taskCategoriesRows],
+        [itemStatusRows],
     ] = await Promise.all([
         pool.query(`
             SELECT id, code, label
@@ -39,12 +78,6 @@ router.get('/project-form', async (req, res) => {
         pool.query(`
             SELECT id, name
             FROM ref_item_types
-            ORDER BY name;
-        `),
-
-        pool.query(`
-            SELECT id, name
-            FROM ref_unit_types
             ORDER BY name;
         `),
 
@@ -77,6 +110,14 @@ router.get('/project-form', async (req, res) => {
             FROM ref_task_category
             ORDER BY name;
         `),
+
+        pool.query(`
+            SELECT id,
+                   label,
+                   label AS name
+            FROM ref_item_status
+            ORDER BY id;
+        `),
     ]);
 
     res.json({
@@ -89,6 +130,7 @@ router.get('/project-form', async (req, res) => {
       roles: rolesRows,
       tasks: tasksRows,
       taskCategories: taskCategoriesRows,
+      itemStatuses: itemStatusRows,
     });
   } catch (err) {
     console.error('Error fetching project form lookups:', err);
@@ -108,6 +150,51 @@ router.get('/task-categories', async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('Error fetching task categories:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/lookups/item-categories
+router.get('/item-categories', async (req, res) => {
+  try {
+    const projectTypeCode = req.query.projectTypeCode
+      ? String(req.query.projectTypeCode)
+      : null;
+
+    let typeId = null;
+    if (projectTypeCode) {
+      const [[typeRow]] = await pool.query(
+        `
+          SELECT id
+          FROM ref_project_types
+          WHERE code = ?
+          LIMIT 1
+        `,
+        [projectTypeCode]
+      );
+      typeId = typeRow?.id ?? null;
+    }
+
+    const [rows] = await pool.query(
+      `
+        SELECT id,
+               label,
+               label AS name
+        FROM ref_item_category
+        WHERE (? IS NULL OR project_specific_id = ? OR project_specific_id IS NULL)
+        ORDER BY label;
+      `,
+      [typeId, typeId]
+    );
+
+    res.json(
+      rows.map((row) => ({
+        id: row.id,
+        label: row.label || row.name,
+      }))
+    );
+  } catch (err) {
+    console.error('Error fetching item categories:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

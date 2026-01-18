@@ -26,7 +26,9 @@ function createWindow(screenWidth) {
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   Menu.setApplicationMenu(null);
-  win.webContents.openDevTools();
+  if (process.env.ELECTRON_OPEN_DEVTOOLS === 'true') {
+    win.webContents.openDevTools();
+  }
 
   win.on('close', (event) => {
     if (isQuitting) return;
@@ -200,6 +202,20 @@ ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
   }
 });
 
+ipcMain.handle('get-item-types', async () => {
+  const { getAllItemTypes } = require('./api/db');
+  const { isOnline } = require('./utils/network-status');
+
+  try {
+    const online = await isOnline();
+    if (!online) return [];
+    return await getAllItemTypes();
+  } catch (error) {
+    console.error('Error fetching item types:', error);
+    return [];
+  }
+});
+
 ipcMain.handle('login-with-code', async (event, code) => {
   const { loginByAuthCode } = require('./api/db');
   const { loginByAuthCodeLocal } = require('./api/db-local');
@@ -340,8 +356,12 @@ ipcMain.handle('logout', async (event) => {
 });
 
 ipcMain.handle('get-project-items', async (event, { projectId, projectTypeId }) => {
-  const { getCfsItemsByProject, getImItemsByProject } = require('./api/db');
+  const { getItemsByProject, getCfsItemsByProject, getImItemsByProject } = require('./api/db');
   try {
+    const items = await getItemsByProject(projectId);
+    if (items.length) {
+      return items;
+    }
     if (projectTypeId === 1) {
       return await getCfsItemsByProject(projectId);
     } else if (projectTypeId === 2) {
@@ -351,6 +371,20 @@ ipcMain.handle('get-project-items', async (event, { projectId, projectTypeId }) 
     }
   } catch (error) {
     console.error('Error fetching project items:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('get-item-tracking-tasks', async (event, { projectId }) => {
+  const { getItemTrackingTasksByProject } = require('./api/db');
+  const { isOnline } = require('./utils/network-status');
+
+  try {
+    const online = await isOnline();
+    if (!online) return [];
+    return await getItemTrackingTasksByProject(projectId);
+  } catch (error) {
+    console.error('Error fetching item tracking tasks:', error);
     return [];
   }
 });

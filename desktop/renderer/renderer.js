@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const startTaskButton = document.getElementById('start-task-button');
   const finishTaskButton = document.getElementById('finish-task-button');
   const stopTaskButton = document.getElementById('stop-task-button');
+  const itemSection = document.getElementById('item-selector-section');
+  const itemSelect = document.getElementById('item-select');
   const taskOverlay = document.getElementById('task-overlay');
   const taskOverlayName = document.getElementById('task-overlay-name');
   const taskOverlayTimer = document.getElementById('task-overlay-timer');
@@ -25,10 +27,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const activitySection = document.querySelector('.activity-section');
   const productionSection = document.querySelector('.production-section');
   const projectSection = document.querySelector('.project-selector-section');
-  const itemInput = document.getElementById('item-input');
   const timerEl = document.querySelector('.timer');
   const savedProjectKey = 'rememberedProject';
   const workTimerStateKey = 'workTimerState';
+  const itemInputLabel = document.getElementById('item-input-label');
 
   authInput.focus();
   authInput.addEventListener('keydown', (e) => {
@@ -42,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let allProjects = await window.electronAPI.getAllProjects();
   let allProjectUsers = await window.electronAPI.getAllProjectUsers();
   let projectRoles = await window.electronAPI.getAllProjectRoles();
+  let allItemTypes = await window.electronAPI.getItemTypes();
 
   let currentUser = null;
   let currentSessionUuid = null;
@@ -57,6 +60,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   let activityTimerStartMs = null;
   let activitySectionDisplay = '';
   let productionSectionDisplay = '';
+  let currentProject = null;
+  let itemTrackingTaskIds = new Set();
+  let itemsLoadedProjectId = null;
+  let projectItems = [];
+  let itemTypesById = new Map(
+    (allItemTypes || []).map((type) => [Number(type.id), String(type.name || '').trim()])
+  );
 
   // hiding sections initially
   projectSection.style.display = 'none';
@@ -112,9 +122,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     taskSelect.innerHTML = '<option value="">— Select Task —</option>';
     taskSelect.disabled = true;
     updateStartButton();
-    const dataList = document.getElementById('items-list');
-    if (dataList) dataList.innerHTML = '';
-    if (itemInput) itemInput.value = '';
+    if (itemSection) itemSection.style.display = 'none';
+    if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
+    if (itemInputLabel) itemInputLabel.textContent = 'Item';
+    projectItems = [];
+    itemTrackingTaskIds = new Set();
+    itemsLoadedProjectId = null;
+    currentProject = null;
 
     document.getElementById('login-screen').style.display = 'block';
     document.getElementById('main-screen').style.display = 'none';
@@ -211,9 +225,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       taskSelect.innerHTML = '<option value="">— Select Task —</option>';
       taskSelect.disabled = true;
     updateStartButton();
-      const dataList = document.getElementById('items-list');
-      if (dataList) dataList.innerHTML = '';
-      if (itemInput) itemInput.value = '';
+      if (itemSection) itemSection.style.display = 'none';
+      if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
+      if (itemInputLabel) itemInputLabel.textContent = 'Item';
     }
   });
 
@@ -383,9 +397,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await startUnallocatedForCurrentUser();
   });
 
-  taskSelect?.addEventListener('change', () => {
+  taskSelect?.addEventListener('change', async () => {
     userSelectedTask = taskSelect.selectedIndex > 0;
     updateStartButton();
+    await updateItemSelection();
   });
 
   // ==================
@@ -400,19 +415,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     roleText.textContent = `Your role: ${selected.role_label}`;
+    currentProject = selected;
 
     taskSection.style.display = 'block';
     await populateTasks(currentUser, selected);
     userSelectedTask = false;
     updateStartButton();
 
-    if (selected.project_type_id === 1 || selected.project_type_id === 2) {
-      await populateItems(selected);
-    } else {
-      const dataList = document.getElementById('items-list');
-      if (dataList) dataList.innerHTML = '';
-      if (itemInput) itemInput.value = '';
-    }
+    const trackingTasks = await window.electronAPI.getItemTrackingTasks(selected.project_id);
+    itemTrackingTaskIds = new Set(trackingTasks.map((id) => Number(id)));
+    if (itemSection) itemSection.style.display = 'none';
+    if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
+    if (itemInputLabel) itemInputLabel.textContent = 'Item';
+    projectItems = [];
+    itemsLoadedProjectId = null;
   });
 
   projectSelect.addEventListener('focus', async () => {
@@ -560,9 +576,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     taskSelect.innerHTML = '<option value="">Select Task</option>';
     taskSelect.disabled = true;
     updateStartButton();
-    const dataList = document.getElementById('items-list');
-    if (dataList) dataList.innerHTML = '';
-    if (itemInput) itemInput.value = '';
+    if (itemSection) itemSection.style.display = 'none';
+    if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
+    if (itemInputLabel) itemInputLabel.textContent = 'Item';
+    projectItems = [];
+    itemTrackingTaskIds = new Set();
+    itemsLoadedProjectId = null;
+    currentProject = null;
   }
 
   async function startUnallocatedForCurrentUser() {
@@ -694,6 +714,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           project_id: project?.id,
           name: project?.name,
           project_type_id: project?.type_id,
+          item_type_id: project?.item_id,
           role_id: pu.project_role_id,
           role_label: role?.label || role?.name || 'Unknown',
         };
@@ -729,24 +750,40 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function populateItems(project) {
-    if (!itemInput) return;
+    if (!itemSelect) return;
     const items = await window.electronAPI.getProjectItems(project.project_id, project.project_type_id);
     console.log('[renderer] Available items:', items);
+    projectItems = items;
+    itemSelect.innerHTML = '<option value="">Select item</option>';
+    projectItems.forEach((item) => {
+      const label = String(item.name || '').trim();
+      if (!label) return;
+      const status = item.status_label ? ` — ${item.status_label}` : '';
+      const option = document.createElement('option');
+      option.value = String(item.id || label);
+      option.textContent = `${label}${status}`;
+      itemSelect.appendChild(option);
+    });
+  }
 
-    let dataList = document.getElementById('items-list');
-    if (!dataList) {
-      dataList = document.createElement('datalist');
-      dataList.id = 'items-list';
-      document.body.appendChild(dataList);
-      itemInput.setAttribute('list', 'items-list');
+  async function updateItemSelection() {
+    if (!itemSection || !itemSelect) return;
+    const taskId = Number(taskSelect.value);
+    if (!taskId || !itemTrackingTaskIds.has(taskId)) {
+      itemSection.style.display = 'none';
+      itemSelect.value = '';
+      return;
     }
 
-    dataList.innerHTML = '';
-    items.forEach(item => {
-      const option = document.createElement('option');
-      option.value = item.name; 
-      dataList.appendChild(option);
-    });
+    itemSection.style.display = 'block';
+    if (currentProject && itemsLoadedProjectId !== currentProject.project_id) {
+      await populateItems(currentProject);
+      itemsLoadedProjectId = currentProject.project_id;
+    }
+    if (itemInputLabel) {
+      const itemTypeName = itemTypesById.get(Number(currentProject?.item_type_id)) || 'Item';
+      itemInputLabel.textContent = itemTypeName;
+    }
   }
 
 });

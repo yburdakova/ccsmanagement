@@ -7,6 +7,7 @@ import loginRoutes from './routes/login.routes.js';
 import projectsRoutes from './routes/projects.routes.js';
 import lookupsRoutes from './routes/lookups.routes.js';
 import timeTrackingRoutes from './routes/time-tracking.routes.js';
+import itemsRoutes from './routes/items.routes.js';
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ app.use('/api/login', loginRoutes);
 app.use('/api/projects', projectsRoutes);
 app.use('/api/lookups', lookupsRoutes);
 app.use('/api/time-tracking', timeTrackingRoutes);
+app.use('/api/items', itemsRoutes);
 
 
 http.createServer(app).listen(PORT, () => {

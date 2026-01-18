@@ -30,7 +30,7 @@ const MainLayout = () => {
       case '/data':
         return 'Manage Data';
       case '/inventory-items':
-        return 'Inventory Items';
+        return 'Inventory';
       case '/customers':
         return 'Manage Customers';    
       case '/production-sheet':
@@ -88,24 +88,24 @@ const MainLayout = () => {
                       <div className="navItem"><span className="gg-icon">dashboard</span> Dashboard</div>
                     </NavLink>
                     <NavLink to="/projects" className="navItem">
-                      <div className="navItem"><span className="gg-icon">assignment_add</span> Manage Projects</div>
+                      <div className="navItem"><span className="gg-icon">assignment_add</span>Projects</div>
                     </NavLink>
                     <NavLink to="/users" className="navItem">
-                      <div className="navItem"><span className="gg-icon">group_add</span> Manage Users</div>
+                      <div className="navItem"><span className="gg-icon">group_add</span>Users</div>
                     </NavLink>
                     <NavLink to="/customers" className="navItem">
-                      <div className="navItem"><span className="gg-icon">account_balance</span> Manage Customers</div>
+                      <div className="navItem"><span className="gg-icon">account_balance</span>Customers</div>
                     </NavLink>
                     <NavLink to="/data" className="navItem">
-                      <div className="navItem"><span className="gg-icon">table_edit</span> Manage Data</div>
+                      <div className="navItem"><span className="gg-icon">table_edit</span>Data</div>
                     </NavLink>
                     <NavLink to="/inventory-items" className="navItem">
-                      <div className="navItem"><span className="gg-icon">inventory_2</span> Inventory Items</div>
+                      <div className="navItem"><span className="gg-icon">inventory_2</span> Inventory</div>
                     </NavLink>
                   </>
                 )}
             </nav>
-            {user?.role === 1 && (
+            {/* {user?.role === 1 && (
               <div className="projectBox">
                 <h4>Available Projects</h4>
                 <div className="projectList">
@@ -129,7 +129,7 @@ const MainLayout = () => {
                   <div className="navItem"><span className="gg-icon">content_paste_search</span>IM Russell, 24</div>
                 </div>
               </div>
-            )}
+            )} */}
         </div>
 
        

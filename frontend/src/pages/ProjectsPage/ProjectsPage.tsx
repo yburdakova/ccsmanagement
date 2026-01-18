@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import './ProjectsPage.css';
 import { apiRequest } from '../../services/apiClient';
 import ManagePage from '../../layouts/ManagePageLayout/ManagePageLayout';
-import type { Project, ProjectFormLookups, ProjectFormValue, TaskRow, TeamRow } from '../../types/project.types';
+import type { ItemTrackingRow, Project, ProjectFormLookups, ProjectFormValue, TaskRow, TeamRow } from '../../types/project.types';
 import ProjectForm from '../../components/ProjectForm/ProjectForm';
 
 
@@ -28,6 +28,7 @@ const ProjectsPage = () => {
   const [formValue, setFormValue] = useState<ProjectFormValue>(emptyFormValue);
   const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
   const [taskRows, setTaskRows] = useState<TaskRow[]>([]);
+  const [itemTrackingRows, setItemTrackingRows] = useState<ItemTrackingRow[]>([]);
 
   const [lookups, setLookups] = useState<ProjectFormLookups | null>(null);
   const [lookupsLoading, setLookupsLoading] = useState(false);
@@ -91,6 +92,7 @@ const ProjectsPage = () => {
     setFormValue(emptyFormValue);
     setTeamRows([]);
     setTaskRows([]);
+    setItemTrackingRows([]);
   };
 
   const handleEditClick = async (project: Project) => {
@@ -108,6 +110,11 @@ const ProjectsPage = () => {
           taskTitle: string;
           categoryId: number | null;
           rolesId: number[];
+        }[];
+        itemTracking?: {
+          statusText: string | null;
+          taskIds: number[];
+          applyAfterFinish: number | null;
         }[];
       }>(`/projects/${project.id}`);
 
@@ -138,6 +145,15 @@ const ProjectsPage = () => {
           rolesId: row.rolesId.map((roleId) => String(roleId)),
         }))
       );
+
+      setItemTrackingRows(
+        (detail.itemTracking ?? []).map((row) => ({
+          id: crypto.randomUUID(),
+          statusText: row.statusText ?? '',
+          taskIds: row.taskIds.map((taskId) => String(taskId)),
+          statusMoment: row.applyAfterFinish ? 'task_finished' : 'task_started',
+        }))
+      );
     } catch (e) {
       console.error('Error loading project details:', e);
       setError('Unable to load project details.');
@@ -152,6 +168,7 @@ const ProjectsPage = () => {
     setFormValue(emptyFormValue);
     setTeamRows([]);
     setTaskRows([]);
+    setItemTrackingRows([]);
   };
 
   const handleSave = async () => {
@@ -178,8 +195,20 @@ const ProjectsPage = () => {
           .map((row) => ({
             taskId: row.taskId ? Number(row.taskId) : null,
             taskTitle: row.taskTitle.trim(),
+            taskTempId: row.taskId ? null : row.id,
             categoryId: row.categoryId ? Number(row.categoryId) : null,
             rolesId: row.rolesId.map((roleId) => Number(roleId)),
+          })),
+        itemTracking: itemTrackingRows
+          .filter((row) => row.statusText.trim() || row.taskIds.length > 0)
+          .map((row) => ({
+            statusText: row.statusText.trim(),
+            statusMoment: row.statusMoment,
+            taskRefs: row.taskIds.map((taskId) =>
+              taskId.startsWith('new:')
+                ? { taskTempId: taskId.slice(4) }
+                : { taskId: Number(taskId) }
+            ),
           })),
       };
 
@@ -202,6 +231,7 @@ const ProjectsPage = () => {
       setFormValue(emptyFormValue);
       setTeamRows([]);
       setTaskRows([]);
+      setItemTrackingRows([]);
     } catch (e) {
       console.error('Error saving project:', e);
       setError('Unable to save project. Please try again later.');
@@ -280,6 +310,7 @@ const ProjectsPage = () => {
           onTaskRowsChange={setTaskRows}
           initialTeamRows={teamRows}
           initialTaskRows={taskRows}
+          initialItemTrackingRows={itemTrackingRows}
           typeOptions={lookups.projectTypes}
           statusOptions={lookups.statuses}
           customerOptions={lookups.customers}
@@ -289,6 +320,8 @@ const ProjectsPage = () => {
           roleOptions={lookups.roles}
           taskOptions={lookups.tasks}
           taskCategoryOptions={lookups.taskCategories}
+          itemStatusOptions={lookups.itemStatuses}
+          onItemTrackingRowsChange={setItemTrackingRows}
         />
       ) : (
         <div className="form-placeholder">

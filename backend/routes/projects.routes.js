@@ -125,10 +125,43 @@ router.get('/:id', async (req, res) => {
       entry.rolesId.push(row.roleId);
     }
 
+    const [itemStatusRows] = await pool.query(
+      `
+        SELECT ris.id AS statusId,
+               ris.label AS statusText,
+               ist.task_id AS taskId,
+               ist.apply_after_finish AS applyAfterFinish
+        FROM ref_item_status ris
+        LEFT JOIN itemstatus_task ist ON ist.item_status_id = ris.id
+        WHERE ris.project_id = ?
+      `,
+      [projectId]
+    );
+
+    const itemTrackingMap = new Map();
+    for (const row of itemStatusRows) {
+      const key = String(row.statusId);
+      if (!itemTrackingMap.has(key)) {
+        itemTrackingMap.set(key, {
+          statusText: row.statusText,
+          taskIds: [],
+          applyAfterFinish: 0,
+        });
+      }
+      const entry = itemTrackingMap.get(key);
+      if (row.taskId) {
+        entry.taskIds.push(row.taskId);
+      }
+      if (row.applyAfterFinish) {
+        entry.applyAfterFinish = 1;
+      }
+    }
+
     res.json({
       project,
       team: teamRows,
       tasks: Array.from(tasksMap.values()),
+      itemTracking: Array.from(itemTrackingMap.values()),
     });
   } catch (err) {
     console.error('Error fetching project details:', err);
@@ -137,7 +170,7 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { project, team = [], tasks = [] } = req.body;
+  const { project, team = [], tasks = [], itemTracking = [] } = req.body;
 
   if (!project || !project.name) {
     return res.status(400).json({ error: 'Project name is required' });
@@ -179,6 +212,7 @@ router.post('/', async (req, res) => {
     );
 
     const projectId = projectResult.insertId;
+    const taskTempMap = new Map();
 
     const projectUsersIdMode = await getIdColumnMode(connection, 'project_users');
     let nextProjectUserId =
@@ -227,6 +261,9 @@ router.post('/', async (req, res) => {
           [task.taskTitle, task.categoryId ?? null]
         );
         taskId = taskResult.insertId;
+        if (task.taskTempId) {
+          taskTempMap.set(String(task.taskTempId), taskId);
+        }
       }
 
       if (!taskId) continue;
@@ -255,6 +292,41 @@ router.post('/', async (req, res) => {
       }
     }
 
+    if (Array.isArray(itemTracking) && itemTracking.length > 0) {
+      for (const row of itemTracking) {
+        const statusText = String(row.statusText || '').trim();
+        if (!statusText) continue;
+        const applyAfterFinish = row.statusMoment === 'task_finished' ? 1 : 0;
+        const taskRefs = Array.isArray(row.taskRefs) ? row.taskRefs : [];
+        const resolvedTaskIds = taskRefs
+          .map((ref) =>
+            ref?.taskId ??
+            (ref?.taskTempId ? taskTempMap.get(String(ref.taskTempId)) : null)
+          )
+          .filter((id) => Boolean(id));
+        if (resolvedTaskIds.length === 0) continue;
+
+        const [statusResult] = await connection.query(
+          `
+            INSERT INTO ref_item_status (task_id, label, project_id)
+            VALUES (?, ?, ?)
+          `,
+          [resolvedTaskIds[0], statusText, projectId]
+        );
+        const statusId = statusResult.insertId;
+
+        for (const resolvedTaskId of resolvedTaskIds) {
+          await connection.query(
+            `
+              INSERT INTO itemstatus_task (item_status_id, task_id, apply_after_finish)
+              VALUES (?, ?, ?)
+            `,
+            [statusId, resolvedTaskId, applyAfterFinish]
+          );
+        }
+      }
+    }
+
     await connection.commit();
     res.status(201).json({ id: projectId });
   } catch (err) {
@@ -268,7 +340,7 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   const projectId = Number(req.params.id);
-  const { project, team = [], tasks = [] } = req.body;
+  const { project, team = [], tasks = [], itemTracking = [] } = req.body;
 
   if (!projectId) {
     return res.status(400).json({ error: 'Invalid project id' });
@@ -289,6 +361,8 @@ router.put('/:id', async (req, res) => {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
+
+    const taskTempMap = new Map();
 
     await connection.query(
       `
@@ -321,6 +395,20 @@ router.put('/:id', async (req, res) => {
       [projectId]
     );
 
+    await connection.query(
+      `
+        DELETE ist
+        FROM itemstatus_task ist
+        INNER JOIN ref_item_status ris ON ris.id = ist.item_status_id
+        WHERE ris.project_id = ?
+      `,
+      [projectId]
+    );
+    await connection.query(
+      `DELETE FROM ref_item_status WHERE project_id = ?`,
+      [projectId]
+    );
+
     const projectUsersIdMode = await getIdColumnMode(connection, 'project_users');
     let nextProjectUserId =
       projectUsersIdMode === 'manual'
@@ -368,6 +456,9 @@ router.put('/:id', async (req, res) => {
           [task.taskTitle, task.categoryId ?? null]
         );
         taskId = taskResult.insertId;
+        if (task.taskTempId) {
+          taskTempMap.set(String(task.taskTempId), taskId);
+        }
       }
 
       if (!taskId) continue;
@@ -391,6 +482,41 @@ router.put('/:id', async (req, res) => {
               VALUES (?, ?, ?)
             `,
             [projectId, taskId, roleId]
+          );
+        }
+      }
+    }
+
+    if (Array.isArray(itemTracking) && itemTracking.length > 0) {
+      for (const row of itemTracking) {
+        const statusText = String(row.statusText || '').trim();
+        if (!statusText) continue;
+        const applyAfterFinish = row.statusMoment === 'task_finished' ? 1 : 0;
+        const taskRefs = Array.isArray(row.taskRefs) ? row.taskRefs : [];
+        const resolvedTaskIds = taskRefs
+          .map((ref) =>
+            ref?.taskId ??
+            (ref?.taskTempId ? taskTempMap.get(String(ref.taskTempId)) : null)
+          )
+          .filter((id) => Boolean(id));
+        if (resolvedTaskIds.length === 0) continue;
+
+        const [statusResult] = await connection.query(
+          `
+            INSERT INTO ref_item_status (task_id, label, project_id)
+            VALUES (?, ?, ?)
+          `,
+          [resolvedTaskIds[0], statusText, projectId]
+        );
+        const statusId = statusResult.insertId;
+
+        for (const resolvedTaskId of resolvedTaskIds) {
+          await connection.query(
+            `
+              INSERT INTO itemstatus_task (item_status_id, task_id, apply_after_finish)
+              VALUES (?, ?, ?)
+            `,
+            [statusId, resolvedTaskId, applyAfterFinish]
           );
         }
       }

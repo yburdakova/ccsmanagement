@@ -108,13 +108,15 @@
 
 
 .project-team-row--header,
-.project-task-row--header {
+.project-task-row--header,
+.item-tracking-row--header {
   font-weight: 600;
   font-size: 14px;
 }
 
 .project-team-row select,
-.project-task-row select {
+.project-task-row select,
+.item-tracking-row select {
   width: 100%;
   height: 34px;
   border-radius: 6px;
@@ -233,6 +235,11 @@
   font-size: 14px;
 }
 
+.roles-select-option input[type='checkbox'] {
+  width: 13px;
+  height: 13px;
+}
+
 .roles-select-option:hover {
   background: #f3f4f6;
 }
@@ -256,4 +263,32 @@
 
 .roles-select-done:hover {
   background: #064b7a;
+}
+
+.item-tracking-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.item-tracking-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr) 40px;
+  column-gap: 16px;
+  align-items: center;
+}
+
+.item-tracking-row--header {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.item-tracking-row input {
+  width: 100%;
+  height: 34px;
+  border-radius: 6px;
+  border: 1px solid #dadada;
+  padding: 4px 8px;
+  font-size: 14px;
 }

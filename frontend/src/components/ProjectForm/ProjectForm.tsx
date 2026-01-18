@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { ProjectFormProps, TaskRow, TeamRow } from '../../types/project.types';
+import type { ItemTrackingRow, ProjectFormProps, TaskRow, TeamRow } from '../../types/project.types';
 import './ProjectForm.css';
 
 const ProjectForm: React.FC<ProjectFormProps> = ({
@@ -8,8 +8,10 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
     onChange,
     onTeamRowsChange,
     onTaskRowsChange,
+    onItemTrackingRowsChange,
     initialTeamRows,
     initialTaskRows,
+    initialItemTrackingRows,
     typeOptions,
     statusOptions,
     customerOptions,
@@ -19,18 +21,25 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
     roleOptions,
     taskOptions,
     taskCategoryOptions,
+    itemStatusOptions,
 }) => {
     const safeTaskOptions = taskOptions ?? [];
     const safeTaskCategoryOptions = taskCategoryOptions ?? [];
+    const safeItemStatusOptions = itemStatusOptions ?? [];
     const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
     const [taskRows, setTaskRows] = useState<TaskRow[]>([]);
+    const [itemTrackingRows, setItemTrackingRows] = useState<ItemTrackingRow[]>([]);
     const [openRolesTaskId, setOpenRolesTaskId] = useState<string | null>(null);
     const [taskRoleDrafts, setTaskRoleDrafts] = useState<Record<string, string[]>>({});
     const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+    const [openItemTrackingTaskId, setOpenItemTrackingTaskId] = useState<string | null>(null);
+    const [itemTrackingTaskDrafts, setItemTrackingTaskDrafts] = useState<Record<string, string[]>>({});
+    const [focusedStatusId, setFocusedStatusId] = useState<string | null>(null);
     const syncingTeamRef = useRef(false);
     const syncingTaskRef = useRef(false);
     const lastTeamKeyRef = useRef('');
     const lastTaskKeyRef = useRef('');
+    const lastItemTrackingKeyRef = useRef('');
 
     const getTeamKey = (rows: TeamRow[]) =>
         rows.map((row) => `${row.id}:${row.userId}:${row.roleId}`).join('|');
@@ -42,6 +51,20 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
                     row.rolesId.join(',')
             )
             .join('|');
+    const getItemTrackingKey = (rows: ItemTrackingRow[]) =>
+        rows
+            .map(
+                (row) =>
+                    `${row.id}:${row.statusText}:${row.taskIds.join(',')}:${row.statusMoment}`
+            )
+            .join('|');
+
+    const itemTrackingTaskOptions = taskRows
+        .filter((row) => row.taskTitle.trim() || row.taskId)
+        .map((row) => ({
+            value: row.taskId ? row.taskId : `new:${row.id}`,
+            label: row.taskTitle.trim() || `Task ${row.taskId || ''}`.trim(),
+        }));
 
     useEffect(() => {
         if (!initialTeamRows) return;
@@ -70,6 +93,19 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
         lastTaskKeyRef.current = nextKey;
         setTaskRows(initialTaskRows);
     }, [initialTaskRows, taskRows]);
+
+    useEffect(() => {
+        if (!initialItemTrackingRows) return;
+        const nextKey = getItemTrackingKey(initialItemTrackingRows);
+        if (nextKey === lastItemTrackingKeyRef.current) return;
+        const currentKey = getItemTrackingKey(itemTrackingRows);
+        if (nextKey === currentKey) {
+            lastItemTrackingKeyRef.current = nextKey;
+            return;
+        }
+        lastItemTrackingKeyRef.current = nextKey;
+        setItemTrackingRows(initialItemTrackingRows);
+    }, [initialItemTrackingRows, itemTrackingRows]);
 
     const handleGeneralChange = (
         e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -174,6 +210,20 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
         );
     };
 
+    const handleStatusInputChange = (rowId: string, nextStatus: string) => {
+        setFocusedStatusId(rowId);
+        setItemTrackingRows((prev) =>
+            prev.map((row) =>
+                row.id === rowId ? { ...row, statusText: nextStatus } : row
+            )
+        );
+    };
+
+    const handleStatusSuggestionSelect = (rowId: string, suggestion: string) => {
+        handleStatusInputChange(rowId, suggestion);
+        setFocusedStatusId(null);
+    };
+
     const handleTaskSuggestionSelect = (rowId: string, description: string) => {
         handleTaskInputChange(rowId, description);
         setFocusedTaskId(null);
@@ -194,10 +244,10 @@ const handleTaskRoleToggle = (
     });
 };
 
-const handleRemoveTaskRow = (rowId: string) => {
-    setTaskRows(prev => prev.filter(r => r.id !== rowId));
-    setTaskRoleDrafts((prev) => {
-        const { [rowId]: _removed, ...rest } = prev;
+    const handleRemoveTaskRow = (rowId: string) => {
+        setTaskRows(prev => prev.filter(r => r.id !== rowId));
+        setTaskRoleDrafts((prev) => {
+            const { [rowId]: _removed, ...rest } = prev;
         return rest;
     });
 
@@ -205,7 +255,76 @@ const handleRemoveTaskRow = (rowId: string) => {
     if (openRolesTaskId === rowId) {
         setOpenRolesTaskId(null);
     }
-};
+    };
+
+    const handleAddItemTrackingRow = () => {
+        setItemTrackingRows((prev) => [
+            ...prev,
+            {
+                id: crypto.randomUUID(),
+                statusText: '',
+                taskIds: [],
+                statusMoment: 'task_finished',
+            },
+        ]);
+    };
+
+    const handleItemTrackingFieldChange = (
+        rowId: string,
+        field: keyof ItemTrackingRow,
+        fieldValue: string
+    ) => {
+        setItemTrackingRows((prev) =>
+            prev.map((row) =>
+                row.id === rowId ? { ...row, [field]: fieldValue } : row
+            )
+        );
+    };
+
+    const handleItemTrackingTaskToggle = (rowId: string, taskId: string, checked: boolean) => {
+        setItemTrackingTaskDrafts((prev) => {
+            const current = prev[rowId] ?? [];
+            const updated = new Set(current);
+            if (checked) updated.add(taskId);
+            else updated.delete(taskId);
+            return { ...prev, [rowId]: Array.from(updated) };
+        });
+    };
+
+    const handleOpenItemTrackingTasks = (rowId: string) => {
+        setOpenItemTrackingTaskId((prev) => {
+            const next = prev === rowId ? null : rowId;
+            if (next) {
+                setItemTrackingTaskDrafts((drafts) => ({
+                    ...drafts,
+                    [rowId]: drafts[rowId] ?? itemTrackingRows.find((r) => r.id === rowId)?.taskIds ?? [],
+                }));
+            }
+            return next;
+        });
+    };
+
+    const handleApplyItemTrackingTasks = (rowId: string) => {
+        setItemTrackingRows((prev) =>
+            prev.map((row) =>
+                row.id === rowId
+                    ? { ...row, taskIds: itemTrackingTaskDrafts[rowId] ?? [] }
+                    : row
+            )
+        );
+        setOpenItemTrackingTaskId(null);
+    };
+
+    const handleRemoveItemTrackingRow = (rowId: string) => {
+        setItemTrackingRows((prev) => prev.filter((row) => row.id !== rowId));
+        setItemTrackingTaskDrafts((prev) => {
+            const { [rowId]: _removed, ...rest } = prev;
+            return rest;
+        });
+        if (openItemTrackingTaskId === rowId) {
+            setOpenItemTrackingTaskId(null);
+        }
+    };
 
 
 const handleOpenRoles = (rowId: string) => {
@@ -247,6 +366,10 @@ const handleApplyTaskRoles = (rowId: string) => {
         }
         onTaskRowsChange?.(taskRows);
     }, [taskRows, onTaskRowsChange]);
+
+    useEffect(() => {
+        onItemTrackingRowsChange?.(itemTrackingRows);
+    }, [itemTrackingRows, onItemTrackingRowsChange]);
 
     return (
         <div className="project-form">
@@ -612,6 +735,180 @@ const handleApplyTaskRoles = (rowId: string) => {
                     </div>
                     );
                 })}
+                </div>
+            )}
+            </section>
+
+            {/* 4. ITEM TRACKING */}
+            <section className="project-form__section">
+            <div className="project-form__section-header">
+                <h4>Item Tracking</h4>
+
+                <div className="project-team__actions">
+                <button
+                    type="button"
+                    className="btn-icon-square"
+                    onClick={handleAddItemTrackingRow}
+                    title="Add item tracking"
+                >
+                    <span className="material-symbols-outlined">add</span>
+                </button>
+                </div>
+            </div>
+
+            {itemTrackingRows.length === 0 ? (
+                <div className="project-form__hint">
+                No item tracking rows yet. Click "Add item tracking" to start.
+                </div>
+            ) : (
+                <div className="item-tracking-rows">
+                <div className="item-tracking-row item-tracking-row--header">
+                    <div>#</div>
+                    <div>Status</div>
+                    <div>Task</div>
+                    <div>Status moment</div>
+                    <div></div>
+                </div>
+
+                {itemTrackingRows.map((row, index) => (
+                    <div key={row.id} className="item-tracking-row">
+                    <div>{index + 1}</div>
+
+                    <div>
+                        <div className="project-task-autocomplete">
+                        <input
+                            type="text"
+                            className="project-task-input"
+                            placeholder="Status"
+                            value={row.statusText}
+                            onChange={(e) => handleStatusInputChange(row.id, e.target.value)}
+                            onFocus={() => setFocusedStatusId(row.id)}
+                            onBlur={() =>
+                                setFocusedStatusId((prev) => (prev === row.id ? null : prev))
+                            }
+                        />
+                        {focusedStatusId === row.id &&
+                            row.statusText.trim() &&
+                            safeItemStatusOptions.filter((status) =>
+                                (status.label || status.name || '')
+                                    .toLowerCase()
+                                    .includes(row.statusText.trim().toLowerCase())
+                            ).length > 0 && (
+                                <div className="project-task-suggestions">
+                                    {safeItemStatusOptions
+                                        .map((status) => {
+                                            const label = status.label || status.name || '';
+                                            return {
+                                                ...status,
+                                                displayLabel: label,
+                                                matchIndex: label
+                                                    .toLowerCase()
+                                                    .indexOf(row.statusText.trim().toLowerCase()),
+                                            };
+                                        })
+                                        .filter((status) => status.matchIndex !== -1)
+                                        .sort(
+                                            (a, b) =>
+                                                a.matchIndex - b.matchIndex ||
+                                                a.displayLabel.localeCompare(b.displayLabel)
+                                        )
+                                        .slice(0, 20)
+                                        .map((status) => (
+                                            <button
+                                                key={status.id}
+                                                type="button"
+                                                className="project-task-suggestion"
+                                                onMouseDown={(e) => {
+                                                    e.preventDefault();
+                                                    handleStatusSuggestionSelect(
+                                                        row.id,
+                                                        status.displayLabel
+                                                    );
+                                                }}
+                                            >
+                                                {status.displayLabel}
+                                            </button>
+                                        ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="roles-select-cell">
+                        <button
+                            type="button"
+                            className="roles-select-trigger"
+                            onClick={() => handleOpenItemTrackingTasks(row.id)}
+                        >
+                            <span className="roles-select-label">
+                            {row.taskIds.length === 0
+                                ? 'Select tasks...'
+                                : itemTrackingTaskOptions
+                                    .filter((task) => row.taskIds.includes(task.value))
+                                    .map((task) => task.label)
+                                    .join(', ')}
+                            </span>
+                            <span className="material-symbols-outlined">
+                            arrow_drop_down
+                            </span>
+                        </button>
+
+                        {openItemTrackingTaskId === row.id && (
+                            <div className="roles-select-dropdown">
+                            {itemTrackingTaskOptions.map((task) => {
+                                const id = task.value;
+                                const checked = (itemTrackingTaskDrafts[row.id] ?? row.taskIds).includes(id);
+                                return (
+                                <label key={task.value} className="roles-select-option">
+                                    <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) =>
+                                        handleItemTrackingTaskToggle(row.id, id, e.target.checked)
+                                    }
+                                    />
+                                    {task.label}
+                                </label>
+                                );
+                            })}
+                            <div className="roles-select-actions">
+                                <button
+                                    type="button"
+                                    className="roles-select-done"
+                                    onClick={() => handleApplyItemTrackingTasks(row.id)}
+                                >
+                                    Done
+                                </button>
+                            </div>
+                            </div>
+                        )}
+                        </div>
+                    </div>
+
+                    <div>
+                        <select
+                        value={row.statusMoment}
+                        onChange={(e) =>
+                            handleItemTrackingFieldChange(row.id, 'statusMoment', e.target.value)
+                        }
+                        >
+                        <option value="task_started">Task started</option>
+                        <option value="task_finished">Task finished</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <button
+                        type="button"
+                        className="btn-icon-small"
+                        onClick={() => handleRemoveItemTrackingRow(row.id)}
+                        >
+                        <span className="material-symbols-outlined">delete</span>
+                        </button>
+                    </div>
+                    </div>
+                ))}
                 </div>
             )}
             </section>
