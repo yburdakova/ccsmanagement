@@ -5,6 +5,34 @@ const router = express.Router();
 
 console.log('Projects route loaded');
 
+const idColumnCache = new Map();
+
+const getIdColumnMode = async (connection, tableName) => {
+  if (idColumnCache.has(tableName)) {
+    return idColumnCache.get(tableName);
+  }
+
+  const [rows] = await connection.query(
+    `SHOW COLUMNS FROM ?? LIKE 'id'`,
+    [tableName]
+  );
+  if (rows.length === 0) {
+    idColumnCache.set(tableName, 'none');
+    return 'none';
+  }
+  const extra = rows[0].Extra ?? '';
+  const mode = extra.includes('auto_increment') ? 'auto' : 'manual';
+  idColumnCache.set(tableName, mode);
+  return mode;
+};
+
+const getNextId = async (connection, tableName) => {
+  const [rows] = await connection.query(
+    `SELECT COALESCE(MAX(id), 0) AS maxId FROM ${tableName} FOR UPDATE`
+  );
+  return Number(rows[0].maxId) + 1;
+};
+
 router.get('/', async (req, res) => {
   try {
     const query = `
@@ -128,13 +156,6 @@ router.post('/', async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    const getNextId = async (tableName) => {
-      const [rows] = await connection.query(
-        `SELECT COALESCE(MAX(id), 0) AS maxId FROM ${tableName} FOR UPDATE`
-      );
-      return Number(rows[0].maxId) + 1;
-    };
-
     const [projectResult] = await connection.query(
       `
         INSERT INTO projects (
@@ -159,20 +180,41 @@ router.post('/', async (req, res) => {
 
     const projectId = projectResult.insertId;
 
-    let nextProjectUserId = await getNextId('project_users');
+    const projectUsersIdMode = await getIdColumnMode(connection, 'project_users');
+    let nextProjectUserId =
+      projectUsersIdMode === 'manual'
+        ? await getNextId(connection, 'project_users')
+        : null;
     for (const row of team) {
       if (!row.userId || !row.roleId) continue;
-      await connection.query(
-        `
-          INSERT INTO project_users (id, project_id, user_id, project_role_id)
-          VALUES (?, ?, ?, ?)
-        `,
-        [nextProjectUserId, projectId, row.userId, row.roleId]
-      );
-      nextProjectUserId += 1;
+      if (projectUsersIdMode === 'manual') {
+        await connection.query(
+          `
+            INSERT INTO project_users (id, project_id, user_id, project_role_id)
+            VALUES (?, ?, ?, ?)
+          `,
+          [nextProjectUserId, projectId, row.userId, row.roleId]
+        );
+        nextProjectUserId += 1;
+      } else {
+        await connection.query(
+          `
+            INSERT INTO project_users (project_id, user_id, project_role_id)
+            VALUES (?, ?, ?)
+          `,
+          [projectId, row.userId, row.roleId]
+        );
+      }
     }
 
-    let nextProjectTaskRoleId = await getNextId('project_task_roles');
+    const projectTaskRolesIdMode = await getIdColumnMode(
+      connection,
+      'project_task_roles'
+    );
+    let nextProjectTaskRoleId =
+      projectTaskRolesIdMode === 'manual'
+        ? await getNextId(connection, 'project_task_roles')
+        : null;
     for (const task of tasks) {
       let taskId = task.taskId;
 
@@ -192,14 +234,24 @@ router.post('/', async (req, res) => {
       const roles = Array.isArray(task.rolesId) ? task.rolesId : [];
       for (const roleId of roles) {
         if (!roleId) continue;
-        await connection.query(
-          `
-            INSERT INTO project_task_roles (id, project_id, task_id, role_id)
-            VALUES (?, ?, ?, ?)
-          `,
-          [nextProjectTaskRoleId, projectId, taskId, roleId]
-        );
-        nextProjectTaskRoleId += 1;
+        if (projectTaskRolesIdMode === 'manual') {
+          await connection.query(
+            `
+              INSERT INTO project_task_roles (id, project_id, task_id, role_id)
+              VALUES (?, ?, ?, ?)
+            `,
+            [nextProjectTaskRoleId, projectId, taskId, roleId]
+          );
+          nextProjectTaskRoleId += 1;
+        } else {
+          await connection.query(
+            `
+              INSERT INTO project_task_roles (project_id, task_id, role_id)
+              VALUES (?, ?, ?)
+            `,
+            [projectId, taskId, roleId]
+          );
+        }
       }
     }
 
@@ -238,13 +290,6 @@ router.put('/:id', async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    const getNextId = async (tableName) => {
-      const [rows] = await connection.query(
-        `SELECT COALESCE(MAX(id), 0) AS maxId FROM ${tableName} FOR UPDATE`
-      );
-      return Number(rows[0].maxId) + 1;
-    };
-
     await connection.query(
       `
         UPDATE projects
@@ -276,20 +321,41 @@ router.put('/:id', async (req, res) => {
       [projectId]
     );
 
-    let nextProjectUserId = await getNextId('project_users');
+    const projectUsersIdMode = await getIdColumnMode(connection, 'project_users');
+    let nextProjectUserId =
+      projectUsersIdMode === 'manual'
+        ? await getNextId(connection, 'project_users')
+        : null;
     for (const row of team) {
       if (!row.userId || !row.roleId) continue;
-      await connection.query(
-        `
-          INSERT INTO project_users (id, project_id, user_id, project_role_id)
-          VALUES (?, ?, ?, ?)
-        `,
-        [nextProjectUserId, projectId, row.userId, row.roleId]
-      );
-      nextProjectUserId += 1;
+      if (projectUsersIdMode === 'manual') {
+        await connection.query(
+          `
+            INSERT INTO project_users (id, project_id, user_id, project_role_id)
+            VALUES (?, ?, ?, ?)
+          `,
+          [nextProjectUserId, projectId, row.userId, row.roleId]
+        );
+        nextProjectUserId += 1;
+      } else {
+        await connection.query(
+          `
+            INSERT INTO project_users (project_id, user_id, project_role_id)
+            VALUES (?, ?, ?)
+          `,
+          [projectId, row.userId, row.roleId]
+        );
+      }
     }
 
-    let nextProjectTaskRoleId = await getNextId('project_task_roles');
+    const projectTaskRolesIdMode = await getIdColumnMode(
+      connection,
+      'project_task_roles'
+    );
+    let nextProjectTaskRoleId =
+      projectTaskRolesIdMode === 'manual'
+        ? await getNextId(connection, 'project_task_roles')
+        : null;
     for (const task of tasks) {
       let taskId = task.taskId;
 
@@ -309,14 +375,24 @@ router.put('/:id', async (req, res) => {
       const roles = Array.isArray(task.rolesId) ? task.rolesId : [];
       for (const roleId of roles) {
         if (!roleId) continue;
-        await connection.query(
-          `
-            INSERT INTO project_task_roles (id, project_id, task_id, role_id)
-            VALUES (?, ?, ?, ?)
-          `,
-          [nextProjectTaskRoleId, projectId, taskId, roleId]
-        );
-        nextProjectTaskRoleId += 1;
+        if (projectTaskRolesIdMode === 'manual') {
+          await connection.query(
+            `
+              INSERT INTO project_task_roles (id, project_id, task_id, role_id)
+              VALUES (?, ?, ?, ?)
+            `,
+            [nextProjectTaskRoleId, projectId, taskId, roleId]
+          );
+          nextProjectTaskRoleId += 1;
+        } else {
+          await connection.query(
+            `
+              INSERT INTO project_task_roles (project_id, task_id, role_id)
+              VALUES (?, ?, ?)
+            `,
+            [projectId, taskId, roleId]
+          );
+        }
       }
     }
 

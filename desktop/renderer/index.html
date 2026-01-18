@@ -28,18 +28,19 @@
       
       <hr class="divider">
 
-      <div class="activity-section">
-        <div class="btns-box">
-          <button id="prod-btn">BREAK</button>
-          <button id="lunch-btn">LUNCH</button>
-          <button id="adm-btn">ADMINISTRATION</button>
-          <button id="break-btn">TECHNICAL DELAY</button>
+      <div class="work-sections">
+        <div class="activity-section">
+          <div class="btns-box">
+            <button id="prod-btn">BREAK</button>
+            <button id="lunch-btn">LUNCH</button>
+            <button id="adm-btn">ADMINISTRATION</button>
+            <button id="break-btn">TECHNICAL DELAY</button>
+          </div>
         </div>
-      </div>
 
-      <hr class="divider">
+        <hr class="divider">
 
-      <div class="production-section">
+        <div class="production-section">
 
         <div class="project-selector-section">
           <div class="selection-with-saving-box">
@@ -68,12 +69,27 @@
           <button id="start-task-button" disabled>START</button>
         </div>
 
-        <div id="task-overlay" class="task-overlay" style="display: none;">
+          <div id="task-overlay" class="task-overlay" style="display: none;">
+            <div class="task-overlay__content">
+              <div class="task-overlay__label">In progress</div>
+              <div id="task-overlay-name" class="task-overlay__name"></div>
+              <div id="task-overlay-timer" class="task-overlay__timer">00:00:00</div>
+              <div class="task-overlay__actions">
+                <button id="finish-task-button">FINISH</button>
+                <button id="stop-task-button">STOP</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="activity-overlay" class="task-overlay" style="display: none;">
           <div class="task-overlay__content">
             <div class="task-overlay__label">In progress</div>
-            <div id="task-overlay-name" class="task-overlay__name"></div>
-            <div id="task-overlay-timer" class="task-overlay__timer">00:00:00</div>
-            <button id="finish-task-button">FINISH</button>
+            <div id="activity-overlay-name" class="task-overlay__name">Break</div>
+            <div id="activity-overlay-timer" class="task-overlay__timer">00:00:00</div>
+            <div class="task-overlay__actions">
+              <button id="finish-activity-button">FINISH</button>
+            </div>
           </div>
         </div>
       </div>

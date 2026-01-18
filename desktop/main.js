@@ -6,6 +6,7 @@ const { isOnline } = require('./utils/network-status');
 const { initializeLocalDb } = require('./api/db-local');
 
 function createWindow(screenWidth) {
+  let isQuitting = false;
   const win = new BrowserWindow({
     width: 400,
     height: 900,
@@ -28,6 +29,7 @@ function createWindow(screenWidth) {
   win.webContents.openDevTools();
 
   win.on('close', (event) => {
+    if (isQuitting) return;
     event.preventDefault();
 
     const choice = dialog.showMessageBoxSync(win, {
@@ -40,7 +42,8 @@ function createWindow(screenWidth) {
     });
 
     if (choice === 1) {
-      app.exit();
+      isQuitting = true;
+      app.quit();
     }
   });
 }
@@ -219,18 +222,18 @@ ipcMain.handle('login-with-code', async (event, code) => {
 });
 
 
-ipcMain.handle('start-unallocated', async (event, {userId}) => {
+ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
   const { startUnallocatedActivityLocal: startLocal } = require('./api/db-local');
   const { startUnallocatedActivityGlobal: startServer } = require('./api/db');
 
-  const activityId = 4;
+  const safeActivityId = Number(activityId) || 4;
   const isConnected = await isOnline();
 
   try {
-    const { uuid } = await startLocal(userId, activityId);
+    const { uuid } = await startLocal(userId, safeActivityId);
 
     if (isConnected) {
-      const res = await startServer({ uuid, user_id: userId, activity_id: activityId });
+      const res = await startServer({ uuid, user_id: userId, activity_id: safeActivityId });
       if (!res.success) throw new Error(res.error);
     }
 

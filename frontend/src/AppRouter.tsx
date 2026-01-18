@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage/LoginPage';
 import MainLayout from './layouts/MainLayout/MainLayout';
 import DataPage from './pages/DataPage/DataPage';
 import ProductionSheetPage from './pages/ProductionSheetPage/ProductionSheetPage';
+import InventoryItemsPage from './pages/InventoryItemsPage/InventoryItemsPage';
 
 
 const AppRouter = () => {
@@ -22,6 +23,7 @@ const AppRouter = () => {
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/data" element={<DataPage />} />
+          <Route path="/inventory-items" element={<InventoryItemsPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" />} />

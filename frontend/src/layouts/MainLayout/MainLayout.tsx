@@ -29,6 +29,8 @@ const MainLayout = () => {
         return 'Manage Users';
       case '/data':
         return 'Manage Data';
+      case '/inventory-items':
+        return 'Inventory Items';
       case '/customers':
         return 'Manage Customers';    
       case '/production-sheet':
@@ -96,6 +98,9 @@ const MainLayout = () => {
                     </NavLink>
                     <NavLink to="/data" className="navItem">
                       <div className="navItem"><span className="gg-icon">table_edit</span> Manage Data</div>
+                    </NavLink>
+                    <NavLink to="/inventory-items" className="navItem">
+                      <div className="navItem"><span className="gg-icon">inventory_2</span> Inventory Items</div>
                     </NavLink>
                   </>
                 )}

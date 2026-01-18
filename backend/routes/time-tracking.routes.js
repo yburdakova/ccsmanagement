@@ -17,6 +17,7 @@ router.get('/', async (req, res) => {
       `
       SELECT
         utt.id,
+        utt.activity_id,
         utt.task_id,
         utt.start_time,
         utt.end_time,

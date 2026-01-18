@@ -4,6 +4,7 @@ import './ProductionSheetPage.css';
 
 type TimeSlice = {
   id: number;
+  activity_id: number | null;
   task_id: number | null;
   task_name: string | null;
   task_type: string | null;
@@ -48,6 +49,9 @@ const ProductionSheetPage = () => {
     return parsed.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
+  const getTaskLabel = (row: TimeSlice) =>
+    row.activity_id === 3 ? 'Break' : row.task_name || 'Unallocated';
+
   return (
     <div className="production-sheet">
       <div className="production-sheet__header">
@@ -79,7 +83,7 @@ const ProductionSheetPage = () => {
 
           {rows.map((row) => (
             <div key={row.id} className="time-table__row">
-              <div>{row.task_name || 'Unallocated'}</div>
+              <div>{getTaskLabel(row)}</div>
               <div>{row.task_type || '-'}</div>
               <div>{formatTime(row.start_time)}</div>
               <div>{formatTime(row.end_time)}</div>
