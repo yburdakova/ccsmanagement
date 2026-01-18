@@ -18,15 +18,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const activityOverlayName = document.getElementById('activity-overlay-name');
   const activityOverlayTimer = document.getElementById('activity-overlay-timer');
   const finishActivityButton = document.getElementById('finish-activity-button');
-  const breakButton = document.getElementById('break-btn');
-  const prodBreakButton = document.getElementById('prod-btn');
+  const breakButton = document.getElementById('prod-btn');
   const lunchButton = document.getElementById('lunch-btn');
+  const meetingButton = document.getElementById('adm-btn');
+  const adminButton = document.getElementById('break-btn');
   const activitySection = document.querySelector('.activity-section');
   const productionSection = document.querySelector('.production-section');
   const projectSection = document.querySelector('.project-selector-section');
   const itemInput = document.getElementById('item-input');
   const timerEl = document.querySelector('.timer');
   const savedProjectKey = 'rememberedProject';
+  const workTimerStateKey = 'workTimerState';
 
   authInput.focus();
   authInput.addEventListener('keydown', (e) => {
@@ -34,6 +36,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   window.network.startConnectionMonitoring();
+  window.addEventListener('beforeunload', () => {
+    persistWorkTimerState();
+  });
   let allProjects = await window.electronAPI.getAllProjects();
   let allProjectUsers = await window.electronAPI.getAllProjectUsers();
   let projectRoles = await window.electronAPI.getAllProjectRoles();
@@ -45,6 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let userSelectedTask = false;
   let timerIntervalId = null;
   let timerStartMs = null;
+  let workTimerPausedElapsedMs = null;
   let taskTimerIntervalId = null;
   let taskTimerStartMs = null;
   let activityTimerIntervalId = null;
@@ -131,7 +137,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       clockinButton.textContent = 'CLOCK-OUT';
       alert(`Clock-in successful! (uuid=${currentSessionUuid})`);
-      startTimer();
+      resumeOrStartWorkTimer();
       if (activitySection) activitySection.style.display = '';
       if (productionSection) productionSection.style.display = '';
 
@@ -165,13 +171,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } else {
       // CLOCK-OUT
-      if (!currentSessionUuid) {
+      const activeUuid = currentTaskUuid || currentSessionUuid;
+      if (!activeUuid) {
         alert('No active session UUID found!');
         return;
       }
 
       const result = await window.electronAPI.completeActiveActivity({
-        uuid: currentSessionUuid,
+        uuid: activeUuid,
         userId: currentUser.id,
         isTaskCompleted: false
       });
@@ -182,11 +189,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       clockinButton.textContent = 'CLOCK-IN';
-      alert(`Clock-out successful! (uuid=${currentSessionUuid})`);
+      alert(`Clock-out successful! (uuid=${activeUuid})`);
+      persistWorkTimerState();
       currentSessionUuid = null;
       currentTaskUuid = null;
       stopTimer(true);
       stopTaskTimer(true);
+      workTimerPausedElapsedMs = null;
+      if (timerEl) timerEl.style.color = '';
       if (taskOverlay) taskOverlay.style.display = 'none';
       if (activityOverlay) activityOverlay.style.display = 'none';
       stopActivityTimer(true);
@@ -264,15 +274,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     currentSessionUuid = activityResult.uuid;
+    if (activityId === 1) {
+      pauseWorkTimerForLunch();
+    }
     showActivityOverlay(label);
   };
 
   const handleBreakClick = () => handleActivityClick(3, 'Break');
   const handleLunchClick = () => handleActivityClick(1, 'Lunch');
+  const handleMeetingClick = () => handleActivityClick(5, 'Meeting');
+  const handleAdministrationClick = () => handleActivityClick(8, 'Administration');
 
   breakButton?.addEventListener('click', handleBreakClick);
-  prodBreakButton?.addEventListener('click', handleBreakClick);
   lunchButton?.addEventListener('click', handleLunchClick);
+  meetingButton?.addEventListener('click', handleMeetingClick);
+  adminButton?.addEventListener('click', handleAdministrationClick);
 
   startTaskButton?.addEventListener('click', async () => {
     if (!taskOverlay || !taskOverlayName || !taskOverlayTimer) return;
@@ -360,7 +376,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       currentSessionUuid = null;
     }
+    if (activityOverlayName?.textContent === 'Lunch') {
+      resumeWorkTimerAfterLunch();
+    }
     hideActivityOverlay();
+    await startUnallocatedForCurrentUser();
   });
 
   taskSelect?.addEventListener('change', () => {
@@ -431,6 +451,64 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (reset) timerEl.textContent = '00:00';
   }
 
+  function getTodayKey() {
+    return new Date().toISOString().split('T')[0];
+  }
+
+  function readWorkTimerState() {
+    try {
+      const raw = localStorage.getItem(workTimerStateKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch (err) {
+      console.warn('[renderer] Failed to read work timer state:', err);
+      return null;
+    }
+  }
+
+  function persistWorkTimerState() {
+    const elapsedMs =
+      timerStartMs != null
+        ? Date.now() - timerStartMs
+        : workTimerPausedElapsedMs != null
+          ? workTimerPausedElapsedMs
+          : null;
+    if (elapsedMs == null) return;
+    const payload = { date: getTodayKey(), elapsedMs };
+    try {
+      localStorage.setItem(workTimerStateKey, JSON.stringify(payload));
+    } catch (err) {
+      console.warn('[renderer] Failed to persist work timer state:', err);
+    }
+  }
+
+  function resumeOrStartWorkTimer() {
+    const saved = readWorkTimerState();
+    const today = getTodayKey();
+    if (saved && saved.date === today && Number.isFinite(saved.elapsedMs)) {
+      timerStartMs = Date.now() - saved.elapsedMs;
+      updateTimerDisplay();
+      timerIntervalId = setInterval(updateTimerDisplay, 1000);
+      return;
+    }
+    startTimer();
+  }
+
+  function pauseWorkTimerForLunch() {
+    if (!timerStartMs) return;
+    workTimerPausedElapsedMs = Date.now() - timerStartMs;
+    stopTimer(false);
+    if (timerEl) timerEl.style.color = '#c0392b';
+  }
+
+  function resumeWorkTimerAfterLunch() {
+    if (workTimerPausedElapsedMs == null) return;
+    timerStartMs = Date.now() - workTimerPausedElapsedMs;
+    updateTimerDisplay();
+    timerIntervalId = setInterval(updateTimerDisplay, 1000);
+    workTimerPausedElapsedMs = null;
+    if (timerEl) timerEl.style.color = '';
+  }
+
   function updateTimerDisplay() {
     if (!timerStartMs) return;
     const elapsedMs = Date.now() - timerStartMs;
@@ -485,6 +563,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const dataList = document.getElementById('items-list');
     if (dataList) dataList.innerHTML = '';
     if (itemInput) itemInput.value = '';
+  }
+
+  async function startUnallocatedForCurrentUser() {
+    if (!currentUser) return;
+    const result = await window.electronAPI.startUnallocated(currentUser.id, 4);
+    if (!result.success) {
+      alert('Failed to start unallocated time: ' + result.error);
+      return;
+    }
+    currentSessionUuid = result.uuid;
   }
 
   async function refreshProjectDataIfOnline({ updateOptions = true } = {}) {

@@ -5,9 +5,24 @@
 }
 
 .production-sheet__header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.production-sheet__meta {
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  color: #5d6670;
+  justify-self: center;
+}
+
+.production-sheet__actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
 }
 
 .time-table {
@@ -17,13 +32,19 @@
 
 .time-table__row {
   display: grid;
-  grid-template-columns: 2fr 1.2fr 1fr 1fr 1fr auto;
+  grid-template-columns: 1.2fr 2fr 0.8fr 0.8fr 0.6fr 2fr 0.5fr;
   gap: 12px;
-  align-items: center;
+  align-items: start;
   padding: 10px 12px;
   background: #ffffff;
   border: 1px solid #e3e6e8;
   border-radius: 8px;
+}
+
+.time-table__row > :nth-child(3),
+.time-table__row > :nth-child(4),
+.time-table__row > :nth-child(5) {
+  text-align: center;
 }
 
 .time-table__row--header {
@@ -47,4 +68,74 @@
 
 .note-btn:hover {
   background: #005a9e;
+}
+
+.note-btn--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+}
+
+.note-btn--icon .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.production-sheet__modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.production-sheet__modal-card {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 16px 20px;
+  width: 100%;
+  max-width: 360px;
+  display: grid;
+  gap: 12px;
+}
+
+.production-sheet__modal-error {
+  background: #fdecea;
+  border: 1px solid #f5c2c7;
+  color: #b42318;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.production-sheet__modal-card label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+  color: #2f3438;
+}
+
+.production-sheet__modal-card input,
+.production-sheet__modal-card select,
+.production-sheet__modal-card textarea {
+  border: 1px solid #cfd6db;
+  border-radius: 6px;
+  padding: 8px;
+  font-family: inherit;
+}
+
+.production-sheet__modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.production-sheet__modal-cancel {
+  background: #6c757d;
+}
+
+.production-sheet__modal-cancel:hover {
+  background: #596269;
 }
