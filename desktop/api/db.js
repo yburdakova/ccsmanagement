@@ -216,6 +216,55 @@ async function getItemTrackingTasksByProject(projectId) {
   }
 }
 
+async function getItemStatusRuleByTask(projectId, taskId, applyAfterFinish) {
+  try {
+    const [rows] = await pool.query(
+      `
+        SELECT ist.item_status_id AS statusId,
+               ist.apply_after_finish AS applyAfterFinish
+        FROM itemstatus_task ist
+        INNER JOIN ref_item_status ris ON ris.id = ist.item_status_id
+        WHERE ris.project_id = ?
+          AND ist.task_id = ?
+          AND (? IS NULL OR ist.apply_after_finish = ?)
+        LIMIT 1
+      `,
+      [projectId, taskId, applyAfterFinish, applyAfterFinish]
+    );
+    if (!rows.length) return null;
+    return {
+      statusId: rows[0].statusId,
+      applyAfterFinish: Number(rows[0].applyAfterFinish) === 1 ? 1 : 0
+    };
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing item tracking tables, skipping.');
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function updateItemStatusGlobal(itemId, statusId) {
+  try {
+    await pool.query(
+      `
+        UPDATE items
+        SET status_id = ?
+        WHERE id = ?
+      `,
+      [statusId, itemId]
+    );
+    return { success: true };
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing items table, skipping.');
+      return { success: false, error: 'Missing items table' };
+    }
+    throw error;
+  }
+}
+
 function getItemStatusLocal(itemId, projectTypeId) {
   return new Promise((resolve, reject) => {
     const table = projectTypeId === 1 ? 'cfs_items' : 'im_items';
@@ -310,7 +359,7 @@ async function startUnallocatedActivityGlobal({ uuid, user_id, activity_id, time
   }
 }
 
-async function startTaskActivityGlobal({ uuid, user_id, project_id, task_id, timestamp }) {
+async function startTaskActivityGlobal({ uuid, user_id, project_id, task_id, item_id, timestamp }) {
   const startTime = timestamp ? new Date(timestamp) : new Date();
   const dateStr = startTime.toISOString().split('T')[0];
   const timeStr = formatMySQLDatetime(startTime);
@@ -322,9 +371,9 @@ async function startTaskActivityGlobal({ uuid, user_id, project_id, task_id, tim
         uuid, user_id, date, project_id, activity_id, task_id, item_id,
         start_time, end_time, duration, is_completed_project_task, note
       )
-      VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, NULL, NULL)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
       `,
-      [uuid, user_id, dateStr, project_id, 2, task_id, timeStr]
+      [uuid, user_id, dateStr, project_id, 2, task_id, item_id ?? null, timeStr]
     );
     console.log(`[server-db] Task start recorded (uuid=${uuid}, project=${project_id}, task=${task_id})`);
     return { success: true };
@@ -404,11 +453,13 @@ module.exports = {
   getImItemsByProject,
   getItemsByProject,
   getItemTrackingTasksByProject,
+  getItemStatusRuleByTask,
   getAllRefItemStatus,
   getAllCfsItems,
   getAllImItems,
   getItemStatusLocal,
   updateItemStatusLocal,
+  updateItemStatusGlobal,
   startUnallocatedActivityGlobal,
   startTaskActivityGlobal,
   completeActiveActivityGlobal

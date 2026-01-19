@@ -589,7 +589,7 @@ async function syncQueue() {
   });
 }
 
-function startTaskActivityLocal(userId, projectId, taskId) {
+function startTaskActivityLocal(userId, projectId, taskId, itemId) {
   const startTime = new Date();
   const dateStr = startTime.toISOString().split('T')[0];
   const timeStr = formatMySQLDatetime(startTime);
@@ -600,8 +600,8 @@ function startTaskActivityLocal(userId, projectId, taskId) {
       INSERT INTO users_time_tracking (  
         uuid, user_id, date, project_id, activity_id, task_id, item_id,
         start_time, end_time, duration, is_completed_project_task, note
-      ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, NULL, NULL)
-    `, [uuid, userId, dateStr, projectId, 2, taskId, timeStr], (err) => {
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
+    `, [uuid, userId, dateStr, projectId, 2, taskId, itemId ?? null, timeStr], (err) => {
       if (err) {
         console.error('[local-db] Task start failed:', err.message);
         return reject(err);
@@ -618,6 +618,7 @@ function startTaskActivityLocal(userId, projectId, taskId) {
             user_id: userId,
             project_id: projectId,
             task_id: taskId,
+            item_id: itemId ?? null,
             timestamp: startTime.toISOString()
           };
 

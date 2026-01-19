@@ -17,10 +17,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAvailableTasks: (userId, projectId) => ipcRenderer.invoke('get-available-tasks', { userId, projectId }),
   getProjectItems: (projectId, projectTypeId) => ipcRenderer.invoke('get-project-items', { projectId, projectTypeId }),
   getItemTrackingTasks: (projectId) => ipcRenderer.invoke('get-item-tracking-tasks', { projectId }),
+  getItemStatusRule: (projectId, taskId, applyAfterFinish) =>
+    ipcRenderer.invoke('get-item-status-rule', { projectId, taskId, applyAfterFinish }),
+  updateItemStatus: (itemId, statusId) => ipcRenderer.invoke('update-item-status', { itemId, statusId }),
 
   startUnallocated: (userId, activityId) => ipcRenderer.invoke('start-unallocated', { userId, activityId }),
-  startTaskActivity: (userId, projectId, taskId) =>
-    ipcRenderer.invoke('start-task-activity', { userId, projectId, taskId }),
+  startTaskActivity: (userId, projectId, taskId, itemId) =>
+    ipcRenderer.invoke('start-task-activity', { userId, projectId, taskId, itemId }),
   completeActiveActivity: (payload) => ipcRenderer.invoke('complete-activity', payload),
   syncQueue: () => ipcRenderer.invoke('sync-queue'),
   logout: (payload) => ipcRenderer.invoke('logout', payload),

@@ -260,13 +260,13 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
   }
 });
 
-ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId }) => {
+ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId, itemId }) => {
   const { startTaskActivityLocal: startLocal } = require('./api/db-local');
   const { startTaskActivityGlobal: startServer } = require('./api/db');
   const isConnected = await isOnline();
 
   try {
-    const { uuid } = await startLocal(userId, projectId, taskId);
+    const { uuid } = await startLocal(userId, projectId, taskId, itemId);
 
     if (isConnected) {
       const res = await startServer({
@@ -274,6 +274,7 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId 
         user_id: userId,
         project_id: projectId,
         task_id: taskId,
+        item_id: itemId ?? null,
         timestamp: new Date().toISOString()
       });
       if (!res.success) throw new Error(res.error);
@@ -386,6 +387,36 @@ ipcMain.handle('get-item-tracking-tasks', async (event, { projectId }) => {
   } catch (error) {
     console.error('Error fetching item tracking tasks:', error);
     return [];
+  }
+});
+
+ipcMain.handle('get-item-status-rule', async (event, { projectId, taskId, applyAfterFinish }) => {
+  const { getItemStatusRuleByTask } = require('./api/db');
+  const { isOnline } = require('./utils/network-status');
+
+  try {
+    const online = await isOnline();
+    if (!online) return null;
+    return await getItemStatusRuleByTask(projectId, taskId, applyAfterFinish);
+  } catch (error) {
+    console.error('Error fetching item status rule:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
+  const { updateItemStatusGlobal } = require('./api/db');
+  const { isOnline } = require('./utils/network-status');
+
+  try {
+    const online = await isOnline();
+    if (!online) {
+      return { success: false, error: 'Offline mode' };
+    }
+    return await updateItemStatusGlobal(itemId, statusId);
+  } catch (error) {
+    console.error('Error updating item status:', error);
+    return { success: false, error: error.message };
   }
 });
 

@@ -212,6 +212,12 @@ button.icon-btn{
   margin-bottom: 8px;
 }
 
+.task-overlay__item {
+  font-size: 14px;
+  color: #4f5961;
+  margin-bottom: 12px;
+}
+
 .task-overlay__timer {
   font-size: 28px;
   font-weight: 900;

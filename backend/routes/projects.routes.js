@@ -152,7 +152,7 @@ router.get('/:id', async (req, res) => {
       if (row.taskId) {
         entry.taskIds.push(row.taskId);
       }
-      if (row.applyAfterFinish) {
+      if (Number(row.applyAfterFinish) === 1) {
         entry.applyAfterFinish = 1;
       }
     }
@@ -308,10 +308,10 @@ router.post('/', async (req, res) => {
 
         const [statusResult] = await connection.query(
           `
-            INSERT INTO ref_item_status (task_id, label, project_id)
-            VALUES (?, ?, ?)
+            INSERT INTO ref_item_status (label, project_id)
+            VALUES (?, ?)
           `,
-          [resolvedTaskIds[0], statusText, projectId]
+          [statusText, projectId]
         );
         const statusId = statusResult.insertId;
 
@@ -386,36 +386,41 @@ router.put('/:id', async (req, res) => {
       ]
     );
 
-    await connection.query(
-      `DELETE FROM project_users WHERE project_id = ?`,
-      [projectId]
-    );
-    await connection.query(
-      `DELETE FROM project_task_roles WHERE project_id = ?`,
-      [projectId]
-    );
-
-    await connection.query(
+    const [existingProjectUsers] = await connection.query(
       `
-        DELETE ist
-        FROM itemstatus_task ist
-        INNER JOIN ref_item_status ris ON ris.id = ist.item_status_id
-        WHERE ris.project_id = ?
+        SELECT id, user_id AS userId, project_role_id AS roleId
+        FROM project_users
+        WHERE project_id = ?
       `,
       [projectId]
     );
-    await connection.query(
-      `DELETE FROM ref_item_status WHERE project_id = ?`,
-      [projectId]
+
+    const desiredUsers = team
+      .filter((row) => row.userId && row.roleId)
+      .map((row) => ({ userId: Number(row.userId), roleId: Number(row.roleId) }));
+
+    const existingUserKeyToId = new Map(
+      existingProjectUsers.map((row) => [`${row.userId}:${row.roleId}`, row.id])
     );
+    const desiredUserKeys = new Set(
+      desiredUsers.map((row) => `${row.userId}:${row.roleId}`)
+    );
+
+    for (const row of existingProjectUsers) {
+      const key = `${row.userId}:${row.roleId}`;
+      if (!desiredUserKeys.has(key)) {
+        await connection.query(`DELETE FROM project_users WHERE id = ?`, [row.id]);
+      }
+    }
 
     const projectUsersIdMode = await getIdColumnMode(connection, 'project_users');
     let nextProjectUserId =
       projectUsersIdMode === 'manual'
         ? await getNextId(connection, 'project_users')
         : null;
-    for (const row of team) {
-      if (!row.userId || !row.roleId) continue;
+    for (const row of desiredUsers) {
+      const key = `${row.userId}:${row.roleId}`;
+      if (existingUserKeyToId.has(key)) continue;
       if (projectUsersIdMode === 'manual') {
         await connection.query(
           `
@@ -444,6 +449,7 @@ router.put('/:id', async (req, res) => {
       projectTaskRolesIdMode === 'manual'
         ? await getNextId(connection, 'project_task_roles')
         : null;
+    const resolvedTasks = [];
     for (const task of tasks) {
       let taskId = task.taskId;
 
@@ -462,29 +468,103 @@ router.put('/:id', async (req, res) => {
       }
 
       if (!taskId) continue;
+      resolvedTasks.push({
+        taskId,
+        rolesId: Array.isArray(task.rolesId) ? task.rolesId : [],
+      });
+    }
 
-      const roles = Array.isArray(task.rolesId) ? task.rolesId : [];
-      for (const roleId of roles) {
+    const [existingTaskRoles] = await connection.query(
+      `
+        SELECT id, task_id AS taskId, role_id AS roleId
+        FROM project_task_roles
+        WHERE project_id = ?
+      `,
+      [projectId]
+    );
+    const desiredTaskRoles = [];
+    for (const task of resolvedTasks) {
+      for (const roleId of task.rolesId) {
         if (!roleId) continue;
-        if (projectTaskRolesIdMode === 'manual') {
-          await connection.query(
-            `
-              INSERT INTO project_task_roles (id, project_id, task_id, role_id)
-              VALUES (?, ?, ?, ?)
-            `,
-            [nextProjectTaskRoleId, projectId, taskId, roleId]
-          );
-          nextProjectTaskRoleId += 1;
-        } else {
-          await connection.query(
-            `
-              INSERT INTO project_task_roles (project_id, task_id, role_id)
-              VALUES (?, ?, ?)
-            `,
-            [projectId, taskId, roleId]
-          );
-        }
+        desiredTaskRoles.push({ taskId: task.taskId, roleId: Number(roleId) });
       }
+    }
+    const existingTaskRoleKeyToId = new Map(
+      existingTaskRoles.map((row) => [`${row.taskId}:${row.roleId}`, row.id])
+    );
+    const desiredTaskRoleKeys = new Set(
+      desiredTaskRoles.map((row) => `${row.taskId}:${row.roleId}`)
+    );
+
+    for (const row of existingTaskRoles) {
+      const key = `${row.taskId}:${row.roleId}`;
+      if (!desiredTaskRoleKeys.has(key)) {
+        await connection.query(`DELETE FROM project_task_roles WHERE id = ?`, [row.id]);
+      }
+    }
+
+    for (const row of desiredTaskRoles) {
+      const key = `${row.taskId}:${row.roleId}`;
+      if (existingTaskRoleKeyToId.has(key)) continue;
+      if (projectTaskRolesIdMode === 'manual') {
+        await connection.query(
+          `
+            INSERT INTO project_task_roles (id, project_id, task_id, role_id)
+            VALUES (?, ?, ?, ?)
+          `,
+          [nextProjectTaskRoleId, projectId, row.taskId, row.roleId]
+        );
+        nextProjectTaskRoleId += 1;
+      } else {
+        await connection.query(
+          `
+            INSERT INTO project_task_roles (project_id, task_id, role_id)
+            VALUES (?, ?, ?)
+          `,
+          [projectId, row.taskId, row.roleId]
+        );
+      }
+    }
+
+    const [existingStatuses] = await connection.query(
+      `
+        SELECT id, label
+        FROM ref_item_status
+        WHERE project_id = ?
+      `,
+      [projectId]
+    );
+    const existingStatusByLabel = new Map(
+      existingStatuses.map((row) => [String(row.label || ''), row.id])
+    );
+    const desiredStatusLabels = new Set(
+      (itemTracking || [])
+        .map((row) => String(row.statusText || '').trim())
+        .filter((label) => label)
+    );
+    const statusIdsToDelete = existingStatuses
+      .filter((row) => !desiredStatusLabels.has(String(row.label || '')))
+      .map((row) => row.id);
+
+    if (statusIdsToDelete.length > 0) {
+      await connection.query(
+        `
+          UPDATE items
+          SET status_id = NULL
+          WHERE status_id IN (?)
+        `,
+        [statusIdsToDelete]
+      );
+
+      await connection.query(
+        `DELETE FROM itemstatus_task WHERE item_status_id IN (?)`,
+        [statusIdsToDelete]
+      );
+
+      await connection.query(
+        `DELETE FROM ref_item_status WHERE id IN (?)`,
+        [statusIdsToDelete]
+      );
     }
 
     if (Array.isArray(itemTracking) && itemTracking.length > 0) {
@@ -501,23 +581,61 @@ router.put('/:id', async (req, res) => {
           .filter((id) => Boolean(id));
         if (resolvedTaskIds.length === 0) continue;
 
-        const [statusResult] = await connection.query(
-          `
-            INSERT INTO ref_item_status (task_id, label, project_id)
-            VALUES (?, ?, ?)
-          `,
-          [resolvedTaskIds[0], statusText, projectId]
-        );
-        const statusId = statusResult.insertId;
-
-        for (const resolvedTaskId of resolvedTaskIds) {
-          await connection.query(
+        let statusId = existingStatusByLabel.get(statusText);
+        if (!statusId) {
+          const [statusResult] = await connection.query(
             `
-              INSERT INTO itemstatus_task (item_status_id, task_id, apply_after_finish)
-              VALUES (?, ?, ?)
+              INSERT INTO ref_item_status (label, project_id)
+              VALUES (?, ?)
             `,
-            [statusId, resolvedTaskId, applyAfterFinish]
+            [statusText, projectId]
           );
+          statusId = statusResult.insertId;
+          existingStatusByLabel.set(statusText, statusId);
+        }
+
+        const [existingLinks] = await connection.query(
+          `
+            SELECT id, task_id AS taskId, apply_after_finish AS applyAfterFinish
+            FROM itemstatus_task
+            WHERE item_status_id = ?
+          `,
+          [statusId]
+        );
+        const existingLinkMap = new Map(
+          existingLinks.map((link) => [Number(link.taskId), link])
+        );
+        const desiredTaskIdSet = new Set(resolvedTaskIds.map((id) => Number(id)));
+
+        for (const taskId of resolvedTaskIds) {
+          const numericTaskId = Number(taskId);
+          const link = existingLinkMap.get(numericTaskId);
+          if (link) {
+            if (Number(link.applyAfterFinish) !== applyAfterFinish) {
+              await connection.query(
+                `
+                  UPDATE itemstatus_task
+                  SET apply_after_finish = ?
+                  WHERE id = ?
+                `,
+                [applyAfterFinish, link.id]
+              );
+            }
+          } else {
+            await connection.query(
+              `
+                INSERT INTO itemstatus_task (item_status_id, task_id, apply_after_finish)
+                VALUES (?, ?, ?)
+              `,
+              [statusId, numericTaskId, applyAfterFinish]
+            );
+          }
+        }
+
+        for (const link of existingLinks) {
+          if (!desiredTaskIdSet.has(Number(link.taskId))) {
+            await connection.query(`DELETE FROM itemstatus_task WHERE id = ?`, [link.id]);
+          }
         }
       }
     }

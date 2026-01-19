@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const itemSelect = document.getElementById('item-select');
   const taskOverlay = document.getElementById('task-overlay');
   const taskOverlayName = document.getElementById('task-overlay-name');
+  const taskOverlayItem = document.getElementById('task-overlay-item');
   const taskOverlayTimer = document.getElementById('task-overlay-timer');
   const activityOverlay = document.getElementById('activity-overlay');
   const activityOverlayName = document.getElementById('activity-overlay-name');
@@ -49,6 +50,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentUser = null;
   let currentSessionUuid = null;
   let currentTaskUuid = null;
+  let currentTaskItemId = null;
+  let currentTaskStatusRule = null;
+  let finishStatusRule = null;
   let userProjects = [];
   let userSelectedTask = false;
   let timerIntervalId = null;
@@ -107,6 +111,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentUser = null;
     currentSessionUuid = null;
     currentTaskUuid = null;
+    currentTaskItemId = null;
+    currentTaskStatusRule = null;
     stopTimer(true);
     stopTaskTimer(true);
     if (taskOverlay) taskOverlay.style.display = 'none';
@@ -207,6 +213,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       persistWorkTimerState();
       currentSessionUuid = null;
       currentTaskUuid = null;
+      currentTaskItemId = null;
+      currentTaskStatusRule = null;
       stopTimer(true);
       stopTaskTimer(true);
       workTimerPausedElapsedMs = null;
@@ -324,10 +332,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentSessionUuid = null;
     }
 
+    const selectedItemId = itemSelect?.value ? Number(itemSelect.value) : null;
     const result = await window.electronAPI.startTaskActivity(
       currentUser.id,
       Number(projectSelect.value),
-      Number(taskSelect.value)
+      Number(taskSelect.value),
+      selectedItemId
     );
 
     if (!result.success) {
@@ -336,13 +346,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     currentTaskUuid = result.uuid;
+    currentTaskItemId = selectedItemId;
+    const projectId = Number(projectSelect.value);
+    const taskId = Number(taskSelect.value);
+    currentTaskStatusRule = await window.electronAPI.getItemStatusRule(
+      projectId,
+      taskId,
+      0
+    );
+    finishStatusRule = await window.electronAPI.getItemStatusRule(
+      projectId,
+      taskId,
+      1
+    );
+    if (
+      currentTaskItemId &&
+      currentTaskStatusRule &&
+      currentTaskStatusRule.statusId
+    ) {
+      const statusResult = await window.electronAPI.updateItemStatus(
+        currentTaskItemId,
+        currentTaskStatusRule.statusId
+      );
+      if (!statusResult?.success) {
+        console.warn('[renderer] Failed to update item status on start:', statusResult?.error);
+      } else {
+        await refreshItemOptions(currentTaskItemId);
+      }
+    }
     taskOverlayName.textContent = selectedTask;
+    if (taskOverlayItem) {
+      if (currentTaskItemId && projectItems.length) {
+        const item = projectItems.find((entry) => Number(entry.id) === Number(currentTaskItemId));
+        const label = item?.name ? String(item.name).trim() : '';
+        taskOverlayItem.textContent = label ? `Item: ${label}` : '';
+        taskOverlayItem.style.display = label ? 'block' : 'none';
+      } else {
+        taskOverlayItem.textContent = '';
+        taskOverlayItem.style.display = 'none';
+      }
+    }
     taskOverlay.style.display = 'flex';
     if (startTaskButton) startTaskButton.disabled = true;
     startTaskTimer();
   });
 
-  const handleFinishTask = async () => {
+  const handleFinishTask = async (applyStatus) => {
     if (!currentUser || !currentTaskUuid) {
       if (taskOverlay) taskOverlay.style.display = 'none';
       stopTaskTimer(true);
@@ -353,7 +402,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const result = await window.electronAPI.completeActiveActivity({
       uuid: currentTaskUuid,
       userId: currentUser.id,
-      isTaskCompleted: true
+      isTaskCompleted: applyStatus
     });
 
     if (!result.success) {
@@ -361,7 +410,37 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
+    const itemIdToRefresh = currentTaskItemId;
+
+    if (
+      applyStatus &&
+      currentTaskItemId &&
+      finishStatusRule &&
+      finishStatusRule.statusId
+    ) {
+      const statusResult = await window.electronAPI.updateItemStatus(
+        currentTaskItemId,
+        finishStatusRule.statusId
+      );
+      if (!statusResult?.success) {
+        console.warn('[renderer] Failed to update item status on finish:', statusResult?.error);
+      } else {
+        await refreshItemOptions(currentTaskItemId);
+      }
+    }
+
+    if (!applyStatus) {
+      await refreshItemOptions(currentTaskItemId);
+    }
+
     currentTaskUuid = null;
+    currentTaskItemId = null;
+    currentTaskStatusRule = null;
+    finishStatusRule = null;
+    if (taskOverlayItem) {
+      taskOverlayItem.textContent = '';
+      taskOverlayItem.style.display = 'none';
+    }
     if (taskOverlay) taskOverlay.style.display = 'none';
     stopTaskTimer(true);
     updateStartButton();
@@ -372,10 +451,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     currentSessionUuid = unallocatedResult.uuid;
+    await refreshItemOptions(itemIdToRefresh);
+    if (itemSelect) itemSelect.value = '';
   };
 
-  finishTaskButton?.addEventListener('click', handleFinishTask);
-  stopTaskButton?.addEventListener('click', handleFinishTask);
+  finishTaskButton?.addEventListener('click', () => handleFinishTask(true));
+  stopTaskButton?.addEventListener('click', () => handleFinishTask(false));
   finishActivityButton?.addEventListener('click', async () => {
     if (currentUser && currentSessionUuid) {
       const result = await window.electronAPI.completeActiveActivity({
@@ -758,12 +839,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     projectItems.forEach((item) => {
       const label = String(item.name || '').trim();
       if (!label) return;
-      const status = item.status_label ? ` — ${item.status_label}` : '';
+      const status = item.status_label ? ` — ${item.status_label}` : ' — Registered';
       const option = document.createElement('option');
       option.value = String(item.id || label);
       option.textContent = `${label}${status}`;
       itemSelect.appendChild(option);
     });
+  }
+
+  async function refreshItemOptions(selectedId) {
+    if (!currentProject || !itemSelect) return;
+    await populateItems(currentProject);
+    if (selectedId) {
+      itemSelect.value = String(selectedId);
+    }
   }
 
   async function updateItemSelection() {

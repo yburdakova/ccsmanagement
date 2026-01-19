@@ -368,8 +368,12 @@ const handleApplyTaskRoles = (rowId: string) => {
     }, [taskRows, onTaskRowsChange]);
 
     useEffect(() => {
-        onItemTrackingRowsChange?.(itemTrackingRows);
-    }, [itemTrackingRows, onItemTrackingRowsChange]);
+        const mergedRows = itemTrackingRows.map((row) => {
+            const draft = itemTrackingTaskDrafts[row.id];
+            return draft ? { ...row, taskIds: draft } : row;
+        });
+        onItemTrackingRowsChange?.(mergedRows);
+    }, [itemTrackingRows, itemTrackingTaskDrafts, onItemTrackingRowsChange]);
 
     return (
         <div className="project-form">

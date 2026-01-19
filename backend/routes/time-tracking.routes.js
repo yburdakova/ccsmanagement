@@ -47,7 +47,7 @@ router.get('/', async (req, res) => {
 
 // POST /api/time-tracking
 router.post('/', async (req, res) => {
-  const { userId, date, activityId, startTime, endTime, note } = req.body || {};
+  const { userId, date, activityId, startTime, endTime, note, itemId } = req.body || {};
 
   const parsedUserId = Number(userId);
   const parsedActivityId = Number(activityId);
@@ -101,13 +101,14 @@ router.post('/', async (req, res) => {
         uuid, user_id, date, project_id, activity_id, task_id, item_id,
         start_time, end_time, duration, is_completed_project_task, note
       )
-      VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?, NULL, ?)
+      VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, NULL, ?)
       `,
       [
         uuid,
         parsedUserId,
         date,
         parsedActivityId,
+        itemId ? Number(itemId) : null,
         startStr,
         endStr,
         durationMinutes,
