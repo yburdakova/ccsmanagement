@@ -1,0 +1,14 @@
+# env
+.env
+.env.*
+
+# builds
+release/
+out/
+
+# local db
+*.sqlite
+*.db
+
+# logs
+logs/

@@ -1,0 +1,15 @@
+# env
+.env
+.env.*
+
+# build
+dist/
+build/
+
+# local configs
+config.local.*
+ormconfig.json
+
+# temp / cache
+tmp/
+.cache/

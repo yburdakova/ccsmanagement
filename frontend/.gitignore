@@ -22,3 +22,16 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# env
+.env
+.env.*
+!.env.example
+
+# build
+dist/
+build/
+.vite/
+
+# tests
+coverage/
