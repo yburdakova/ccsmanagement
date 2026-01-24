@@ -3,6 +3,61 @@ import pool from '../db.config.js';
 
 const router = express.Router();
 
+// GET /api/items/status-summary?projectId=#
+router.get('/status-summary', async (req, res) => {
+  const parsedProjectId = Number(req.query.projectId);
+
+  if (!parsedProjectId) {
+    return res.status(400).json({ error: 'projectId is required' });
+  }
+
+  try {
+    const [statusRows] = await pool.query(
+      `
+        SELECT ris.id,
+               ris.label,
+               COUNT(i.id) AS count
+        FROM ref_item_status ris
+        LEFT JOIN items i
+          ON i.status_id = ris.id
+          AND i.project_id = ?
+        WHERE ris.project_id = ?
+        GROUP BY ris.id, ris.label
+        ORDER BY ris.label
+      `,
+      [parsedProjectId, parsedProjectId]
+    );
+
+    const [[registeredRow]] = await pool.query(
+      `
+        SELECT COUNT(*) AS count
+        FROM items
+        WHERE project_id = ?
+          AND status_id IS NULL
+      `,
+      [parsedProjectId]
+    );
+
+    const summary = [
+      {
+        id: null,
+        label: 'Registered',
+        count: Number(registeredRow?.count || 0),
+      },
+      ...statusRows.map((row) => ({
+        id: row.id,
+        label: row.label,
+        count: Number(row.count || 0),
+      })),
+    ];
+
+    res.json(summary);
+  } catch (error) {
+    console.error('Error fetching item status summary:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/items?projectId=#
 router.get('/', async (req, res) => {
   const parsedProjectId = Number(req.query.projectId);

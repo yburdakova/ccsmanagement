@@ -166,6 +166,95 @@ button.icon-btn{
   min-height: 0;
 }
 
+.notes-icons {
+  display: flex;
+  gap: 12px;
+  margin: 6px 0;
+}
+
+.notes-icon {
+  background-color: #f4f4f4;
+  position: relative;
+  width: fit-content;
+  height: fit-content;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.notes-icon:hover {
+  transform: translateY(-1px);
+  background-color: #c9d1d6;
+}
+
+.notes-icon svg {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  fill: #4f5961;
+}
+
+.notes-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 100%;
+  padding: 2px;
+  font-size: 11px;
+  line-height: 18px;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notes-badge--late {
+  background: #d93025;
+}
+
+.notes-badge--new {
+  background: #069839;
+}
+
+.notes-list {
+  margin-top: 10px;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.notes-item {
+  background: #f4f4f4;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.notes-item:hover {
+  background: #e9edf1;
+}
+.notes-item__project {
+  font-weight: 600;
+  color: #384249;
+}
+
+.notes-item__task {
+  color: #5b5f64;
+}
+
 #start-task-button,
 #finish-task-button,
 #finish-activity-button {

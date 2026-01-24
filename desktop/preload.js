@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getItemStatusRule: (projectId, taskId, applyAfterFinish) =>
     ipcRenderer.invoke('get-item-status-rule', { projectId, taskId, applyAfterFinish }),
   updateItemStatus: (itemId, statusId) => ipcRenderer.invoke('update-item-status', { itemId, statusId }),
+  getUnfinishedTasks: (userId) => ipcRenderer.invoke('get-unfinished-tasks', { userId }),
+  markUnfinishedFinished: (recordId) => ipcRenderer.invoke('mark-unfinished-finished', { recordId }),
 
   startUnallocated: (userId, activityId) => ipcRenderer.invoke('start-unallocated', { userId, activityId }),
   startTaskActivity: (userId, projectId, taskId, itemId) =>

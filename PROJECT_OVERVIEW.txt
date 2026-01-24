@@ -1,0 +1,14 @@
+CCS Management System - Stack and Current State
+
+Stack
+- Backend: Node.js (ESM) with Express, mysql2, dotenv, cors, body-parser. Entry: backend/server.js.
+- Frontend: React 19 + React Router 7, Vite + TypeScript. Entry: frontend/src/main.tsx.
+- Desktop: Electron app with SQLite (offline cache) and mysql2 (online sync). Entry: desktop/main.js, renderer in desktop/renderer/.
+- Database: MySQL schema "ccsmanagement" with project/task/time-tracking and inventory items tables; SQLite mirrors for offline mode.
+
+Current State (from codebase)
+- Projects management includes team, tasks, roles, and item-tracking status rules (status label + task mapping with apply_after_finish).
+- Inventory items can be registered and listed per project; items have labels, codes, status, and are linked to item statuses.
+- Production sheet supports manual task entry, note editing, and work-time summary (frontend).
+- Desktop app supports clock-in/out, task/break/lunch/meeting/admin activities, item selection per task, and item status updates on start/finish based on rules.
+- Backend routes provide lookups, projects CRUD, time tracking, and items API; desktop sync uses MySQL when online and queues updates when offline.

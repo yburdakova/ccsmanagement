@@ -265,6 +265,58 @@ async function updateItemStatusGlobal(itemId, statusId) {
   }
 }
 
+async function getUnfinishedTasksByUser(userId) {
+  try {
+    const [rows] = await pool.query(
+      `
+        SELECT utt.id,
+               utt.task_id AS taskId,
+               utt.item_id AS itemId,
+               utt.project_id AS projectId,
+               p.name AS projectName,
+               t.description AS taskName,
+               i.label AS itemName
+        FROM users_time_tracking utt
+        LEFT JOIN projects p ON p.id = utt.project_id
+        LEFT JOIN tasks t ON t.id = utt.task_id
+        LEFT JOIN items i ON i.id = utt.item_id
+        WHERE utt.user_id = ?
+          AND utt.activity_id = 2
+          AND utt.is_finished = 0
+        ORDER BY utt.start_time DESC
+      `,
+      [userId]
+    );
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing tables for unfinished tasks query.');
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function markUnfinishedTaskFinished(recordId) {
+  try {
+    await pool.query(
+      `
+        UPDATE users_time_tracking
+        SET is_finished = 1
+        WHERE id = ?
+      `,
+      [recordId]
+    );
+    return { success: true };
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing users_time_tracking table.');
+      return { success: false, error: 'Missing users_time_tracking table' };
+    }
+    throw error;
+  }
+}
+
 function getItemStatusLocal(itemId, projectTypeId) {
   return new Promise((resolve, reject) => {
     const table = projectTypeId === 1 ? 'cfs_items' : 'im_items';
@@ -341,7 +393,7 @@ async function startUnallocatedActivityGlobal({ uuid, user_id, activity_id, time
       `
       INSERT INTO users_time_tracking (
         uuid, user_id, date, project_id, activity_id, task_id, item_id,
-        start_time, end_time, duration, is_completed_project_task, note
+        start_time, end_time, duration, is_finished, note
       )
       VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
       `,
@@ -369,7 +421,7 @@ async function startTaskActivityGlobal({ uuid, user_id, project_id, task_id, ite
       `
       INSERT INTO users_time_tracking (
         uuid, user_id, date, project_id, activity_id, task_id, item_id,
-        start_time, end_time, duration, is_completed_project_task, note
+        start_time, end_time, duration, is_finished, note
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
       `,
@@ -394,7 +446,7 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
 
   try {
     const [rows] = await conn.query(
-      `SELECT id, start_time, end_time FROM users_time_tracking WHERE uuid = ?`,
+      `SELECT id, start_time, end_time, activity_id FROM users_time_tracking WHERE uuid = ?`,
       [uuid]
     );
 
@@ -420,13 +472,16 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
 
     console.log(`[server-db] Completing activity (uuid=${uuid}), isTaskCompleted=${is_completed_project_task}`);
 
+    const isFinished =
+      activity.activity_id !== 2 ? 1 : is_completed_project_task ? 1 : 0;
+
     await conn.query(
       `
       UPDATE users_time_tracking
-      SET end_time = ?, duration = ?, is_completed_project_task = ?
+      SET end_time = ?, duration = ?, is_finished = ?
       WHERE uuid = ?
       `,
-      [endStr, safeDurationMin, is_completed_project_task ? 1 : 0, uuid]
+      [endStr, safeDurationMin, isFinished, uuid]
     );
 
     conn.release();
@@ -460,6 +515,8 @@ module.exports = {
   getItemStatusLocal,
   updateItemStatusLocal,
   updateItemStatusGlobal,
+  getUnfinishedTasksByUser,
+  markUnfinishedTaskFinished,
   startUnallocatedActivityGlobal,
   startTaskActivityGlobal,
   completeActiveActivityGlobal

@@ -420,6 +420,34 @@ ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
   }
 });
 
+ipcMain.handle('get-unfinished-tasks', async (event, { userId }) => {
+  const { getUnfinishedTasksByUser } = require('./api/db');
+  const { isOnline } = require('./utils/network-status');
+
+  try {
+    const online = await isOnline();
+    if (!online) return [];
+    return await getUnfinishedTasksByUser(userId);
+  } catch (error) {
+    console.error('Error fetching unfinished tasks:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('mark-unfinished-finished', async (event, { recordId }) => {
+  const { markUnfinishedTaskFinished } = require('./api/db');
+  const { isOnline } = require('./utils/network-status');
+
+  try {
+    const online = await isOnline();
+    if (!online) return { success: false, error: 'Offline mode' };
+    return await markUnfinishedTaskFinished(recordId);
+  } catch (error) {
+    console.error('Error updating unfinished task:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 app.on('will-quit', async (event) => {
   event.preventDefault();
 

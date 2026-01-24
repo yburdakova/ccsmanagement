@@ -71,9 +71,26 @@ db.serialize(() => {
       start_time TEXT,
       end_time TEXT,
       duration INTEGER,
-      is_completed_project_task INTEGER,
+      is_finished INTEGER,
       note TEXT
     )`);
+
+  db.all(`PRAGMA table_info(users_time_tracking)`, (err, rows) => {
+    if (err) {
+      console.error('[local-db] Failed to inspect users_time_tracking:', err.message);
+      return;
+    }
+    const hasIsFinished = rows.some((row) => row.name === 'is_finished');
+    if (!hasIsFinished) {
+      db.run(`ALTER TABLE users_time_tracking ADD COLUMN is_finished INTEGER`, (alterErr) => {
+        if (alterErr) {
+          console.error('[local-db] Failed to add is_finished column:', alterErr.message);
+        } else {
+          console.log('[local-db] Added is_finished column to users_time_tracking');
+        }
+      });
+    }
+  });
 
   db.run(`
     CREATE TABLE IF NOT EXISTS sync_queue (
@@ -599,7 +616,7 @@ function startTaskActivityLocal(userId, projectId, taskId, itemId) {
     db.run(`
       INSERT INTO users_time_tracking (  
         uuid, user_id, date, project_id, activity_id, task_id, item_id,
-        start_time, end_time, duration, is_completed_project_task, note
+        start_time, end_time, duration, is_finished, note
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
     `, [uuid, userId, dateStr, projectId, 2, taskId, itemId ?? null, timeStr], (err) => {
       if (err) {
@@ -653,7 +670,7 @@ function startUnallocatedActivityLocal(userId, activityId) {
     db.run(`
       INSERT INTO users_time_tracking (  
         uuid, user_id, date, project_id, activity_id, task_id, item_id,
-        start_time, end_time, duration, is_completed_project_task, note
+        start_time, end_time, duration, is_finished, note
       ) VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
     `, [uuid, userId, dateStr, activityId, timeStr], (err) => {
       if (err) {
@@ -732,11 +749,14 @@ function completeActiveActivityLocal({ uuid, is_completed_project_task, timestam
         `[local-db] Completing activity (uuid=${row.uuid}), end=${endStr}, isTaskCompleted=${is_completed_project_task}`
       );
 
+      const isFinished =
+        row.activity_id !== 2 ? 1 : is_completed_project_task ? 1 : 0;
+
       db.run(
         `UPDATE users_time_tracking
-         SET end_time = ?, duration = ?, is_completed_project_task = ?
+         SET end_time = ?, duration = ?, is_finished = ?
          WHERE uuid = ?`,
-        [endStr, durationMin, is_completed_project_task ? 1 : 0, row.uuid],
+        [endStr, durationMin, isFinished, row.uuid],
         (err2) => {
           if (err2) {
             console.error('[local-db] Failed to complete activity:', err2.message);

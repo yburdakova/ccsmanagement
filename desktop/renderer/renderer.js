@@ -28,6 +28,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const activitySection = document.querySelector('.activity-section');
   const productionSection = document.querySelector('.production-section');
   const projectSection = document.querySelector('.project-selector-section');
+  const notesSection = document.getElementById('notes-section');
+  const unfinishedButton = document.getElementById('unfinished-btn');
+  const unfinishedCount = document.getElementById('unfinished-count');
+  const unfinishedList = document.getElementById('unfinished-list');
+  const assignmentsCount = document.getElementById('assignments-count');
   const timerEl = document.querySelector('.timer');
   const savedProjectKey = 'rememberedProject';
   const workTimerStateKey = 'workTimerState';
@@ -71,12 +76,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   let itemTypesById = new Map(
     (allItemTypes || []).map((type) => [Number(type.id), String(type.name || '').trim()])
   );
+  let pendingUnfinishedTask = null;
 
   // hiding sections initially
   projectSection.style.display = 'none';
   taskSection.style.display = 'none';
   if (activitySection) activitySection.style.display = 'none';
   if (productionSection) productionSection.style.display = 'none';
+  if (notesSection) notesSection.style.display = 'none';
   updateBookmarkButtons(!!getSavedProject());
 
   // ==================
@@ -123,6 +130,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     taskSection.style.display = 'none';
     if (activitySection) activitySection.style.display = 'none';
     if (productionSection) productionSection.style.display = 'none';
+    if (notesSection) notesSection.style.display = 'none';
+    if (unfinishedCount) unfinishedCount.textContent = '0';
+    if (unfinishedList) unfinishedList.style.display = 'none';
+    if (unfinishedList) unfinishedList.innerHTML = '';
     projectSelect.innerHTML = '<option value="">— Select Project —</option>';
     roleText.textContent = '';
     taskSelect.innerHTML = '<option value="">— Select Task —</option>';
@@ -160,6 +171,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       resumeOrStartWorkTimer();
       if (activitySection) activitySection.style.display = '';
       if (productionSection) productionSection.style.display = '';
+      if (notesSection) notesSection.style.display = '';
+      await refreshUnfinishedTasksCount();
 
       // projects for user
       userProjects = buildProjectList(allProjects, allProjectUsers, projectRoles, currentUser.id);
@@ -228,6 +241,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       taskSection.style.display = 'none';
       if (activitySection) activitySection.style.display = 'none';
       if (productionSection) productionSection.style.display = 'none';
+      if (notesSection) notesSection.style.display = 'none';
+      if (unfinishedCount) unfinishedCount.textContent = '0';
+      if (unfinishedList) unfinishedList.style.display = 'none';
+      if (unfinishedList) unfinishedList.innerHTML = '';
       projectSelect.innerHTML = '<option value="">— Select Project —</option>';
       roleText.textContent = '';
       taskSelect.innerHTML = '<option value="">— Select Task —</option>';
@@ -333,6 +350,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const selectedItemId = itemSelect?.value ? Number(itemSelect.value) : null;
+    if (pendingUnfinishedTask) {
+      const markResult = await window.electronAPI.markUnfinishedFinished(
+        pendingUnfinishedTask.id
+      );
+      if (!markResult?.success) {
+        console.warn('[renderer] Failed to mark unfinished task finished:', markResult?.error);
+      }
+      pendingUnfinishedTask = null;
+      await refreshUnfinishedTasksCount();
+      if (unfinishedList && unfinishedList.style.display !== 'none') {
+        const tasks = await loadUnfinishedTasks();
+        renderUnfinishedTasks(tasks);
+      }
+    }
     const result = await window.electronAPI.startTaskActivity(
       currentUser.id,
       Number(projectSelect.value),
@@ -453,6 +484,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentSessionUuid = unallocatedResult.uuid;
     await refreshItemOptions(itemIdToRefresh);
     if (itemSelect) itemSelect.value = '';
+    await refreshUnfinishedTasksCount();
+    if (unfinishedList && unfinishedList.style.display !== 'none') {
+      const tasks = await loadUnfinishedTasks();
+      renderUnfinishedTasks(tasks);
+    }
   };
 
   finishTaskButton?.addEventListener('click', () => handleFinishTask(true));
@@ -487,8 +523,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ==================
   // Project change
   // ==================
-  projectSelect.addEventListener('change', async (e) => {
-    const selected = userProjects.find(p => p.project_id == e.target.value);
+  const applyProjectSelection = async (selectedId) => {
+    const selected = userProjects.find((p) => String(p.project_id) === String(selectedId));
 
     if (!selected) {
       resetProjectSelectionUi();
@@ -510,6 +546,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (itemInputLabel) itemInputLabel.textContent = 'Item';
     projectItems = [];
     itemsLoadedProjectId = null;
+  };
+
+  projectSelect.addEventListener('change', async (e) => {
+    await applyProjectSelection(e.target.value);
   });
 
   projectSelect.addEventListener('focus', async () => {
@@ -518,6 +558,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   projectSelect.addEventListener('mousedown', async () => {
     await refreshProjectDataIfOnline();
+  });
+
+  unfinishedButton?.addEventListener('click', async () => {
+    if (!currentUser || !unfinishedList || !unfinishedCount) return;
+    if (Number(unfinishedCount.textContent || 0) === 0) return;
+    const shouldShow = unfinishedList.style.display === 'none';
+    if (shouldShow) {
+      const tasks = await loadUnfinishedTasks();
+      renderUnfinishedTasks(tasks);
+      unfinishedList.style.display = 'flex';
+    } else {
+      unfinishedList.style.display = 'none';
+    }
   });
 
   // ==================
@@ -738,6 +791,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
     taskOverlayTimer.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  async function loadUnfinishedTasks() {
+    if (!currentUser) return [];
+    try {
+      const tasks = await window.electronAPI.getUnfinishedTasks(currentUser.id);
+      return Array.isArray(tasks) ? tasks : [];
+    } catch (err) {
+      console.warn('[renderer] Failed to load unfinished tasks:', err);
+      return [];
+    }
+  }
+
+  async function refreshUnfinishedTasksCount() {
+    if (!unfinishedCount) return;
+    const tasks = await loadUnfinishedTasks();
+    unfinishedCount.textContent = String(tasks.length);
+  }
+
+  function renderUnfinishedTasks(tasks) {
+    if (!unfinishedList) return;
+    unfinishedList.innerHTML = '';
+    if (tasks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'notes-item';
+      empty.textContent = 'No unfinished tasks.';
+      unfinishedList.appendChild(empty);
+      return;
+    }
+    tasks.forEach((task) => {
+      const item = document.createElement('div');
+      item.className = 'notes-item';
+      item.addEventListener('click', async () => {
+        pendingUnfinishedTask = task;
+        if (projectSelect) {
+          projectSelect.value = String(task.projectId);
+        }
+        await applyProjectSelection(String(task.projectId));
+        if (taskSelect) {
+          taskSelect.value = String(task.taskId ?? '');
+          userSelectedTask = !!taskSelect.value;
+          updateStartButton();
+        }
+        await updateItemSelection();
+        if (itemSelect && task.itemId) {
+          itemSelect.value = String(task.itemId);
+        }
+        unfinishedList.style.display = 'none';
+      });
+      const project = document.createElement('div');
+      project.className = 'notes-item__project';
+      project.textContent = task.projectName || 'Unknown project';
+      const detail = document.createElement('div');
+      detail.className = 'notes-item__task';
+      const itemLabel = task.itemName ? ` - ${task.itemName}` : '';
+      detail.textContent = `${task.taskName || 'Unknown task'}${itemLabel}`;
+      item.appendChild(project);
+      item.appendChild(detail);
+      unfinishedList.appendChild(item);
+    });
   }
 
   function showActivityOverlay(label) {

@@ -99,7 +99,7 @@ router.post('/', async (req, res) => {
       `
       INSERT INTO users_time_tracking (
         uuid, user_id, date, project_id, activity_id, task_id, item_id,
-        start_time, end_time, duration, is_completed_project_task, note
+        start_time, end_time, duration, is_finished, note
       )
       VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, NULL, ?)
       `,
