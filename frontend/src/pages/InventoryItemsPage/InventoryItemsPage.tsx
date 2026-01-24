@@ -25,6 +25,9 @@ const InventoryItemsPage = () => {
   >([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [itemsError, setItemsError] = useState<string | null>(null);
+  const [jiraUpdating, setJiraUpdating] = useState(false);
+  const [jiraError, setJiraError] = useState<string | null>(null);
+  const [jiraSyncing, setJiraSyncing] = useState(false);
 
   const user = JSON.parse(localStorage.getItem('user') || 'null');
   const userId = user?.id ?? null;
@@ -73,36 +76,95 @@ const InventoryItemsPage = () => {
     loadCategories();
   }, [projects, selectedProjectId]);
 
+  const loadItems = async () => {
+    if (!selectedProjectId) {
+      return;
+    }
+
+    try {
+      setItemsLoading(true);
+      setItemsError(null);
+      const data = await apiRequest<
+        {
+          id: number;
+          code: string;
+          label: string;
+          statusLabel: string | null;
+          createdAt: string;
+          updatedAt: string | null;
+        }[]
+      >(`/items?projectId=${selectedProjectId}`);
+      setItems(data);
+    } catch (e) {
+      console.error('Error loading items:', e);
+      setItemsError('Unable to load inventory items.');
+    } finally {
+      setItemsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadItems = async () => {
-      if (!selectedProjectId) {
+    loadItems();
+  }, [selectedProjectId]);
+
+  const selectedProject = projects.find(
+    (project) => String(project.id) === String(selectedProjectId)
+  );
+
+  useEffect(() => {
+    const syncJira = async () => {
+      if (!selectedProjectId || !selectedProject?.isJira) {
         return;
       }
 
       try {
-        setItemsLoading(true);
-        setItemsError(null);
-        const data = await apiRequest<
-          {
-            id: number;
-            code: string;
-            label: string;
-            statusLabel: string | null;
-            createdAt: string;
-            updatedAt: string | null;
-          }[]
-        >(`/items?projectId=${selectedProjectId}`);
-        setItems(data);
+        setJiraSyncing(true);
+        setJiraError(null);
+        await apiRequest('/items/jira-sync', {
+          method: 'POST',
+          body: {
+            projectId: Number(selectedProjectId),
+            userId,
+          },
+        });
+        await loadItems();
       } catch (e) {
-        console.error('Error loading items:', e);
-        setItemsError('Unable to load inventory items.');
+        console.error('Error syncing Jira items:', e);
+        setJiraError('Unable to sync Jira items.');
       } finally {
-        setItemsLoading(false);
+        setJiraSyncing(false);
       }
     };
 
-    loadItems();
-  }, [selectedProjectId]);
+    syncJira();
+  }, [selectedProjectId, selectedProject?.isJira, userId]);
+
+  const handleToggleJira = async (nextValue: boolean) => {
+    if (!selectedProjectId) {
+      return;
+    }
+
+    try {
+      setJiraUpdating(true);
+      setJiraError(null);
+      await apiRequest(`/projects/${selectedProjectId}/jira`, {
+        method: 'PUT',
+        body: { isJira: nextValue ? 1 : 0 },
+      });
+      setProjects((prev) =>
+        prev.map((project) =>
+          String(project.id) === String(selectedProjectId)
+            ? { ...project, isJira: nextValue ? 1 : 0 }
+            : project
+        )
+      );
+    } catch (e) {
+      console.error('Error updating Jira flag:', e);
+      setJiraError('Unable to update Jira status.');
+    } finally {
+      setJiraUpdating(false);
+    }
+  };
 
   const resetModal = () => {
     setItemCategoryId('');
@@ -180,43 +242,65 @@ const InventoryItemsPage = () => {
         {error && <span className="inventory-items-page__error">{error}</span>}
       </div>
       {selectedProjectId && (
-        <div className="inventory-items-page__table">
-          <div className="inventory-items-page__table-header">
-            <span>#</span>
-            <span>Label</span>
-            <span>Code</span>
-            <span>Status</span>
-            <span>Updated</span>
+        <>
+          <div className="inventory-items-page__jira">
+            <label className="inventory-items-page__jira-label">
+              <input
+                type="checkbox"
+                checked={Boolean(selectedProject?.isJira)}
+                onChange={(e) => handleToggleJira(e.target.checked)}
+                disabled={jiraUpdating || jiraSyncing}
+              />
+              Connected to Jira
+            </label>
+            {jiraUpdating && (
+              <span className="inventory-items-page__status">Saving...</span>
+            )}
+            {jiraSyncing && (
+              <span className="inventory-items-page__status">Syncing Jira...</span>
+            )}
+            {jiraError && (
+              <span className="inventory-items-page__error">{jiraError}</span>
+            )}
           </div>
-          {itemsLoading && (
-            <div className="inventory-items-page__table-row">
-              <span>Loading...</span>
+          <div className="inventory-items-page__table">
+            <div className="inventory-items-page__table-header">
+              <span>#</span>
+              <span>Label</span>
+              <span>Code</span>
+              <span>Status</span>
+              <span>Updated</span>
             </div>
-          )}
-          {itemsError && (
-            <div className="inventory-items-page__table-row inventory-items-page__table-error">
-              {itemsError}
-            </div>
-          )}
-          {!itemsLoading && !itemsError && items.length === 0 && (
-            <div className="inventory-items-page__table-row">
-              <span>No inventory items yet.</span>
-            </div>
-          )}
-          {!itemsLoading &&
-            !itemsError &&
-            items.map((item, index) => (
-              <div key={item.id} className="inventory-items-page__table-row">
-                <span>{index + 1}</span>
-                <span>{item.label}</span>
-                <span>{item.code}</span>
-                <span>{item.statusLabel || 'Registered'}</span>
-                <span>
-                  {new Date(item.updatedAt || item.createdAt).toLocaleDateString()}
-                </span>
+            {itemsLoading && (
+              <div className="inventory-items-page__table-row">
+                <span>Loading...</span>
               </div>
-            ))}
-        </div>
+            )}
+            {itemsError && (
+              <div className="inventory-items-page__table-row inventory-items-page__table-error">
+                {itemsError}
+              </div>
+            )}
+            {!itemsLoading && !itemsError && items.length === 0 && (
+              <div className="inventory-items-page__table-row">
+                <span>No inventory items yet.</span>
+              </div>
+            )}
+            {!itemsLoading &&
+              !itemsError &&
+              items.map((item, index) => (
+                <div key={item.id} className="inventory-items-page__table-row">
+                  <span>{index + 1}</span>
+                  <span>{item.label}</span>
+                  <span>{item.code}</span>
+                  <span>{item.statusLabel || 'Registered'}</span>
+                  <span>
+                    {new Date(item.updatedAt || item.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </>
       )}
 
       {isModalOpen && (

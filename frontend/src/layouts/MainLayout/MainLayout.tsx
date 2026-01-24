@@ -7,10 +7,14 @@ import './MainLayout.css';
 const MainLayout = () => {
   const location = useLocation();
   const [time, setTime] = useState(new Date());
+  const [forceProductionView, setForceProductionView] = useState(
+    localStorage.getItem('viewMode') === 'production'
+  );
   const navigate = useNavigate();
 
   const user = JSON.parse(localStorage.getItem('user') || 'null');
-  const isProductionOnly = user?.role === 2;
+  const isProductionOnly = user?.role === 2 || forceProductionView;
+  const isAdmin = user?.role !== 2;
 
   const userName = user ? `${user.first_name} ${user.last_name}` : '';
 
@@ -45,6 +49,13 @@ const MainLayout = () => {
     localStorage.clear();
     navigate('/');
   }
+
+  const toggleViewMode = () => {
+    const next = !forceProductionView;
+    setForceProductionView(next);
+    localStorage.setItem('viewMode', next ? 'production' : 'admin');
+    navigate(next ? '/production-sheet' : '/dashboard');
+  };
 
   useEffect(() => {
     if (isProductionOnly && location.pathname !== '/production-sheet') {
@@ -145,6 +156,11 @@ const MainLayout = () => {
           <div className="pageTitle">{getPageTitle().toUpperCase()}</div>
           <div className="userBox">
             <div className="userName">{userName}</div>
+            {isAdmin && (
+              <button type="button" className="modeSwitchBtn" onClick={toggleViewMode}>
+                {forceProductionView ? 'Admin Mode' : 'User Mode'}
+              </button>
+            )}
             <button type="button" className="logoutBtn" onClick={logout}>
                 <span className="gg-icon">logout</span>
             </button>

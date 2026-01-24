@@ -7,6 +7,7 @@ export interface Project {
   project_status: string | null;
   item_type: string | null;
   customer_name: string | null;
+  isJira?: number | null;
 
   created_at: string;
 }

@@ -121,6 +121,20 @@
 .logoutBtn:hover{
    color: var(--primary-color)
 }
+
+.modeSwitchBtn {
+  background: #ffffff;
+  color: #1f1f1f;
+  border: 1px solid #d3d7db;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modeSwitchBtn:hover {
+  background: #f2f4f6;
+}
 .pageTitle {
   font-weight: 900;
   color: var(--accent-color);

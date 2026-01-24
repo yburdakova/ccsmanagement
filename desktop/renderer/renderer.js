@@ -32,6 +32,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const unfinishedButton = document.getElementById('unfinished-btn');
   const unfinishedCount = document.getElementById('unfinished-count');
   const unfinishedList = document.getElementById('unfinished-list');
+  const assignmentsButton = document.getElementById('assignments-btn');
+  const assignmentsList = document.getElementById('assignments-list');
   const assignmentsCount = document.getElementById('assignments-count');
   const timerEl = document.querySelector('.timer');
   const savedProjectKey = 'rememberedProject';
@@ -77,6 +79,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     (allItemTypes || []).map((type) => [Number(type.id), String(type.name || '').trim()])
   );
   let pendingUnfinishedTask = null;
+  let pendingTaskSelection = null;
+  let pendingAssignment = null;
+  let pendingAssignmentSelection = null;
+  let assignmentsTotal = 0;
 
   // hiding sections initially
   projectSection.style.display = 'none';
@@ -120,6 +126,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentTaskUuid = null;
     currentTaskItemId = null;
     currentTaskStatusRule = null;
+    pendingAssignment = null;
+    pendingAssignmentSelection = null;
     stopTimer(true);
     stopTaskTimer(true);
     if (taskOverlay) taskOverlay.style.display = 'none';
@@ -134,6 +142,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (unfinishedCount) unfinishedCount.textContent = '0';
     if (unfinishedList) unfinishedList.style.display = 'none';
     if (unfinishedList) unfinishedList.innerHTML = '';
+    if (assignmentsCount) assignmentsCount.textContent = '0';
+    if (assignmentsList) assignmentsList.style.display = 'none';
+    if (assignmentsList) assignmentsList.innerHTML = '';
+    assignmentsTotal = 0;
     projectSelect.innerHTML = '<option value="">— Select Project —</option>';
     roleText.textContent = '';
     taskSelect.innerHTML = '<option value="">— Select Task —</option>';
@@ -228,6 +240,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentTaskUuid = null;
       currentTaskItemId = null;
       currentTaskStatusRule = null;
+      pendingAssignment = null;
+      pendingAssignmentSelection = null;
       stopTimer(true);
       stopTaskTimer(true);
       workTimerPausedElapsedMs = null;
@@ -245,6 +259,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (unfinishedCount) unfinishedCount.textContent = '0';
       if (unfinishedList) unfinishedList.style.display = 'none';
       if (unfinishedList) unfinishedList.innerHTML = '';
+      if (assignmentsCount) assignmentsCount.textContent = '0';
+      if (assignmentsList) assignmentsList.style.display = 'none';
+      if (assignmentsList) assignmentsList.innerHTML = '';
+      assignmentsTotal = 0;
       projectSelect.innerHTML = '<option value="">— Select Project —</option>';
       roleText.textContent = '';
       taskSelect.innerHTML = '<option value="">— Select Task —</option>';
@@ -274,6 +292,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!currentUser) return;
 
     if (currentTaskUuid) {
+      pendingUnfinishedTask = { id: currentTaskUuid, isUuid: true };
+      pendingTaskSelection = {
+        projectId: String(projectSelect.value),
+        taskId: String(taskSelect.value),
+        itemId: String(itemSelect?.value || ''),
+      };
+      if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
       const result = await window.electronAPI.completeActiveActivity({
         uuid: currentTaskUuid,
         userId: currentUser.id,
@@ -317,6 +342,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       pauseWorkTimerForLunch();
     }
     showActivityOverlay(label);
+    await refreshUnfinishedTasksCount();
+    if (unfinishedList && unfinishedList.style.display !== 'none') {
+      const tasks = await loadUnfinishedTasks();
+      renderUnfinishedTasks(tasks);
+    }
+    await refreshAssignmentsListIfOpen();
   };
 
   const handleBreakClick = () => handleActivityClick(3, 'Break');
@@ -350,19 +381,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const selectedItemId = itemSelect?.value ? Number(itemSelect.value) : null;
+
+    if (pendingUnfinishedTask && pendingTaskSelection) {
+      const sameSelection =
+        String(pendingTaskSelection.projectId) === String(projectSelect.value) &&
+        String(pendingTaskSelection.taskId) === String(taskSelect.value) &&
+        String(pendingTaskSelection.itemId || '') === String(itemSelect?.value || '');
+      if (!sameSelection) {
+        pendingUnfinishedTask = null;
+        pendingTaskSelection = null;
+        if (startTaskButton) startTaskButton.textContent = 'START';
+      }
+    }
+
+    if (pendingAssignment && pendingAssignmentSelection) {
+      const sameSelection =
+        String(pendingAssignmentSelection.projectId) === String(projectSelect.value) &&
+        String(pendingAssignmentSelection.taskId) === String(taskSelect.value) &&
+        String(pendingAssignmentSelection.itemId || '') === String(itemSelect?.value || '');
+      if (!sameSelection) {
+        pendingAssignment = null;
+        pendingAssignmentSelection = null;
+      }
+    }
+
     if (pendingUnfinishedTask) {
-      const markResult = await window.electronAPI.markUnfinishedFinished(
-        pendingUnfinishedTask.id
-      );
-      if (!markResult?.success) {
-        console.warn('[renderer] Failed to mark unfinished task finished:', markResult?.error);
+      if (pendingUnfinishedTask.isUuid) {
+        await window.electronAPI.markUnfinishedFinished(null, pendingUnfinishedTask.id);
+      } else {
+        const markResult = await window.electronAPI.markUnfinishedFinished(
+          pendingUnfinishedTask.id
+        );
+        if (!markResult?.success) {
+          console.warn('[renderer] Failed to mark unfinished task finished:', markResult?.error);
+        }
       }
       pendingUnfinishedTask = null;
+      pendingTaskSelection = null;
+      if (startTaskButton) startTaskButton.textContent = 'START';
       await refreshUnfinishedTasksCount();
       if (unfinishedList && unfinishedList.style.display !== 'none') {
         const tasks = await loadUnfinishedTasks();
         renderUnfinishedTasks(tasks);
       }
+      await refreshAssignmentsListIfOpen();
     }
     const result = await window.electronAPI.startTaskActivity(
       currentUser.id,
@@ -374,6 +436,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!result.success) {
       alert('Task start failed: ' + result.error);
       return;
+    }
+
+    if (pendingAssignment && pendingAssignmentSelection) {
+      const sameSelection =
+        String(pendingAssignmentSelection.projectId) === String(projectSelect.value) &&
+        String(pendingAssignmentSelection.taskId) === String(taskSelect.value) &&
+        String(pendingAssignmentSelection.itemId || '') === String(itemSelect?.value || '');
+      if (sameSelection) {
+        const acceptResult = await window.electronAPI.markAssignmentAccepted(
+          pendingAssignment.id
+        );
+        if (!acceptResult?.success) {
+          console.warn('[renderer] Failed to accept assignment:', acceptResult?.error);
+        }
+        pendingAssignment = null;
+        pendingAssignmentSelection = null;
+        await refreshUnfinishedTasksCount();
+        await refreshAssignmentsListIfOpen();
+      }
     }
 
     currentTaskUuid = result.uuid;
@@ -489,6 +570,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const tasks = await loadUnfinishedTasks();
       renderUnfinishedTasks(tasks);
     }
+    await refreshAssignmentsListIfOpen();
   };
 
   finishTaskButton?.addEventListener('click', () => handleFinishTask(true));
@@ -512,12 +594,63 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     hideActivityOverlay();
     await startUnallocatedForCurrentUser();
+    await refreshUnfinishedTasksCount();
+    if (unfinishedList && unfinishedList.style.display !== 'none') {
+      const tasks = await loadUnfinishedTasks();
+      renderUnfinishedTasks(tasks);
+    }
+    await refreshAssignmentsListIfOpen();
   });
 
   taskSelect?.addEventListener('change', async () => {
     userSelectedTask = taskSelect.selectedIndex > 0;
     updateStartButton();
     await updateItemSelection();
+    if (pendingUnfinishedTask && pendingTaskSelection) {
+      const sameSelection =
+        String(pendingTaskSelection.projectId) === String(projectSelect.value) &&
+        String(pendingTaskSelection.taskId) === String(taskSelect.value) &&
+        String(pendingTaskSelection.itemId || '') === String(itemSelect?.value || '');
+      if (!sameSelection) {
+        pendingUnfinishedTask = null;
+        pendingTaskSelection = null;
+        if (startTaskButton) startTaskButton.textContent = 'START';
+      }
+    }
+    if (pendingAssignment && pendingAssignmentSelection) {
+      const sameSelection =
+        String(pendingAssignmentSelection.projectId) === String(projectSelect.value) &&
+        String(pendingAssignmentSelection.taskId) === String(taskSelect.value) &&
+        String(pendingAssignmentSelection.itemId || '') === String(itemSelect?.value || '');
+      if (!sameSelection) {
+        pendingAssignment = null;
+        pendingAssignmentSelection = null;
+      }
+    }
+  });
+
+  itemSelect?.addEventListener('change', () => {
+    if (pendingUnfinishedTask && pendingTaskSelection) {
+      const sameSelection =
+        String(pendingTaskSelection.projectId) === String(projectSelect.value) &&
+        String(pendingTaskSelection.taskId) === String(taskSelect.value) &&
+        String(pendingTaskSelection.itemId || '') === String(itemSelect?.value || '');
+      if (!sameSelection) {
+        pendingUnfinishedTask = null;
+        pendingTaskSelection = null;
+        if (startTaskButton) startTaskButton.textContent = 'START';
+      }
+    }
+    if (pendingAssignment && pendingAssignmentSelection) {
+      const sameSelection =
+        String(pendingAssignmentSelection.projectId) === String(projectSelect.value) &&
+        String(pendingAssignmentSelection.taskId) === String(taskSelect.value) &&
+        String(pendingAssignmentSelection.itemId || '') === String(itemSelect?.value || '');
+      if (!sameSelection) {
+        pendingAssignment = null;
+        pendingAssignmentSelection = null;
+      }
+    }
   });
 
   // ==================
@@ -550,6 +683,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   projectSelect.addEventListener('change', async (e) => {
     await applyProjectSelection(e.target.value);
+    if (pendingUnfinishedTask) {
+      pendingUnfinishedTask = null;
+      pendingTaskSelection = null;
+      if (startTaskButton) startTaskButton.textContent = 'START';
+    }
+    if (pendingAssignment) {
+      pendingAssignment = null;
+      pendingAssignmentSelection = null;
+    }
   });
 
   projectSelect.addEventListener('focus', async () => {
@@ -563,6 +705,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   unfinishedButton?.addEventListener('click', async () => {
     if (!currentUser || !unfinishedList || !unfinishedCount) return;
     if (Number(unfinishedCount.textContent || 0) === 0) return;
+    if (assignmentsList) assignmentsList.style.display = 'none';
     const shouldShow = unfinishedList.style.display === 'none';
     if (shouldShow) {
       const tasks = await loadUnfinishedTasks();
@@ -570,6 +713,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       unfinishedList.style.display = 'flex';
     } else {
       unfinishedList.style.display = 'none';
+    }
+  });
+
+  assignmentsButton?.addEventListener('click', async () => {
+    if (!currentUser || !assignmentsList || !assignmentsCount) return;
+    if (Number(assignmentsCount.textContent || 0) === 0) return;
+    if (unfinishedList) unfinishedList.style.display = 'none';
+    const shouldShow = assignmentsList.style.display === 'none';
+    if (shouldShow) {
+      const assignments = await loadAssignments();
+      renderAssignments(assignments);
+      assignmentsList.style.display = 'flex';
+    } else {
+      assignmentsList.style.display = 'none';
     }
   });
 
@@ -804,10 +961,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  async function loadAssignments() {
+    if (!currentUser) return [];
+    try {
+      const assignments = await window.electronAPI.getAssignments(currentUser.id);
+      return Array.isArray(assignments) ? assignments : [];
+    } catch (err) {
+      console.warn('[renderer] Failed to load assignments:', err);
+      return [];
+    }
+  }
+
   async function refreshUnfinishedTasksCount() {
     if (!unfinishedCount) return;
     const tasks = await loadUnfinishedTasks();
-    unfinishedCount.textContent = String(tasks.length);
+    const count = tasks.length;
+    unfinishedCount.textContent = String(count);
+    if (unfinishedButton) {
+      unfinishedButton.classList.toggle('is-disabled', count === 0);
+      unfinishedButton.disabled = count === 0;
+    }
+    unfinishedCount.classList.toggle('notes-badge--zero', count === 0);
+    const assignments = await loadAssignments();
+    assignmentsTotal = assignments.length;
+    if (assignmentsCount) {
+      assignmentsCount.textContent = String(assignmentsTotal);
+      assignmentsCount.classList.toggle('notes-badge--zero', assignmentsTotal === 0);
+    }
+    if (assignmentsButton) {
+      assignmentsButton.classList.toggle('is-disabled', assignmentsTotal === 0);
+      assignmentsButton.disabled = assignmentsTotal === 0;
+    }
+  }
+
+  async function refreshAssignmentsListIfOpen() {
+    if (assignmentsList && assignmentsList.style.display !== 'none') {
+      const assignments = await loadAssignments();
+      renderAssignments(assignments);
+    }
   }
 
   function renderUnfinishedTasks(tasks) {
@@ -825,6 +1016,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       item.className = 'notes-item';
       item.addEventListener('click', async () => {
         pendingUnfinishedTask = task;
+        pendingTaskSelection = {
+          projectId: String(task.projectId),
+          taskId: String(task.taskId ?? ''),
+          itemId: String(task.itemId ?? ''),
+        };
+        pendingAssignment = null;
+        pendingAssignmentSelection = null;
         if (projectSelect) {
           projectSelect.value = String(task.projectId);
         }
@@ -838,6 +1036,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (itemSelect && task.itemId) {
           itemSelect.value = String(task.itemId);
         }
+        if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
         unfinishedList.style.display = 'none';
       });
       const project = document.createElement('div');
@@ -850,6 +1049,58 @@ document.addEventListener('DOMContentLoaded', async () => {
       item.appendChild(project);
       item.appendChild(detail);
       unfinishedList.appendChild(item);
+    });
+  }
+
+  function renderAssignments(assignments) {
+    if (!assignmentsList) return;
+    assignmentsList.innerHTML = '';
+    if (assignments.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'notes-item';
+      empty.textContent = 'No assignments.';
+      assignmentsList.appendChild(empty);
+      return;
+    }
+
+    assignments.forEach((assignment) => {
+      const item = document.createElement('div');
+      item.className = 'notes-item';
+      item.addEventListener('click', async () => {
+        pendingUnfinishedTask = null;
+        pendingTaskSelection = null;
+        if (projectSelect) {
+          projectSelect.value = String(assignment.projectId);
+        }
+        await applyProjectSelection(String(assignment.projectId));
+        if (taskSelect) {
+          taskSelect.value = String(assignment.taskId ?? '');
+          userSelectedTask = !!taskSelect.value;
+          updateStartButton();
+        }
+        await updateItemSelection();
+        if (itemSelect && assignment.itemId) {
+          itemSelect.value = String(assignment.itemId);
+        }
+        if (startTaskButton) startTaskButton.textContent = 'START';
+        pendingAssignment = assignment;
+        pendingAssignmentSelection = {
+          projectId: String(assignment.projectId),
+          taskId: String(assignment.taskId ?? ''),
+          itemId: String(assignment.itemId ?? ''),
+        };
+        assignmentsList.style.display = 'none';
+      });
+      const project = document.createElement('div');
+      project.className = 'notes-item__project';
+      project.textContent = assignment.projectName || 'Unknown project';
+      const detail = document.createElement('div');
+      detail.className = 'notes-item__task';
+      const itemLabel = assignment.itemName ? ` - ${assignment.itemName}` : '';
+      detail.textContent = `${assignment.taskName || 'Unknown task'}${itemLabel}`;
+      item.appendChild(project);
+      item.appendChild(detail);
+      assignmentsList.appendChild(item);
     });
   }
 

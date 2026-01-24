@@ -220,6 +220,25 @@ button.icon-btn{
   background: #069839;
 }
 
+.notes-icon.is-disabled {
+  opacity: 0.5;
+  background-color: #f4f4f4;
+  cursor: not-allowed;
+}
+
+.task-box{
+  margin-bottom: 10px;
+}
+
+.notes-icon.is-disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.notes-badge--zero {
+  background: #9aa3aa;
+}
+
 .notes-list {
   margin-top: 10px;
   background: #ffffff;

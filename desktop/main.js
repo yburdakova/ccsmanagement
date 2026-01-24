@@ -434,16 +434,47 @@ ipcMain.handle('get-unfinished-tasks', async (event, { userId }) => {
   }
 });
 
-ipcMain.handle('mark-unfinished-finished', async (event, { recordId }) => {
-  const { markUnfinishedTaskFinished } = require('./api/db');
+ipcMain.handle('get-assignments', async (event, { userId }) => {
+  const { getAssignmentsByUser } = require('./api/db');
+  const { isOnline } = require('./utils/network-status');
+
+  try {
+    const online = await isOnline();
+    if (!online) return [];
+    return await getAssignmentsByUser(userId);
+  } catch (error) {
+    console.error('Error fetching assignments:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('mark-unfinished-finished', async (event, { recordId, uuid }) => {
+  const { markUnfinishedTaskFinished, markUnfinishedTaskFinishedByUuid } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
     if (!online) return { success: false, error: 'Offline mode' };
+    if (uuid) {
+      return await markUnfinishedTaskFinishedByUuid(uuid);
+    }
     return await markUnfinishedTaskFinished(recordId);
   } catch (error) {
     console.error('Error updating unfinished task:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mark-assignment-accepted', async (event, { assignmentId }) => {
+  const { markAssignmentAccepted } = require('./api/db');
+  const { isOnline } = require('./utils/network-status');
+
+  try {
+    const online = await isOnline();
+    if (!online) return { success: false, error: 'Offline mode' };
+    return await markAssignmentAccepted(assignmentId);
+  } catch (error) {
+    console.error('Error updating assignment:', error);
     return { success: false, error: error.message };
   }
 });

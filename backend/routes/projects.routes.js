@@ -43,6 +43,7 @@ router.get('/', async (req, res) => {
             pt.label AS project_type,
             st.label AS project_status,
             c.name AS customer_name,
+            p.is_jira AS isJira,
             p.created_at
         FROM projects p
         LEFT JOIN ref_project_types  pt ON pt.code = p.type_code
@@ -77,7 +78,8 @@ router.get('/:id', async (req, res) => {
           item_id,
           unit_id,
           project_status_id,
-          customer_id
+          customer_id,
+          is_jira AS isJira
         FROM projects
         WHERE id = ?
       `,
@@ -169,6 +171,33 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+router.put('/:id/jira', async (req, res) => {
+  const projectId = Number(req.params.id);
+  if (!projectId) {
+    return res.status(400).json({ error: 'Invalid project id' });
+  }
+
+  const isJira = req.body?.isJira ?? req.body?.is_jira;
+  if (isJira === undefined) {
+    return res.status(400).json({ error: 'isJira is required' });
+  }
+
+  try {
+    await pool.query(
+      `
+        UPDATE projects
+        SET is_jira = ?
+        WHERE id = ?
+      `,
+      [Number(isJira) ? 1 : 0, projectId]
+    );
+    res.json({ id: projectId });
+  } catch (err) {
+    console.error('Error updating project Jira flag:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/', async (req, res) => {
   const { project, team = [], tasks = [], itemTracking = [] } = req.body;
 
@@ -184,6 +213,8 @@ router.post('/', async (req, res) => {
   const itemId = project.item_id || null;
   const unitId = project.unit_id || null;
   const customerId = project.customer_id || null;
+  const isJira =
+    project.is_jira ?? project.isJira ?? 0;
 
   const connection = await pool.getConnection();
   try {
@@ -197,9 +228,10 @@ router.post('/', async (req, res) => {
           item_id,
           unit_id,
           project_status_id,
-          customer_id
+          customer_id,
+          is_jira
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `,
       [
         project.name,
@@ -208,6 +240,7 @@ router.post('/', async (req, res) => {
         unitId,
         projectStatusId,
         customerId,
+        Number(isJira) ? 1 : 0,
       ]
     );
 
@@ -357,6 +390,8 @@ router.put('/:id', async (req, res) => {
   const itemId = project.item_id || null;
   const unitId = project.unit_id || null;
   const customerId = project.customer_id || null;
+  const isJira =
+    project.is_jira ?? project.isJira;
 
   const connection = await pool.getConnection();
   try {
@@ -372,7 +407,8 @@ router.put('/:id', async (req, res) => {
             item_id = ?,
             unit_id = ?,
             project_status_id = ?,
-            customer_id = ?
+            customer_id = ?,
+            is_jira = COALESCE(?, is_jira)
         WHERE id = ?
       `,
       [
@@ -382,6 +418,7 @@ router.put('/:id', async (req, res) => {
         unitId,
         projectStatusId,
         customerId,
+        isJira ?? null,
         projectId,
       ]
     );

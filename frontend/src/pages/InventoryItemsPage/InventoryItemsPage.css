@@ -36,6 +36,26 @@
   border: 1px solid #cfd6db;
 }
 
+.inventory-items-page__jira {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 360px;
+}
+
+.inventory-items-page__jira-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #2f3438;
+}
+
+.inventory-items-page__jira-label input {
+  width: 16px;
+  height: 16px;
+}
+
 .inventory-items-page__status {
   color: #6b737a;
   font-size: 14px;

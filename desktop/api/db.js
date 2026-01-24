@@ -297,6 +297,38 @@ async function getUnfinishedTasksByUser(userId) {
   }
 }
 
+async function getAssignmentsByUser(userId) {
+  try {
+    const [rows] = await pool.query(
+      `
+        SELECT a.id,
+               a.project_id AS projectId,
+               a.task_id AS taskId,
+               a.item_id AS itemId,
+               a.is_accepted AS isAccepted,
+               p.name AS projectName,
+               t.description AS taskName,
+               i.label AS itemName
+        FROM assigments a
+        LEFT JOIN projects p ON p.id = a.project_id
+        LEFT JOIN tasks t ON t.id = a.task_id
+        LEFT JOIN items i ON i.id = a.item_id
+        WHERE a.user_id = ?
+          AND (a.is_accepted = 0 OR a.is_accepted = '0' OR a.is_accepted IS NULL)
+        ORDER BY a.id DESC
+      `,
+      [userId]
+    );
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing assigments table, skipping.');
+      return [];
+    }
+    throw error;
+  }
+}
+
 async function markUnfinishedTaskFinished(recordId) {
   try {
     await pool.query(
@@ -312,6 +344,46 @@ async function markUnfinishedTaskFinished(recordId) {
     if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
       console.warn('[server-db] Missing users_time_tracking table.');
       return { success: false, error: 'Missing users_time_tracking table' };
+    }
+    throw error;
+  }
+}
+
+async function markUnfinishedTaskFinishedByUuid(uuid) {
+  try {
+    await pool.query(
+      `
+        UPDATE users_time_tracking
+        SET is_finished = 1
+        WHERE uuid = ?
+      `,
+      [uuid]
+    );
+    return { success: true };
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing users_time_tracking table.');
+      return { success: false, error: 'Missing users_time_tracking table' };
+    }
+    throw error;
+  }
+}
+
+async function markAssignmentAccepted(assignmentId) {
+  try {
+    await pool.query(
+      `
+        UPDATE assigments
+        SET is_accepted = 1
+        WHERE id = ?
+      `,
+      [assignmentId]
+    );
+    return { success: true };
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing assigments table, skipping.');
+      return { success: false, error: 'Missing assigments table' };
     }
     throw error;
   }
@@ -516,7 +588,10 @@ module.exports = {
   updateItemStatusLocal,
   updateItemStatusGlobal,
   getUnfinishedTasksByUser,
+  getAssignmentsByUser,
   markUnfinishedTaskFinished,
+  markUnfinishedTaskFinishedByUuid,
+  markAssignmentAccepted,
   startUnallocatedActivityGlobal,
   startTaskActivityGlobal,
   completeActiveActivityGlobal
