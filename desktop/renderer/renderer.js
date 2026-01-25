@@ -17,9 +17,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const taskOverlayName = document.getElementById('task-overlay-name');
   const taskOverlayItem = document.getElementById('task-overlay-item');
   const taskOverlayTimer = document.getElementById('task-overlay-timer');
+  const taskOverlayNote = document.getElementById('task-overlay-note');
   const activityOverlay = document.getElementById('activity-overlay');
   const activityOverlayName = document.getElementById('activity-overlay-name');
   const activityOverlayTimer = document.getElementById('activity-overlay-timer');
+  const activityOverlayNote = document.getElementById('activity-overlay-note');
   const finishActivityButton = document.getElementById('finish-activity-button');
   const breakButton = document.getElementById('prod-btn');
   const lunchButton = document.getElementById('lunch-btn');
@@ -498,6 +500,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         taskOverlayItem.style.display = 'none';
       }
     }
+    clearNoteInput(taskOverlayNote);
     taskOverlay.style.display = 'flex';
     if (startTaskButton) startTaskButton.disabled = true;
     startTaskTimer();
@@ -506,15 +509,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const handleFinishTask = async (applyStatus) => {
     if (!currentUser || !currentTaskUuid) {
       if (taskOverlay) taskOverlay.style.display = 'none';
+      clearNoteInput(taskOverlayNote);
       stopTaskTimer(true);
       updateStartButton();
       return;
     }
 
+    const note = getNoteValue(taskOverlayNote);
     const result = await window.electronAPI.completeActiveActivity({
       uuid: currentTaskUuid,
       userId: currentUser.id,
-      isTaskCompleted: applyStatus
+      isTaskCompleted: applyStatus,
+      note
     });
 
     if (!result.success) {
@@ -549,6 +555,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentTaskItemId = null;
     currentTaskStatusRule = null;
     finishStatusRule = null;
+    clearNoteInput(taskOverlayNote);
     if (taskOverlayItem) {
       taskOverlayItem.textContent = '';
       taskOverlayItem.style.display = 'none';
@@ -577,10 +584,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   stopTaskButton?.addEventListener('click', () => handleFinishTask(false));
   finishActivityButton?.addEventListener('click', async () => {
     if (currentUser && currentSessionUuid) {
+      const note = getNoteValue(activityOverlayNote);
       const result = await window.electronAPI.completeActiveActivity({
         uuid: currentSessionUuid,
         userId: currentUser.id,
-        isTaskCompleted: false
+        isTaskCompleted: false,
+        note
       });
 
       if (!result.success) {
@@ -861,6 +870,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     startTaskButton.disabled = !(hasProject && hasTask);
   }
 
+  function getNoteValue(input) {
+    const raw = input?.value ?? '';
+    const trimmed = String(raw).trim();
+    return trimmed.length ? trimmed : null;
+  }
+
+  function clearNoteInput(input) {
+    if (input) input.value = '';
+  }
+
   function resetProjectSelectionUi() {
     roleText.textContent = '';
     taskSection.style.display = 'none';
@@ -1107,6 +1126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function showActivityOverlay(label) {
     if (!activityOverlay || !activityOverlayName || !activityOverlayTimer) return;
     activityOverlayName.textContent = label;
+    clearNoteInput(activityOverlayNote);
     activitySectionDisplay = activitySection?.style.display ?? '';
     productionSectionDisplay = productionSection?.style.display ?? '';
     if (activitySection) activitySection.style.display = 'none';
@@ -1118,6 +1138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function hideActivityOverlay() {
     if (!activityOverlay) return;
     activityOverlay.style.display = 'none';
+    clearNoteInput(activityOverlayNote);
     if (activitySection) activitySection.style.display = activitySectionDisplay;
     if (productionSection) productionSection.style.display = productionSectionDisplay;
     stopActivityTimer(true);

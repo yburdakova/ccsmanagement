@@ -26,9 +26,7 @@ function createWindow(screenWidth) {
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   Menu.setApplicationMenu(null);
-  if (process.env.ELECTRON_OPEN_DEVTOOLS === 'true') {
-    win.webContents.openDevTools();
-  }
+  win.webContents.openDevTools();
 
   win.on('close', (event) => {
     if (isQuitting) return;
@@ -297,7 +295,7 @@ ipcMain.handle('sync-queue', async () => {
   }
 });
 
-ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskCompleted }) => {
+ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskCompleted, note }) => {
   const { completeActiveActivityLocal: completeLocal } = require('./api/db-local');
   const { completeActiveActivityGlobal: completeServer } = require('./api/db');
   const isConnected = await isOnline();
@@ -306,7 +304,8 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
     const localResult = await completeLocal({
       uuid,
       is_completed_project_task: isTaskCompleted,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      note
     });
 
     if (!localResult.success) {
@@ -318,7 +317,8 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
         uuid: localResult.uuid,
         user_id: userId,
         is_completed_project_task: isTaskCompleted,
-        timestamp: localResult.endTime.toISOString()
+        timestamp: localResult.endTime.toISOString(),
+        note
       });
 
       if (!result.success) throw new Error(result.error);
@@ -505,3 +505,4 @@ app.on('will-quit', async (event) => {
     }, 200);
   }
 });
+

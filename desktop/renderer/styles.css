@@ -1,5 +1,6 @@
 html, body {
   height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -240,8 +241,14 @@ button.icon-btn{
 }
 
 .notes-list {
-  margin-top: 10px;
-  background: #ffffff;
+  position: absolute;
+  margin-top: -8px;
+  width: 96%;
+  z-index: 9999;
+  background: rgba(255, 255, 255);
+  max-height: 60vh;
+  overflow-y: auto;
+  overflow-x: hidden;
   border-radius: 10px;
   padding: 10px;
   display: flex;
@@ -275,7 +282,6 @@ button.icon-btn{
 }
 
 #start-task-button,
-#finish-task-button,
 #finish-activity-button {
   margin-top: 10px;
   font-weight: 600;
@@ -306,6 +312,7 @@ button.icon-btn{
   text-align: center;
   width: 85%;
   max-width: 320px;
+  pointer-events: auto;
 }
 
 .task-overlay__label {
@@ -333,8 +340,38 @@ button.icon-btn{
   margin-bottom: 12px;
 }
 
+.task-overlay__note {
+  margin-bottom: 12px;
+  pointer-events: auto;
+}
+
+.task-overlay__note-field {
+  width: 100%;
+  min-height: 70px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: #2c3e50;
+  background: #f8f9fb;
+  resize: vertical;
+  outline: none;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.task-overlay__note-field:focus {
+  border-color: #7aa7ff;
+  box-shadow: 0 0 0 2px rgba(122, 167, 255, 0.2);
+}
+
 .task-overlay__actions {
   display: flex;
   justify-content: center;
   gap: 8px;
 }
+
+

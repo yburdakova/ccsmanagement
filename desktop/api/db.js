@@ -511,14 +511,19 @@ async function startTaskActivityGlobal({ uuid, user_id, project_id, task_id, ite
   }
 }
 
-async function completeActiveActivityGlobal({ uuid, is_completed_project_task, timestamp }) {
+async function completeActiveActivityGlobal({ uuid, is_completed_project_task, timestamp, note }) {
   const endTime = timestamp ? new Date(timestamp) : new Date();
   const conn = await pool.getConnection();
   const endStr = formatMySQLDatetime(endTime);
+  const safeNote = note != null ? String(note).trim().slice(0, 500) : null;
 
   try {
     const [rows] = await conn.query(
-      `SELECT id, start_time, end_time, activity_id FROM users_time_tracking WHERE uuid = ?`,
+      `
+      SELECT id, start_time, end_time, activity_id, user_id, project_id, task_id, item_id
+      FROM users_time_tracking
+      WHERE uuid = ?
+      `,
       [uuid]
     );
 
@@ -555,6 +560,33 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
       `,
       [endStr, safeDurationMin, isFinished, uuid]
     );
+
+    if (safeNote) {
+      if (Number(activity.activity_id) === 2) {
+        await conn.query(
+          `
+          INSERT INTO prod_notes (
+            item_id, unit_id, user_id, task_id, activity_id, note, created_at, project_id
+          )
+          VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
+          `,
+          [
+            activity.item_id ?? null,
+            null,
+            activity.user_id,
+            activity.task_id ?? null,
+            activity.activity_id,
+            safeNote,
+            activity.project_id ?? null
+          ]
+        );
+      } else {
+        await conn.query(
+          `UPDATE users_time_tracking SET note = ? WHERE uuid = ?`,
+          [safeNote, uuid]
+        );
+      }
+    }
 
     conn.release();
     return { success: true };

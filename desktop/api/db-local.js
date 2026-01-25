@@ -712,18 +712,19 @@ function startUnallocatedActivityLocal(userId, activityId) {
   });
 }
 
-function completeActiveActivityLocal({ uuid, is_completed_project_task, timestamp }) {
+function completeActiveActivityLocal({ uuid, is_completed_project_task, timestamp, note }) {
   const endTime = timestamp ? new Date(timestamp) : new Date();
   const endStr = formatMySQLDatetime(endTime);
+  const safeNote = note != null ? String(note).trim().slice(0, 500) : null;
 
   return new Promise((resolve, reject) => {
     const query = uuid
-      ? `SELECT id, uuid, user_id, start_time 
+      ? `SELECT id, uuid, user_id, activity_id, project_id, task_id, item_id, start_time 
          FROM users_time_tracking 
          WHERE uuid = ? AND end_time IS NULL 
          ORDER BY start_time DESC 
          LIMIT 1`
-      : `SELECT id, uuid, user_id, start_time 
+      : `SELECT id, uuid, user_id, activity_id, project_id, task_id, item_id, start_time 
          FROM users_time_tracking 
          WHERE end_time IS NULL 
          ORDER BY start_time DESC 
@@ -754,9 +755,9 @@ function completeActiveActivityLocal({ uuid, is_completed_project_task, timestam
 
       db.run(
         `UPDATE users_time_tracking
-         SET end_time = ?, duration = ?, is_finished = ?
+         SET end_time = ?, duration = ?, is_finished = ?, note = ?
          WHERE uuid = ?`,
-        [endStr, durationMin, isFinished, row.uuid],
+        [endStr, durationMin, isFinished, safeNote, row.uuid],
         (err2) => {
           if (err2) {
             console.error('[local-db] Failed to complete activity:', err2.message);
@@ -769,7 +770,8 @@ function completeActiveActivityLocal({ uuid, is_completed_project_task, timestam
             uuid: row.uuid,
             user_id: row.user_id,
             is_completed_project_task,
-            timestamp: endTime.toISOString()
+            timestamp: endTime.toISOString(),
+            note: safeNote
           };
 
           db.run(
