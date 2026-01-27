@@ -28,4 +28,4 @@ app.use('/api/items', itemsRoutes);
 http.createServer(app).listen(PORT, () => {
     console.log(`API HTTP server running on port ${PORT}`);
     console.log(`Connected DB: ${dbname}`);
-});
+}); 

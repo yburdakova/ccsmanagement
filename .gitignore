@@ -34,3 +34,8 @@ coverage/
 
 # Database
 /desktop/db/
+*.sql
+
+install/
+*.md
+*.txt
