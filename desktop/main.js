@@ -5,6 +5,8 @@ const path = require('path');
 const { isOnline } = require('./utils/network-status');
 const { initializeLocalDb } = require('./api/db-local');
 
+let mainWindow = null;
+
 function createWindow(screenWidth) {
   let isQuitting = false;
   const win = new BrowserWindow({
@@ -27,6 +29,7 @@ function createWindow(screenWidth) {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   Menu.setApplicationMenu(null);
   win.webContents.openDevTools();
+  mainWindow = win;
 
   win.on('close', (event) => {
     if (isQuitting) return;
@@ -178,6 +181,53 @@ ipcMain.handle('get-all-project-task-roles', async () => {
   }
 });
 
+ipcMain.handle('get-all-customers', async () => {
+  const { getAllCustomers } = require('./api/db');
+  const { getAllCustomersLocal, saveCustomersToLocal } = require('./api/db-local');
+  const { isOnline } = require('./utils/network-status');
+
+  try {
+    const online = await isOnline();
+    if (online) {
+      const customers = await getAllCustomers();
+      saveCustomersToLocal(customers);
+      return customers;
+    }
+    return await getAllCustomersLocal();
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('get-project-task-data', async (event, { projectId, taskId }) => {
+  const { getProjectTaskDataByTask: getLocalProjectTaskDataByTask, replaceProjectTaskDataForTask } = require('./api/db-local');
+  const { getProjectTaskDataByTask: getRemoteProjectTaskDataByTask } = require('./api/db');
+  const { isOnline } = require('./utils/network-status');
+  try {
+    const online = await isOnline();
+    if (online) {
+      const rows = await getRemoteProjectTaskDataByTask(projectId, taskId);
+      await replaceProjectTaskDataForTask(projectId, taskId, rows);
+      return rows;
+    }
+    return await getLocalProjectTaskDataByTask(projectId, taskId);
+  } catch (error) {
+    console.error('Error fetching project task data:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('save-task-data', async (event, payload) => {
+  const { saveTaskDataValueLocal } = require('./api/db-local');
+  try {
+    return await saveTaskDataValueLocal(payload);
+  } catch (error) {
+    console.error('Error saving task data:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
   const { getAvailableTasksForUser } = require('./api/db-local');
   const { getAvailableTasksForUser: getAvailableTasksGlobal } = require('./api/db');
@@ -264,6 +314,11 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
   const isConnected = await isOnline();
 
   try {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+      mainWindow.webContents.focus();
+    }
     const { uuid } = await startLocal(userId, projectId, taskId, itemId);
 
     if (isConnected) {

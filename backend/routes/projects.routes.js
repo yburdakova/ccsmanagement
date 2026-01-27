@@ -7,6 +7,74 @@ console.log('Projects route loaded');
 
 const idColumnCache = new Map();
 
+const normalizeValueType = (valueType = '') =>
+  String(valueType || '').trim().toLowerCase();
+
+const getTaskDataColumn = (valueType = '') => {
+  const type = normalizeValueType(valueType);
+  switch (type) {
+    case 'int':
+    case 'integer':
+      return 'value_int';
+    case 'decimal':
+      return 'value_decimal';
+    case 'varchar':
+      return 'value_varchar';
+    case 'text':
+      return 'value_text';
+    case 'bool':
+    case 'boolean':
+      return 'value_bool';
+    case 'date':
+      return 'value_date';
+    case 'datetime':
+      return 'value_datetime';
+    case 'customer_id':
+      return 'value_customer_id';
+    case 'json':
+      return 'value_json';
+    default:
+      return null;
+  }
+};
+
+const parseTaskDataValue = (valueType, value) => {
+  const type = normalizeValueType(valueType);
+  if (value == null || value === '') return null;
+  if (type === 'int' || type === 'integer' || type === 'customer_id') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  if (type === 'decimal') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  if (type === 'bool' || type === 'boolean') {
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    if (typeof value === 'number') return value ? 1 : 0;
+    const normalized = String(value).trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' ? 1 : 0;
+  }
+  if (type === 'json') {
+    try {
+      return typeof value === 'string' ? value : JSON.stringify(value);
+    } catch {
+      return null;
+    }
+  }
+  if (type === 'date') {
+    const raw = String(value).trim();
+    return raw ? raw.slice(0, 10) : null;
+  }
+  if (type === 'datetime') {
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const normalized = raw.includes('T') ? raw.replace('T', ' ') : raw;
+    return normalized.length === 16 ? `${normalized}:00` : normalized;
+  }
+  return String(value);
+};
+
 const getIdColumnMode = async (connection, tableName) => {
   if (idColumnCache.has(tableName)) {
     return idColumnCache.get(tableName);
@@ -31,6 +99,18 @@ const getNextId = async (connection, tableName) => {
     `SELECT COALESCE(MAX(id), 0) AS maxId FROM ${tableName} FOR UPDATE`
   );
   return Number(rows[0].maxId) + 1;
+};
+
+const getDefaultTaskCategoryId = async (connection) => {
+  const [rows] = await connection.query(
+    `
+      SELECT id
+      FROM ref_task_category
+      ORDER BY id
+      LIMIT 1
+    `
+  );
+  return rows.length ? Number(rows[0].id) : null;
 };
 
 router.get('/', async (req, res) => {
@@ -112,6 +192,57 @@ router.get('/:id', async (req, res) => {
       [projectId]
     );
 
+    const [projectTaskRows] = await pool.query(
+      `
+        SELECT id, task_id AS taskId
+        FROM project_tasks
+        WHERE project_id = ?
+      `,
+      [projectId]
+    );
+    const projectTaskIdByTaskId = new Map(
+      projectTaskRows.map((row) => [Number(row.taskId), Number(row.id)])
+    );
+
+    let taskDataRows = [];
+    try {
+      const [rows] = await pool.query(
+        `
+          SELECT ptd.id,
+                 pt.task_id AS taskId,
+                 ptd.project_task_id AS projectTaskId,
+                 ptd.data_def_id AS dataDefId,
+                 tdd.label AS definitionLabel,
+                 tdd.\`key\` AS definitionKey,
+                 tdd.value_type AS valueType,
+                 ptd.value_int,
+                 ptd.value_decimal,
+                 ptd.value_varchar,
+                 ptd.value_text,
+                 ptd.value_bool,
+                 ptd.value_date,
+                 ptd.value_datetime,
+                 ptd.value_customer_id,
+                 ptd.value_json
+          FROM project_task_data ptd
+          JOIN project_tasks pt ON pt.id = ptd.project_task_id
+          JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
+          WHERE pt.project_id = ?
+        `,
+        [projectId]
+      );
+      taskDataRows = rows;
+    } catch (err) {
+      if (
+        err.code === 'ER_NO_SUCH_TABLE' ||
+        err.code === 'ER_BAD_TABLE_ERROR'
+      ) {
+        console.warn('[projects] Missing task data tables, skipping task data.');
+      } else {
+        throw err;
+      }
+    }
+
     const tasksMap = new Map();
     for (const row of taskRoleRows) {
       const key = String(row.taskId);
@@ -121,10 +252,59 @@ router.get('/:id', async (req, res) => {
           taskTitle: row.taskTitle,
           categoryId: row.categoryId,
           rolesId: [],
+          taskData: [],
         });
       }
       const entry = tasksMap.get(key);
       entry.rolesId.push(row.roleId);
+    }
+
+    if (taskDataRows.length > 0) {
+      for (const row of taskDataRows) {
+        const entry = tasksMap.get(String(row.taskId));
+        if (!entry) continue;
+        const valueType = row.valueType;
+        let value = null;
+        const column = getTaskDataColumn(valueType);
+        switch (column) {
+          case 'value_int':
+            value = row.value_int;
+            break;
+          case 'value_decimal':
+            value = row.value_decimal;
+            break;
+          case 'value_varchar':
+            value = row.value_varchar;
+            break;
+          case 'value_text':
+            value = row.value_text;
+            break;
+          case 'value_bool':
+            value = row.value_bool;
+            break;
+          case 'value_date':
+            value = row.value_date;
+            break;
+          case 'value_datetime':
+            value = row.value_datetime;
+            break;
+          case 'value_customer_id':
+            value = row.value_customer_id;
+            break;
+          case 'value_json':
+            value = row.value_json;
+            break;
+          default:
+            value = null;
+        }
+
+        entry.taskData.push({
+          id: row.id,
+          dataDefId: row.dataDefId,
+          valueType,
+          value,
+        });
+      }
     }
 
     const [itemStatusRows] = await pool.query(
@@ -162,7 +342,10 @@ router.get('/:id', async (req, res) => {
     res.json({
       project,
       team: teamRows,
-      tasks: Array.from(tasksMap.values()),
+      tasks: Array.from(tasksMap.values()).map((task) => ({
+        ...task,
+        projectTaskId: projectTaskIdByTaskId.get(Number(task.taskId)) ?? null,
+      })),
       itemTracking: Array.from(itemTrackingMap.values()),
     });
   } catch (err) {
@@ -246,6 +429,7 @@ router.post('/', async (req, res) => {
 
     const projectId = projectResult.insertId;
     const taskTempMap = new Map();
+    const resolvedTasks = [];
 
     const projectUsersIdMode = await getIdColumnMode(connection, 'project_users');
     let nextProjectUserId =
@@ -286,12 +470,19 @@ router.post('/', async (req, res) => {
       let taskId = task.taskId;
 
       if (!taskId && task.taskTitle) {
+        let categoryId = task.categoryId ?? null;
+        if (!categoryId) {
+          categoryId = await getDefaultTaskCategoryId(connection);
+        }
+        if (!categoryId) {
+          throw new Error('Task category is required');
+        }
         const [taskResult] = await connection.query(
           `
             INSERT INTO tasks (description, category_id)
             VALUES (?, ?)
           `,
-          [task.taskTitle, task.categoryId ?? null]
+          [task.taskTitle, categoryId]
         );
         taskId = taskResult.insertId;
         if (task.taskTempId) {
@@ -302,6 +493,11 @@ router.post('/', async (req, res) => {
       if (!taskId) continue;
 
       const roles = Array.isArray(task.rolesId) ? task.rolesId : [];
+      resolvedTasks.push({
+        taskId,
+        rolesId: roles,
+        taskData: Array.isArray(task.taskData) ? task.taskData : [],
+      });
       for (const roleId of roles) {
         if (!roleId) continue;
         if (projectTaskRolesIdMode === 'manual') {
@@ -322,6 +518,61 @@ router.post('/', async (req, res) => {
             [projectId, taskId, roleId]
           );
         }
+      }
+    }
+
+    const [existingProjectTaskRows] = await connection.query(
+      `
+        SELECT id, task_id AS taskId
+        FROM project_tasks
+        WHERE project_id = ?
+      `,
+      [projectId]
+    );
+    const projectTaskIdByTaskId = new Map(
+      existingProjectTaskRows.map((row) => [Number(row.taskId), Number(row.id)])
+    );
+
+    for (const [index, task] of resolvedTasks.entries()) {
+      let projectTaskId = projectTaskIdByTaskId.get(Number(task.taskId));
+      if (!projectTaskId) {
+        const [projectTaskResult] = await connection.query(
+          `
+            INSERT INTO project_tasks (
+              project_id,
+              task_id,
+              order_number,
+              only_after_number,
+              is_mandatory,
+              override_role_id
+            )
+            VALUES (?, ?, ?, NULL, 1, NULL)
+          `,
+          [projectId, task.taskId, index + 1]
+        );
+        projectTaskId = projectTaskResult.insertId;
+        projectTaskIdByTaskId.set(Number(task.taskId), projectTaskId);
+      }
+
+      await connection.query(
+        `DELETE FROM project_task_data WHERE project_task_id = ?`,
+        [projectTaskId]
+      );
+
+      for (const dataRow of task.taskData || []) {
+        const dataDefId = Number(dataRow?.dataDefId);
+        if (!dataDefId) continue;
+        const column = getTaskDataColumn(dataRow.valueType);
+        if (!column) continue;
+        const value = parseTaskDataValue(dataRow.valueType, dataRow.value);
+
+        await connection.query(
+          `
+            INSERT INTO project_task_data (project_task_id, data_def_id, ${column})
+            VALUES (?, ?, ?)
+          `,
+          [projectTaskId, dataDefId, value]
+        );
       }
     }
 
@@ -491,12 +742,19 @@ router.put('/:id', async (req, res) => {
       let taskId = task.taskId;
 
       if (!taskId && task.taskTitle) {
+        let categoryId = task.categoryId ?? null;
+        if (!categoryId) {
+          categoryId = await getDefaultTaskCategoryId(connection);
+        }
+        if (!categoryId) {
+          throw new Error('Task category is required');
+        }
         const [taskResult] = await connection.query(
           `
             INSERT INTO tasks (description, category_id)
             VALUES (?, ?)
           `,
-          [task.taskTitle, task.categoryId ?? null]
+          [task.taskTitle, categoryId]
         );
         taskId = taskResult.insertId;
         if (task.taskTempId) {
@@ -508,6 +766,7 @@ router.put('/:id', async (req, res) => {
       resolvedTasks.push({
         taskId,
         rolesId: Array.isArray(task.rolesId) ? task.rolesId : [],
+        taskData: Array.isArray(task.taskData) ? task.taskData : [],
       });
     }
 
@@ -559,6 +818,77 @@ router.put('/:id', async (req, res) => {
             VALUES (?, ?, ?)
           `,
           [projectId, row.taskId, row.roleId]
+        );
+      }
+    }
+
+    const [existingProjectTaskRows] = await connection.query(
+      `
+        SELECT id, task_id AS taskId
+        FROM project_tasks
+        WHERE project_id = ?
+      `,
+      [projectId]
+    );
+    const projectTaskIdByTaskId = new Map(
+      existingProjectTaskRows.map((row) => [Number(row.taskId), Number(row.id)])
+    );
+
+    const desiredTaskIds = new Set(resolvedTasks.map((task) => Number(task.taskId)));
+    const projectTaskIdsToDelete = existingProjectTaskRows
+      .filter((row) => !desiredTaskIds.has(Number(row.taskId)))
+      .map((row) => Number(row.id));
+
+    if (projectTaskIdsToDelete.length > 0) {
+      await connection.query(
+        `DELETE FROM project_task_data WHERE project_task_id IN (?)`,
+        [projectTaskIdsToDelete]
+      );
+      await connection.query(
+        `DELETE FROM project_tasks WHERE id IN (?)`,
+        [projectTaskIdsToDelete]
+      );
+    }
+
+    for (const [index, task] of resolvedTasks.entries()) {
+      let projectTaskId = projectTaskIdByTaskId.get(Number(task.taskId));
+      if (!projectTaskId) {
+        const [projectTaskResult] = await connection.query(
+          `
+            INSERT INTO project_tasks (
+              project_id,
+              task_id,
+              order_number,
+              only_after_number,
+              is_mandatory,
+              override_role_id
+            )
+            VALUES (?, ?, ?, NULL, 1, NULL)
+          `,
+          [projectId, task.taskId, index + 1]
+        );
+        projectTaskId = projectTaskResult.insertId;
+        projectTaskIdByTaskId.set(Number(task.taskId), projectTaskId);
+      }
+
+      await connection.query(
+        `DELETE FROM project_task_data WHERE project_task_id = ?`,
+        [projectTaskId]
+      );
+
+      for (const dataRow of task.taskData || []) {
+        const dataDefId = Number(dataRow?.dataDefId);
+        if (!dataDefId) continue;
+        const column = getTaskDataColumn(dataRow.valueType);
+        if (!column) continue;
+        const value = parseTaskDataValue(dataRow.valueType, dataRow.value);
+
+        await connection.query(
+          `
+            INSERT INTO project_task_data (project_task_id, data_def_id, ${column})
+            VALUES (?, ?, ?)
+          `,
+          [projectTaskId, dataDefId, value]
         );
       }
     }

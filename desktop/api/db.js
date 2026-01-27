@@ -54,6 +54,19 @@ async function getAllTasks() {
   return rows;
 }
 
+async function getAllCustomers() {
+  try {
+    const [rows] = await pool.query(`SELECT id, name FROM customers ORDER BY name`);
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing customers table, skipping.');
+      return [];
+    }
+    throw error;
+  }
+}
+
 async function getAllItemTypes() {
   try {
     const [rows] = await pool.query(`SELECT id, name FROM ref_item_types ORDER BY name`);
@@ -75,6 +88,211 @@ async function getAllProjectTasks() {
 async function getAllProjectTaskRoles() {
   const [rows] = await pool.query('SELECT * FROM project_task_roles');
   return rows;
+}
+
+async function getAllTaskDataDefinitions() {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, \`key\`, label, value_type FROM task_data_definitions`
+    );
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing task_data_definitions table, skipping.');
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function getAllProjectTaskData() {
+  try {
+    const [rows] = await pool.query(`SELECT * FROM project_task_data`);
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing project_task_data table, skipping.');
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function getProjectTaskDataByTask(projectId, taskId) {
+  try {
+    const [rows] = await pool.query(
+      `
+        SELECT ptd.id,
+               ptd.project_task_id AS projectTaskId,
+               ptd.data_def_id AS dataDefId,
+               tdd.label AS definitionLabel,
+               tdd.value_type AS valueType,
+               ptd.value_int,
+               ptd.value_decimal,
+               ptd.value_varchar,
+               ptd.value_text,
+               ptd.value_bool,
+               ptd.value_date,
+               ptd.value_datetime,
+               ptd.value_customer_id,
+               ptd.value_json
+        FROM project_task_data ptd
+        JOIN project_tasks pt ON pt.id = ptd.project_task_id
+        JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
+        WHERE pt.project_id = ? AND pt.task_id = ?
+        ORDER BY ptd.id
+      `,
+      [projectId, taskId]
+    );
+    return rows;
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
+      console.warn('[server-db] Missing project task data tables, skipping.');
+      return [];
+    }
+    throw error;
+  }
+}
+
+const normalizeValueType = (valueType = '') =>
+  String(valueType || '').trim().toLowerCase();
+
+const getTaskDataColumn = (valueType = '') => {
+  const type = normalizeValueType(valueType);
+  switch (type) {
+    case 'int':
+    case 'integer':
+      return 'value_int';
+    case 'decimal':
+      return 'value_decimal';
+    case 'varchar':
+      return 'value_varchar';
+    case 'text':
+      return 'value_text';
+    case 'bool':
+    case 'boolean':
+      return 'value_bool';
+    case 'date':
+      return 'value_date';
+    case 'datetime':
+      return 'value_datetime';
+    case 'customer_id':
+      return 'value_customer_id';
+    case 'json':
+      return 'value_json';
+    default:
+      return null;
+  }
+};
+
+const parseTaskDataValue = (valueType, value) => {
+  const type = normalizeValueType(valueType);
+  if (value == null || value === '') return null;
+  if (type === 'int' || type === 'integer' || type === 'customer_id') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  if (type === 'decimal') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  if (type === 'bool' || type === 'boolean') {
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    if (typeof value === 'number') return value ? 1 : 0;
+    const normalized = String(value).trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' ? 1 : 0;
+  }
+  if (type === 'json') {
+    try {
+      return typeof value === 'string' ? value : JSON.stringify(value);
+    } catch {
+      return null;
+    }
+  }
+  if (type === 'date') {
+    const raw = String(value).trim();
+    return raw ? raw.slice(0, 10) : null;
+  }
+  if (type === 'datetime') {
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const normalized = raw.includes('T') ? raw.replace('T', ' ') : raw;
+    return normalized.length === 16 ? `${normalized}:00` : normalized;
+  }
+  return String(value);
+};
+
+async function saveTaskDataValueGlobal({ projectId, taskId, dataDefId, valueType, value }) {
+  const column = getTaskDataColumn(valueType);
+  if (!column) {
+    return { success: false, error: 'Invalid value type' };
+  }
+
+  try {
+    const [[projectTask]] = await pool.query(
+      `
+        SELECT id
+        FROM project_tasks
+        WHERE project_id = ? AND task_id = ?
+        LIMIT 1
+      `,
+      [projectId, taskId]
+    );
+
+    if (!projectTask) {
+      return { success: false, error: 'Project task not found' };
+    }
+
+    const projectTaskId = projectTask.id;
+    const [existingRows] = await pool.query(
+      `
+        SELECT id
+        FROM project_task_data
+        WHERE project_task_id = ? AND data_def_id = ?
+        LIMIT 1
+      `,
+      [projectTaskId, dataDefId]
+    );
+
+    const parsedValue = parseTaskDataValue(valueType, value);
+    const clearColumns = `
+      value_int = NULL,
+      value_decimal = NULL,
+      value_varchar = NULL,
+      value_text = NULL,
+      value_bool = NULL,
+      value_date = NULL,
+      value_datetime = NULL,
+      value_customer_id = NULL,
+      value_json = NULL
+    `;
+
+    if (existingRows.length) {
+      await pool.query(
+        `
+          UPDATE project_task_data
+          SET ${clearColumns},
+              ${column} = ?,
+              updated_at = NOW()
+          WHERE id = ?
+        `,
+        [parsedValue, existingRows[0].id]
+      );
+      return { success: true, updated: true };
+    }
+
+    await pool.query(
+      `
+        INSERT INTO project_task_data (project_task_id, data_def_id, ${column}, created_at, updated_at)
+        VALUES (?, ?, ?, NOW(), NOW())
+      `,
+      [projectTaskId, dataDefId, parsedValue]
+    );
+    return { success: true, created: true };
+  } catch (error) {
+    console.error('[server-db] Failed to save task data value:', error.message);
+    return { success: false, error: error.message };
+  }
 }
 
 async function getAvailableTasksForUser(userId, projectId) {
@@ -604,9 +822,14 @@ module.exports = {
   getAllProjectUsers, 
   getAllProjectRoles,
   getAllTasks,
+  getAllCustomers,
   getAllItemTypes,
   getAllProjectTasks,
   getAllProjectTaskRoles,
+  getAllTaskDataDefinitions,
+  getAllProjectTaskData,
+  getProjectTaskDataByTask,
+  saveTaskDataValueGlobal,
   getAvailableTasksForUser,
   getCfsItemsByProject,
   getImItemsByProject,

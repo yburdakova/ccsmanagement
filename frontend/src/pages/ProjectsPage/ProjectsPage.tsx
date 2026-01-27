@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import './ProjectsPage.css';
 import { apiRequest } from '../../services/apiClient';
 import ManagePage from '../../layouts/ManagePageLayout/ManagePageLayout';
-import type { ItemTrackingRow, Project, ProjectFormLookups, ProjectFormValue, TaskRow, TeamRow } from '../../types/project.types';
+import type { ItemTrackingRow, Project, ProjectFormLookups, ProjectFormValue, TaskDataDefinition, TaskRow, TeamRow } from '../../types/project.types';
 import ProjectForm from '../../components/ProjectForm/ProjectForm';
 
 
@@ -74,6 +74,7 @@ const ProjectsPage = () => {
         setLookups({
           ...data,
           taskCategories,
+          taskDataDefinitions: data.taskDataDefinitions ?? [],
         });
       } catch (e) {
         console.error('Error loading project form lookups:', e);
@@ -110,6 +111,11 @@ const ProjectsPage = () => {
           taskTitle: string;
           categoryId: number | null;
           rolesId: number[];
+          taskData?: {
+            dataDefId: number;
+            valueType: string;
+            value: string | number | boolean | null;
+          }[];
         }[];
         itemTracking?: {
           statusText: string | null;
@@ -143,6 +149,12 @@ const ProjectsPage = () => {
           taskTitle: row.taskTitle,
           categoryId: row.categoryId ? String(row.categoryId) : '',
           rolesId: row.rolesId.map((roleId) => String(roleId)),
+          taskData: (row.taskData ?? []).map((dataRow) => ({
+            id: crypto.randomUUID(),
+            dataDefId: String(dataRow.dataDefId),
+            valueType: dataRow.valueType || '',
+            value: dataRow.value != null ? String(dataRow.value) : '',
+          })),
         }))
       );
 
@@ -198,6 +210,18 @@ const ProjectsPage = () => {
             taskTempId: row.taskId ? null : row.id,
             categoryId: row.categoryId ? Number(row.categoryId) : null,
             rolesId: row.rolesId.map((roleId) => Number(roleId)),
+            taskData: row.taskData
+              .filter((dataRow) => dataRow.dataDefId)
+              .map((dataRow) => {
+                const def = lookups?.taskDataDefinitions?.find(
+                  (entry) => String(entry.id) === String(dataRow.dataDefId)
+                );
+                return {
+                  dataDefId: Number(dataRow.dataDefId),
+                  valueType: def?.valueType || dataRow.valueType,
+                  value: dataRow.value,
+                };
+              }),
           })),
         itemTracking: itemTrackingRows
           .filter((row) => row.statusText.trim() || row.taskIds.length > 0)
@@ -322,6 +346,34 @@ const ProjectsPage = () => {
           taskCategoryOptions={lookups.taskCategories}
           itemStatusOptions={lookups.itemStatuses}
           onItemTrackingRowsChange={setItemTrackingRows}
+          taskDataDefinitions={lookups.taskDataDefinitions || []}
+          onCreateTaskDataDefinition={async (definition) => {
+            try {
+              const created = await apiRequest<TaskDataDefinition>(
+                '/lookups/task-data-definitions',
+                {
+                  method: 'POST',
+                  body: definition,
+                }
+              );
+              setLookups((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      taskDataDefinitions: [
+                        created,
+                        ...(prev.taskDataDefinitions || []),
+                      ],
+                    }
+                  : prev
+              );
+              return created;
+            } catch (err) {
+              console.error('Failed to create task data definition:', err);
+              setError('Unable to create task data definition.');
+              return null;
+            }
+          }}
         />
       ) : (
         <div className="form-placeholder">

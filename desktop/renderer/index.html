@@ -88,6 +88,10 @@
           </div>
           <button id="start-task-button" disabled>START</button>
         </div>
+        <div id="task-data-section" class="task-data-section" style="display: none;">
+          <div class="task-data-title">Task data</div>
+          <div id="task-data-list" class="task-data-list"></div>
+        </div>
 
           <div id="task-overlay" class="task-overlay" style="display: none;">
             <div class="task-overlay__content">
@@ -97,6 +101,9 @@
               <div id="task-overlay-timer" class="task-overlay__timer">00:00:00</div>
               <div class="task-overlay__note">
                 <textarea id="task-overlay-note" class="task-overlay__note-field" rows="3" placeholder="Note (optional)"></textarea>
+              </div>
+              <div id="task-overlay-data" class="task-overlay__data" style="display: none;">
+                <div id="task-overlay-data-list" class="task-overlay__data-list"></div>
               </div>
               <div class="task-overlay__actions">
                 <button id="finish-task-button">FINISH</button>

@@ -22,10 +22,13 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
     taskOptions,
     taskCategoryOptions,
     itemStatusOptions,
+    taskDataDefinitions,
+    onCreateTaskDataDefinition,
 }) => {
     const safeTaskOptions = taskOptions ?? [];
     const safeTaskCategoryOptions = taskCategoryOptions ?? [];
     const safeItemStatusOptions = itemStatusOptions ?? [];
+    const safeTaskDataDefinitions = taskDataDefinitions ?? [];
     const [teamRows, setTeamRows] = useState<TeamRow[]>([]);
     const [taskRows, setTaskRows] = useState<TaskRow[]>([]);
     const [itemTrackingRows, setItemTrackingRows] = useState<ItemTrackingRow[]>([]);
@@ -48,7 +51,11 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
             .map(
                 (row) =>
                     `${row.id}:${row.taskId}:${row.taskTitle}:${row.categoryId}:` +
-                    row.rolesId.join(',')
+                    row.rolesId.join(',') +
+                    ':' +
+                    (row.taskData || [])
+                        .map((data) => `${data.id}:${data.dataDefId}:${data.valueType}:${data.value}`)
+                        .join(',')
             )
             .join('|');
     const getItemTrackingKey = (rows: ItemTrackingRow[]) =>
@@ -162,6 +169,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
             taskTitle: '',
             categoryId: '',
             rolesId: [],
+            taskData: [],
             },
         ]);
     };
@@ -176,6 +184,101 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
         row.id === rowId ? { ...row, [field]: fieldValue } : row
         )
     );
+    };
+
+    const handleTaskDataAddRow = (rowId: string) => {
+        setTaskRows((prev) =>
+            prev.map((row) =>
+                row.id === rowId
+                    ? {
+                        ...row,
+                        taskData: [
+                            ...row.taskData,
+                            {
+                                id: crypto.randomUUID(),
+                                dataDefId: '',
+                                valueType: '',
+                                value: '',
+                            },
+                        ],
+                    }
+                    : row
+            )
+        );
+    };
+
+    const handleTaskDataRemoveRow = (taskRowId: string, dataRowId: string) => {
+        setTaskRows((prev) =>
+            prev.map((row) =>
+                row.id === taskRowId
+                    ? { ...row, taskData: row.taskData.filter((data) => data.id !== dataRowId) }
+                    : row
+            )
+        );
+    };
+
+    const handleTaskDataDefinitionChange = async (
+        taskRowId: string,
+        dataRowId: string,
+        nextDefId: string
+    ) => {
+        if (nextDefId === '__new__') {
+            if (!onCreateTaskDataDefinition) return;
+            const label = window.prompt('New definition label:');
+            if (!label) return;
+            const valueType = window.prompt(
+                'Value type (int, decimal, varchar, text, bool, date, datetime, customer_id, json):',
+                'varchar'
+            );
+            if (!valueType) return;
+            const key = window.prompt('Key (optional):', label.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+
+            const created = await onCreateTaskDataDefinition({
+                label,
+                key: key || '',
+                valueType,
+            });
+            if (!created) return;
+            nextDefId = String(created.id);
+        }
+
+        const def = safeTaskDataDefinitions.find((entry) => String(entry.id) === nextDefId);
+        setTaskRows((prev) =>
+            prev.map((row) => {
+                if (row.id !== taskRowId) return row;
+                return {
+                    ...row,
+                    taskData: row.taskData.map((data) =>
+                        data.id === dataRowId
+                            ? {
+                                ...data,
+                                dataDefId: nextDefId,
+                                valueType: def?.valueType || data.valueType,
+                            }
+                            : data
+                    ),
+                };
+            })
+        );
+    };
+
+    const handleTaskDataValueChange = (
+        taskRowId: string,
+        dataRowId: string,
+        nextValue: string
+    ) => {
+        setTaskRows((prev) =>
+            prev.map((row) =>
+                row.id === taskRowId
+                    ? {
+                        ...row,
+                        taskData: row.taskData.map((data) =>
+                            data.id === dataRowId ? { ...data, value: nextValue } : data
+                        ),
+                    }
+                    : row
+            )
+        );
     };
 
     const handleTaskInputChange = (rowId: string, nextTitle: string) => {
@@ -583,7 +686,7 @@ const handleApplyTaskRoles = (rowId: string) => {
 
             {taskRows.length === 0 ? (
                 <div className="project-form__hint">
-                No tasks added yet. Click “Add task” to start.
+                No tasks added yet. Click "Add task" to start.
                 </div>
             ) : (
                 <div className="project-task-rows">
@@ -598,7 +701,7 @@ const handleApplyTaskRoles = (rowId: string) => {
                 {taskRows.map((row, index) => {
                     const selectedLabels =
                     row.rolesId.length === 0
-                        ? 'Select roles…'
+                        ? 'Select roles...'
                         : roleOptions
                             .filter((r) => row.rolesId.includes(String(r.id)))
                             .map((r) => r.label)
@@ -623,7 +726,8 @@ const handleApplyTaskRoles = (rowId: string) => {
                         focusedTaskId === row.id && taskSuggestions.length > 0;
 
                     return (
-                    <div key={row.id} className="project-task-row">
+                    <React.Fragment key={row.id}>
+                    <div className="project-task-row">
 
                         <div>{index + 1}</div>
 
@@ -737,13 +841,149 @@ const handleApplyTaskRoles = (rowId: string) => {
                         </button>
                         </div>
                     </div>
+
+                    {(row.taskId || row.taskTitle.trim()) && (
+                        <div className="project-task-data">
+                            <div className="project-task-data__header">
+                                <span>Task data</span>
+                                <button
+                                    type="button"
+                                    className="btn-icon-square"
+                                    onClick={() => handleTaskDataAddRow(row.id)}
+                                    title="Add task data"
+                                >
+                                    <span className="material-symbols-outlined">add</span>
+                                </button>
+                            </div>
+                            {row.taskData.length === 0 ? (
+                                <div className="project-form__hint">
+                                    No task data yet. Click "Add task data" to start.
+                                </div>
+                            ) : (
+                                <div className="project-task-data__rows">
+                                    {row.taskData.map((dataRow) => {
+                                        const definition = safeTaskDataDefinitions.find(
+                                            (entry) => String(entry.id) === String(dataRow.dataDefId)
+                                        );
+                                        const valueType = definition?.valueType || dataRow.valueType || 'varchar';
+                                        const isBoolean = valueType === 'bool' || valueType === 'boolean';
+                                        const isText = valueType === 'text' || valueType === 'json';
+                                        const isDate = valueType === 'date';
+                                        const isDateTime = valueType === 'datetime';
+                                        const isNumber = valueType === 'int' || valueType === 'integer' || valueType === 'decimal';
+                                        const isCustomer = valueType === 'customer_id';
+
+                                        return (
+                                            <div key={dataRow.id} className="project-task-data__row">
+                                                <select
+                                                    value={dataRow.dataDefId || ''}
+                                                    onChange={(e) =>
+                                                        handleTaskDataDefinitionChange(
+                                                            row.id,
+                                                            dataRow.id,
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                >
+                                                    <option value="">Select definition...</option>
+                                                    {safeTaskDataDefinitions.map((def) => (
+                                                        <option key={def.id} value={def.id}>
+                                                            {def.label}
+                                                        </option>
+                                                    ))}
+                                                    <option value="__new__">+ Add new definition...</option>
+                                                </select>
+
+                                                {isCustomer ? (
+                                                    <select
+                                                        value={dataRow.value}
+                                                        onChange={(e) =>
+                                                            handleTaskDataValueChange(
+                                                                row.id,
+                                                                dataRow.id,
+                                                                e.target.value
+                                                            )
+                                                        }
+                                                    >
+                                                        <option value="">Select customer...</option>
+                                                        {customerOptions.map((customer) => (
+                                                            <option key={customer.id} value={customer.id}>
+                                                                {customer.name}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                ) : isBoolean ? (
+                                                    <select
+                                                        value={dataRow.value}
+                                                        onChange={(e) =>
+                                                            handleTaskDataValueChange(
+                                                                row.id,
+                                                                dataRow.id,
+                                                                e.target.value
+                                                            )
+                                                        }
+                                                    >
+                                                        <option value="">Select...</option>
+                                                        <option value="1">True</option>
+                                                        <option value="0">False</option>
+                                                    </select>
+                                                ) : isText ? (
+                                                    <textarea
+                                                        value={dataRow.value}
+                                                        onChange={(e) =>
+                                                            handleTaskDataValueChange(
+                                                                row.id,
+                                                                dataRow.id,
+                                                                e.target.value
+                                                            )
+                                                        }
+                                                        rows={2}
+                                                    />
+                                                ) : (
+                                                    <input
+                                                        type={
+                                                            isDate
+                                                                ? 'date'
+                                                                : isDateTime
+                                                                    ? 'datetime-local'
+                                                                    : isNumber
+                                                                        ? 'number'
+                                                                        : 'text'
+                                                        }
+                                                        step={valueType === 'decimal' ? '0.01' : undefined}
+                                                        value={dataRow.value}
+                                                        onChange={(e) =>
+                                                            handleTaskDataValueChange(
+                                                                row.id,
+                                                                dataRow.id,
+                                                                e.target.value
+                                                            )
+                                                        }
+                                                    />
+                                                )}
+
+                                                <button
+                                                    type="button"
+                                                    className="btn-icon-small"
+                                                    onClick={() => handleTaskDataRemoveRow(row.id, dataRow.id)}
+                                                >
+                                                    <span className="material-symbols-outlined">delete</span>
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    </React.Fragment>
                     );
                 })}
                 </div>
             )}
             </section>
 
-            {/* 4. ITEM TRACKING */}
+{/* 4. ITEM TRACKING */}
             <section className="project-form__section">
             <div className="project-form__section-header">
                 <h4>Item Tracking</h4>

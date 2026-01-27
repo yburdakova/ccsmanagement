@@ -4,6 +4,74 @@ const crypto = require('crypto');
 const sqlite3 = require('sqlite3').verbose();
 const { formatMySQLDatetime, parseSqliteDate, diffMinutes } = require('../utils/time');
 
+const normalizeValueType = (valueType = '') =>
+  String(valueType || '').trim().toLowerCase();
+
+const getTaskDataColumn = (valueType = '') => {
+  const type = normalizeValueType(valueType);
+  switch (type) {
+    case 'int':
+    case 'integer':
+      return 'value_int';
+    case 'decimal':
+      return 'value_decimal';
+    case 'varchar':
+      return 'value_varchar';
+    case 'text':
+      return 'value_text';
+    case 'bool':
+    case 'boolean':
+      return 'value_bool';
+    case 'date':
+      return 'value_date';
+    case 'datetime':
+      return 'value_datetime';
+    case 'customer_id':
+      return 'value_customer_id';
+    case 'json':
+      return 'value_json';
+    default:
+      return null;
+  }
+};
+
+const parseTaskDataValue = (valueType, value) => {
+  const type = normalizeValueType(valueType);
+  if (value == null || value === '') return null;
+  if (type === 'int' || type === 'integer' || type === 'customer_id') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  if (type === 'decimal') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  if (type === 'bool' || type === 'boolean') {
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    if (typeof value === 'number') return value ? 1 : 0;
+    const normalized = String(value).trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' ? 1 : 0;
+  }
+  if (type === 'json') {
+    try {
+      return typeof value === 'string' ? value : JSON.stringify(value);
+    } catch {
+      return null;
+    }
+  }
+  if (type === 'date') {
+    const raw = String(value).trim();
+    return raw ? raw.slice(0, 10) : null;
+  }
+  if (type === 'datetime') {
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const normalized = raw.includes('T') ? raw.replace('T', ' ') : raw;
+    return normalized.length === 16 ? `${normalized}:00` : normalized;
+  }
+  return String(value);
+};
+
 const dbDir = path.join(__dirname, '../db');
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir);
@@ -29,6 +97,12 @@ db.serialize(() => {
       authcode TEXT,
       system_role INTEGER,
       is_active INTEGER
+    )`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY,
+      name TEXT
     )`);
 
   db.run(`
@@ -130,6 +204,32 @@ db.serialize(() => {
       is_default INTEGER DEFAULT 0
     )`);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS task_data_definitions (
+      id INTEGER PRIMARY KEY,
+      \`key\` TEXT,
+      label TEXT,
+      value_type TEXT
+    )`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_task_data (
+      id INTEGER PRIMARY KEY,
+      project_task_id INTEGER,
+      data_def_id INTEGER,
+      value_int INTEGER,
+      value_decimal REAL,
+      value_varchar TEXT,
+      value_text TEXT,
+      value_bool INTEGER,
+      value_date TEXT,
+      value_datetime TEXT,
+      value_customer_id INTEGER,
+      value_json TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    )`);
+
     db.run(`
       CREATE TABLE IF NOT EXISTS ref_item_status (
         id INTEGER PRIMARY KEY,
@@ -172,8 +272,11 @@ async function initializeLocalDb() {
       const projectUsers = await globalApi.getAllProjectUsers();
       const roles = await globalApi.getAllProjectRoles();
       const tasks = await globalApi.getAllTasks();
+      const customers = await globalApi.getAllCustomers();
       const projectTasks = await globalApi.getAllProjectTasks();
       const projectTaskRoles = await globalApi.getAllProjectTaskRoles();
+      const taskDataDefinitions = await globalApi.getAllTaskDataDefinitions();
+      const projectTaskData = await globalApi.getAllProjectTaskData();
       const refItemStatus = await globalApi.getAllRefItemStatus();
       const cfsItems = await globalApi.getAllCfsItems();
       const imItems = await globalApi.getAllImItems();
@@ -186,8 +289,11 @@ async function initializeLocalDb() {
       saveProjectUsersToLocal(projectUsers);
       saveRefProjectRolesToLocal(roles);
       saveTasksToLocal(tasks);
+      saveCustomersToLocal(customers);
       saveProjectTasksToLocal(projectTasks);
       saveProjectTaskRolesToLocal(projectTaskRoles);
+      saveTaskDataDefinitionsToLocal(taskDataDefinitions);
+      saveProjectTaskDataToLocal(projectTaskData);
 
       console.log('[init] Local DB refreshed from global DB');
       const syncResult = await syncQueue();
@@ -384,6 +490,46 @@ function saveTasksToLocal(tasks) {
   });
 }
 
+function saveCustomersToLocal(customers) {
+  if (!customers || customers.length === 0) {
+    console.warn('[local-db] Skipping customers update: empty dataset');
+    return;
+  }
+
+  db.serialize(() => {
+    console.log('[local-db] Clearing customers...');
+    db.run('DELETE FROM customers');
+
+    const stmt = db.prepare(`
+      INSERT INTO customers (id, name)
+      VALUES (?, ?)
+    `);
+
+    customers.forEach((customer) => {
+      stmt.run(customer.id, customer.name, (err) => {
+        if (err) console.error(`[local-db] Failed to insert customer ${customer.id}:`, err.message);
+      });
+    });
+
+    stmt.finalize();
+  });
+}
+
+function getAllCustomersLocal() {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT id, name FROM customers ORDER BY name`,
+      (err, rows) => {
+        if (err) {
+          console.error('[local-db] Failed to fetch customers:', err.message);
+          return reject(err);
+        }
+        resolve(rows);
+      }
+    );
+  });
+}
+
 function saveProjectTasksToLocal(projectTasks) {
   if (!projectTasks || projectTasks.length === 0) {
     console.warn('[local-db] Skipping project_tasks update: empty dataset');
@@ -442,6 +588,83 @@ function saveProjectTaskRolesToLocal(projectTaskRoles) {
         ptr.is_default ?? 0,   // ✅ если null, то 0
         (err) => {
           if (err) console.error(`[local-db] Failed to insert project_task_role ${ptr.id}:`, err.message);
+        }
+      );
+    });
+
+    stmt.finalize();
+  });
+}
+
+function saveTaskDataDefinitionsToLocal(definitions) {
+  if (!definitions || definitions.length === 0) {
+    console.warn('[local-db] Skipping task_data_definitions update: empty dataset');
+    return;
+  }
+
+  db.serialize(() => {
+    console.log('[local-db] Clearing task_data_definitions...');
+    db.run('DELETE FROM task_data_definitions');
+
+    const stmt = db.prepare(`
+      INSERT INTO task_data_definitions (id, \`key\`, label, value_type)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    definitions.forEach((def) => {
+      stmt.run(
+        def.id,
+        def.key,
+        def.label,
+        def.value_type ?? def.valueType,
+        (err) => {
+          if (err) console.error(`[local-db] Failed to insert task_data_definition ${def.id}:`, err.message);
+        }
+      );
+    });
+
+    stmt.finalize();
+  });
+}
+
+function saveProjectTaskDataToLocal(taskData) {
+  if (!taskData || taskData.length === 0) {
+    console.warn('[local-db] Skipping project_task_data update: empty dataset');
+    return;
+  }
+
+  db.serialize(() => {
+    console.log('[local-db] Clearing project_task_data...');
+    db.run('DELETE FROM project_task_data');
+
+    const stmt = db.prepare(`
+      INSERT INTO project_task_data (
+        id, project_task_id, data_def_id,
+        value_int, value_decimal, value_varchar, value_text, value_bool,
+        value_date, value_datetime, value_customer_id, value_json,
+        created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    taskData.forEach((row) => {
+      stmt.run(
+        row.id,
+        row.project_task_id,
+        row.data_def_id,
+        row.value_int,
+        row.value_decimal,
+        row.value_varchar,
+        row.value_text,
+        row.value_bool,
+        row.value_date,
+        row.value_datetime,
+        row.value_customer_id,
+        row.value_json,
+        row.created_at,
+        row.updated_at,
+        (err) => {
+          if (err) console.error(`[local-db] Failed to insert project_task_data ${row.id}:`, err.message);
         }
       );
     });
@@ -536,11 +759,253 @@ function getAvailableTasksForUser(userId, projectId) {
   });
 }
 
+function replaceProjectTaskDataForTask(projectId, taskId, taskData) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `
+        SELECT id
+        FROM project_tasks
+        WHERE project_id = ? AND task_id = ?
+        LIMIT 1
+      `,
+      [projectId, taskId],
+      (err, row) => {
+        if (err) {
+          console.error('[local-db] Failed to find project_task_id:', err.message);
+          return reject(err);
+        }
+        if (!row) return resolve({ success: true, skipped: true });
+
+        const projectTaskId = row.id;
+        db.serialize(() => {
+          db.run(
+            `DELETE FROM project_task_data WHERE project_task_id = ?`,
+            [projectTaskId],
+            (err2) => {
+              if (err2) {
+                console.error('[local-db] Failed to clear project_task_data:', err2.message);
+                return reject(err2);
+              }
+
+              if (!taskData || taskData.length === 0) {
+                return resolve({ success: true, cleared: true });
+              }
+
+              const stmt = db.prepare(`
+                INSERT INTO project_task_data (
+                  id, project_task_id, data_def_id,
+                  value_int, value_decimal, value_varchar, value_text, value_bool,
+                  value_date, value_datetime, value_customer_id, value_json,
+                  created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `);
+
+              taskData.forEach((rowData) => {
+                stmt.run(
+                  rowData.id,
+                  rowData.projectTaskId ?? projectTaskId,
+                  rowData.dataDefId,
+                  rowData.value_int,
+                  rowData.value_decimal,
+                  rowData.value_varchar,
+                  rowData.value_text,
+                  rowData.value_bool,
+                  rowData.value_date,
+                  rowData.value_datetime,
+                  rowData.value_customer_id,
+                  rowData.value_json,
+                  rowData.created_at ?? null,
+                  rowData.updated_at ?? null,
+                  (err3) => {
+                    if (err3) console.error('[local-db] Failed to insert project_task_data:', err3.message);
+                  }
+                );
+              });
+
+              stmt.finalize();
+              resolve({ success: true, replaced: true });
+            }
+          );
+        });
+      }
+    );
+  });
+}
+
+function getProjectTaskDataByTask(projectId, taskId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `
+        SELECT ptd.id,
+               ptd.project_task_id AS projectTaskId,
+               ptd.data_def_id AS dataDefId,
+               tdd.label AS definitionLabel,
+               tdd.value_type AS valueType,
+               ptd.value_int,
+               ptd.value_decimal,
+               ptd.value_varchar,
+               ptd.value_text,
+               ptd.value_bool,
+               ptd.value_date,
+               ptd.value_datetime,
+               ptd.value_customer_id,
+               ptd.value_json
+        FROM project_task_data ptd
+        JOIN project_tasks pt ON pt.id = ptd.project_task_id
+        JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
+        WHERE pt.project_id = ? AND pt.task_id = ?
+        ORDER BY ptd.id
+      `,
+      [projectId, taskId],
+      (err, rows) => {
+        if (err) {
+          console.error('[local-db] Failed to fetch project task data:', err.message);
+          return reject(err);
+        }
+        resolve(rows);
+      }
+    );
+  });
+}
+
+function saveTaskDataValueLocal({ projectId, taskId, dataDefId, valueType, value }) {
+  const column = getTaskDataColumn(valueType);
+  if (!column) {
+    return Promise.resolve({ success: false, error: 'Invalid value type' });
+  }
+
+  const parsedValue = parseTaskDataValue(valueType, value);
+
+  return new Promise((resolve, reject) => {
+    db.get(
+      `
+        SELECT id
+        FROM project_tasks
+        WHERE project_id = ? AND task_id = ?
+        LIMIT 1
+      `,
+      [projectId, taskId],
+      (err, row) => {
+        if (err) {
+          console.error('[local-db] Failed to find project_task_id:', err.message);
+          return reject(err);
+        }
+        if (!row) {
+          return resolve({ success: false, error: 'Project task not found' });
+        }
+
+        const projectTaskId = row.id;
+
+        db.get(
+          `
+            SELECT id
+            FROM project_task_data
+            WHERE project_task_id = ? AND data_def_id = ?
+            LIMIT 1
+          `,
+          [projectTaskId, dataDefId],
+          (err2, existing) => {
+            if (err2) {
+              console.error('[local-db] Failed to fetch project_task_data:', err2.message);
+              return reject(err2);
+            }
+
+            const clearColumns = `
+              value_int = NULL,
+              value_decimal = NULL,
+              value_varchar = NULL,
+              value_text = NULL,
+              value_bool = NULL,
+              value_date = NULL,
+              value_datetime = NULL,
+              value_customer_id = NULL,
+              value_json = NULL
+            `;
+
+            const finish = (result) => {
+              const { isOnline } = require('../utils/network-status');
+              isOnline().then((online) => {
+                if (!online) {
+                  const payload = {
+                    type: 'task-data',
+                    project_id: projectId,
+                    task_id: taskId,
+                    data_def_id: dataDefId,
+                    value_type: valueType,
+                    value: parsedValue
+                  };
+
+                  db.run(
+                    `INSERT INTO sync_queue (payload) VALUES (?)`,
+                    [JSON.stringify(payload)],
+                    (err3) => {
+                      if (err3) {
+                        console.error('[local-db] Failed to queue task data update:', err3.message);
+                      } else {
+                        console.log('[local-db] Offline mode: queued task data update');
+                      }
+                    }
+                  );
+                }
+              });
+              resolve(result);
+            };
+
+            if (existing) {
+              db.run(
+                `
+                  UPDATE project_task_data
+                  SET ${clearColumns},
+                      ${column} = ?,
+                      updated_at = CURRENT_TIMESTAMP
+                  WHERE id = ?
+                `,
+                [parsedValue, existing.id],
+                (err3) => {
+                  if (err3) {
+                    console.error('[local-db] Failed to update project_task_data:', err3.message);
+                    return reject(err3);
+                  }
+                  finish({ success: true, updated: true });
+                }
+              );
+              return;
+            }
+
+            db.run(
+              `
+                INSERT INTO project_task_data (
+                  project_task_id,
+                  data_def_id,
+                  ${column},
+                  created_at,
+                  updated_at
+                )
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+              `,
+              [projectTaskId, dataDefId, parsedValue],
+              (err3) => {
+                if (err3) {
+                  console.error('[local-db] Failed to insert project_task_data:', err3.message);
+                  return reject(err3);
+                }
+                finish({ success: true, created: true });
+              }
+            );
+          }
+        );
+      }
+    );
+  });
+}
+
 async function syncQueue() {
   const {
     startUnallocatedActivityGlobal,
     startTaskActivityGlobal,
-    completeActiveActivityGlobal
+    completeActiveActivityGlobal,
+    saveTaskDataValueGlobal
   } = require('./db');
 
   return new Promise((resolve, reject) => {
@@ -564,6 +1029,14 @@ async function syncQueue() {
             result = await startTaskActivityGlobal(payload);
           } else if (type === 'complete') {
             result = await completeActiveActivityGlobal(payload);
+          } else if (type === 'task-data') {
+            result = await saveTaskDataValueGlobal({
+              projectId: payload.project_id,
+              taskId: payload.task_id,
+              dataDefId: payload.data_def_id,
+              valueType: payload.value_type,
+              value: payload.value
+            });
           } else {
             console.warn('[syncQueue] Unknown payload type:', type);
             continue;
@@ -805,12 +1278,19 @@ module.exports = {
   saveTasksToLocal,
   saveProjectTasksToLocal,
   saveProjectTaskRolesToLocal,
+  saveCustomersToLocal,
+  saveTaskDataDefinitionsToLocal,
+  saveProjectTaskDataToLocal,
+  replaceProjectTaskDataForTask,
   startTaskActivityLocal,
   startUnallocatedActivityLocal,
   saveRefItemStatusToLocal,
   saveCfsItemsToLocal,
   saveImItemsToLocal,
   getAvailableTasksForUser,
+  getAllCustomersLocal,
+  saveTaskDataValueLocal,
+  getProjectTaskDataByTask,
   syncQueue,
   completeActiveActivityLocal,
   initializeLocalDb

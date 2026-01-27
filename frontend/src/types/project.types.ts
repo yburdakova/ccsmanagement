@@ -49,6 +49,7 @@ export type ProjectFormLookups = {
   tasks: { id: number; description: string; categoryId: number | null; categoryName: string | null }[];
   taskCategories: { id: number; name: string }[];
   itemStatuses: { id: number; name: string | null; label: string | null }[];
+  taskDataDefinitions: TaskDataDefinition[];
 };
 
 
@@ -62,6 +63,7 @@ export type RoleOption = { id: number; label: string };
 export type TaskOption = { id: number; description: string; categoryId: number | null; categoryName: string | null };
 export type TaskCategoryOption = { id: number; name: string };
 export type ItemStatusOption = { id: number; name: string | null; label: string | null };
+export type TaskDataDefinition = { id: number; key: string; label: string; valueType: string };
 
 export type ProjectFormProps = {
   mode: 'create' | 'edit';
@@ -84,6 +86,10 @@ export type ProjectFormProps = {
     taskOptions: TaskOption[];
     taskCategoryOptions: TaskCategoryOption[];
     itemStatusOptions: ItemStatusOption[];
+    taskDataDefinitions: TaskDataDefinition[];
+    onCreateTaskDataDefinition?: (
+      definition: Pick<TaskDataDefinition, 'label' | 'key' | 'valueType'>
+    ) => Promise<TaskDataDefinition | null>;
 };
 
 export type TeamRow = {
@@ -98,6 +104,14 @@ export type TaskRow = {
   taskTitle: string;
   categoryId: string;
   rolesId: string[];
+  taskData: TaskDataRow[];
+};
+
+export type TaskDataRow = {
+  id: string;
+  dataDefId: string;
+  valueType: string;
+  value: string;
 };
 
 export type ItemTrackingRow = {

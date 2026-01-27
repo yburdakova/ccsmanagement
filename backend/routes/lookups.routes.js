@@ -47,15 +47,15 @@ router.get('/project-form', async (req, res) => {
     }
 
     const [
-        [projectTypesRows],
-        [statusRows],
-        [customersRows],
-        [itemsRows],
-        [usersRows],
-        [rolesRows],
-        [tasksRows],
-        [taskCategoriesRows],
-        [itemStatusRows],
+      [projectTypesRows],
+      [statusRows],
+      [customersRows],
+      [itemsRows],
+      [usersRows],
+      [rolesRows],
+      [tasksRows],
+      [taskCategoriesRows],
+      [itemStatusRows],
     ] = await Promise.all([
         pool.query(`
             SELECT id, code, label
@@ -120,6 +120,25 @@ router.get('/project-form', async (req, res) => {
         `),
     ]);
 
+    let taskDataDefinitionsRows = [];
+    try {
+      const [rows] = await pool.query(`
+          SELECT id, \`key\`, label, value_type AS valueType
+          FROM task_data_definitions
+          ORDER BY label;
+      `);
+      taskDataDefinitionsRows = rows;
+    } catch (err) {
+      if (
+        err.code === 'ER_NO_SUCH_TABLE' ||
+        err.code === 'ER_BAD_TABLE_ERROR'
+      ) {
+        console.warn('[lookups] Missing task_data_definitions table, skipping.');
+      } else {
+        throw err;
+      }
+    }
+
     res.json({
       projectTypes: projectTypesRows,
       statuses: statusRows,
@@ -131,9 +150,84 @@ router.get('/project-form', async (req, res) => {
       tasks: tasksRows,
       taskCategories: taskCategoriesRows,
       itemStatuses: itemStatusRows,
+      taskDataDefinitions: taskDataDefinitionsRows,
     });
   } catch (err) {
     console.error('Error fetching project form lookups:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/lookups/task-data-definitions
+router.get('/task-data-definitions', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT id, \`key\`, label, value_type AS valueType
+      FROM task_data_definitions
+      ORDER BY label;
+    `);
+    res.json(rows);
+  } catch (err) {
+    if (
+      err.code === 'ER_NO_SUCH_TABLE' ||
+      err.code === 'ER_BAD_TABLE_ERROR'
+    ) {
+      console.warn('[lookups] Missing task_data_definitions table.');
+      return res.json([]);
+    }
+    console.error('Error fetching task data definitions:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/lookups/task-data-definitions
+router.post('/task-data-definitions', async (req, res) => {
+  const rawLabel = String(req.body?.label ?? '').trim();
+  const rawKey = String(req.body?.key ?? '').trim();
+  const rawValueType = String(req.body?.valueType ?? req.body?.value_type ?? '').trim();
+
+  if (!rawLabel) {
+    return res.status(400).json({ error: 'label is required' });
+  }
+
+  const valueType = rawValueType || 'varchar';
+  const key =
+    rawKey ||
+    rawLabel
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+  try {
+    const [result] = await pool.query(
+      `
+        INSERT INTO task_data_definitions (\`key\`, label, value_type)
+        VALUES (?, ?, ?)
+      `,
+      [key, rawLabel, valueType]
+    );
+    res.status(201).json({
+      id: result.insertId,
+      key,
+      label: rawLabel,
+      valueType
+    });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      const [rows] = await pool.query(
+        `
+          SELECT id, \`key\`, label, value_type AS valueType
+          FROM task_data_definitions
+          WHERE \`key\` = ? OR label = ?
+          LIMIT 1
+        `,
+        [key, rawLabel]
+      );
+      if (rows.length) {
+        return res.status(200).json(rows[0]);
+      }
+    }
+    console.error('Error creating task data definition:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

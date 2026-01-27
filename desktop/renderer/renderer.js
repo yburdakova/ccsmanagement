@@ -13,11 +13,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   const stopTaskButton = document.getElementById('stop-task-button');
   const itemSection = document.getElementById('item-selector-section');
   const itemSelect = document.getElementById('item-select');
+  const taskDataSection = document.getElementById('task-data-section');
+  const taskDataList = document.getElementById('task-data-list');
   const taskOverlay = document.getElementById('task-overlay');
+  if (taskOverlay) {
+    taskOverlay.setAttribute('tabindex', '0');
+    taskOverlay.addEventListener('mousedown', () => {
+      window.focus();
+      taskOverlay.focus();
+    });
+  }
   const taskOverlayName = document.getElementById('task-overlay-name');
   const taskOverlayItem = document.getElementById('task-overlay-item');
   const taskOverlayTimer = document.getElementById('task-overlay-timer');
   const taskOverlayNote = document.getElementById('task-overlay-note');
+  const taskOverlayData = document.getElementById('task-overlay-data');
+  const taskOverlayDataList = document.getElementById('task-overlay-data-list');
   const activityOverlay = document.getElementById('activity-overlay');
   const activityOverlayName = document.getElementById('activity-overlay-name');
   const activityOverlayTimer = document.getElementById('activity-overlay-timer');
@@ -55,6 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let allProjectUsers = await window.electronAPI.getAllProjectUsers();
   let projectRoles = await window.electronAPI.getAllProjectRoles();
   let allItemTypes = await window.electronAPI.getItemTypes();
+  let allCustomers = await window.electronAPI.getAllCustomers();
 
   let currentUser = null;
   let currentSessionUuid = null;
@@ -62,6 +74,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentTaskItemId = null;
   let currentTaskStatusRule = null;
   let finishStatusRule = null;
+  let currentTaskDataRows = [];
   let userProjects = [];
   let userSelectedTask = false;
   let timerIntervalId = null;
@@ -89,6 +102,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // hiding sections initially
   projectSection.style.display = 'none';
   taskSection.style.display = 'none';
+  if (taskDataSection) taskDataSection.style.display = 'none';
   if (activitySection) activitySection.style.display = 'none';
   if (productionSection) productionSection.style.display = 'none';
   if (notesSection) notesSection.style.display = 'none';
@@ -128,6 +142,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentTaskUuid = null;
     currentTaskItemId = null;
     currentTaskStatusRule = null;
+    currentTaskDataRows = [];
     pendingAssignment = null;
     pendingAssignmentSelection = null;
     stopTimer(true);
@@ -156,6 +171,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (itemSection) itemSection.style.display = 'none';
     if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
     if (itemInputLabel) itemInputLabel.textContent = 'Item';
+    if (taskDataSection) taskDataSection.style.display = 'none';
+    if (taskDataList) taskDataList.innerHTML = '';
     projectItems = [];
     itemTrackingTaskIds = new Set();
     itemsLoadedProjectId = null;
@@ -242,6 +259,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentTaskUuid = null;
       currentTaskItemId = null;
       currentTaskStatusRule = null;
+      currentTaskDataRows = [];
+    currentTaskDataRows = [];
       pendingAssignment = null;
       pendingAssignmentSelection = null;
       stopTimer(true);
@@ -273,6 +292,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (itemSection) itemSection.style.display = 'none';
       if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
       if (itemInputLabel) itemInputLabel.textContent = 'Item';
+      if (taskDataSection) taskDataSection.style.display = 'none';
+      if (taskDataList) taskDataList.innerHTML = '';
     }
   });
 
@@ -489,6 +510,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
     taskOverlayName.textContent = selectedTask;
+    await loadTaskDataOverlay(projectId, taskId);
     if (taskOverlayItem) {
       if (currentTaskItemId && projectItems.length) {
         const item = projectItems.find((entry) => Number(entry.id) === Number(currentTaskItemId));
@@ -504,18 +526,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     taskOverlay.style.display = 'flex';
     if (startTaskButton) startTaskButton.disabled = true;
     startTaskTimer();
+    if (taskOverlay) taskOverlay.focus();
+    if (taskOverlayNote) {
+      taskOverlayNote.disabled = false;
+      taskOverlayNote.readOnly = false;
+      setTimeout(() => taskOverlayNote.focus(), 50);
+    }
+    setTimeout(() => focusTaskDataInput(), 0);
   });
+
+  const saveTaskDataValues = async () => {
+    if (!currentUser || !currentProject || !currentTaskDataRows.length) return;
+
+    for (const row of currentTaskDataRows) {
+      const input = document.querySelector(`[data-task-data-id="${row.id}"]`);
+      if (!input) continue;
+      const value = input.value;
+      const result = await window.electronAPI.saveTaskData({
+        projectId: currentProject.project_id,
+        taskId: Number(taskSelect.value),
+        dataDefId: row.dataDefId,
+        valueType: row.valueType,
+        value
+      });
+      if (!result?.success) {
+        console.warn('[renderer] Failed to save task data:', result?.error);
+      }
+    }
+  };
 
   const handleFinishTask = async (applyStatus) => {
     if (!currentUser || !currentTaskUuid) {
       if (taskOverlay) taskOverlay.style.display = 'none';
       clearNoteInput(taskOverlayNote);
+    if (taskOverlayData) taskOverlayData.style.display = 'none';
+    if (taskOverlayDataList) taskOverlayDataList.innerHTML = '';
+    currentTaskDataRows = [];
       stopTaskTimer(true);
       updateStartButton();
       return;
     }
 
     const note = getNoteValue(taskOverlayNote);
+    if (applyStatus) {
+      await saveTaskDataValues();
+    }
     const result = await window.electronAPI.completeActiveActivity({
       uuid: currentTaskUuid,
       userId: currentUser.id,
@@ -554,8 +609,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentTaskUuid = null;
     currentTaskItemId = null;
     currentTaskStatusRule = null;
+    currentTaskDataRows = [];
     finishStatusRule = null;
     clearNoteInput(taskOverlayNote);
+    if (taskOverlayData) taskOverlayData.style.display = 'none';
+    if (taskOverlayDataList) taskOverlayDataList.innerHTML = '';
+    currentTaskDataRows = [];
     if (taskOverlayItem) {
       taskOverlayItem.textContent = '';
       taskOverlayItem.style.display = 'none';
@@ -582,6 +641,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   finishTaskButton?.addEventListener('click', () => handleFinishTask(true));
   stopTaskButton?.addEventListener('click', () => handleFinishTask(false));
+
+
   finishActivityButton?.addEventListener('click', async () => {
     if (currentUser && currentSessionUuid) {
       const note = getNoteValue(activityOverlayNote);
@@ -680,12 +741,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     await populateTasks(currentUser, selected);
     userSelectedTask = false;
     updateStartButton();
+    if (taskDataSection) taskDataSection.style.display = 'none';
+    if (taskDataList) taskDataList.innerHTML = '';
+    if (taskSelect?.value) {
+      await updateTaskDataSelection();
+    }
 
     const trackingTasks = await window.electronAPI.getItemTrackingTasks(selected.project_id);
     itemTrackingTaskIds = new Set(trackingTasks.map((id) => Number(id)));
     if (itemSection) itemSection.style.display = 'none';
     if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
     if (itemInputLabel) itemInputLabel.textContent = 'Item';
+    if (taskDataSection) taskDataSection.style.display = 'none';
+    if (taskDataList) taskDataList.innerHTML = '';
     projectItems = [];
     itemsLoadedProjectId = null;
   };
@@ -889,6 +957,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (itemSection) itemSection.style.display = 'none';
     if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
     if (itemInputLabel) itemInputLabel.textContent = 'Item';
+    if (taskDataSection) taskDataSection.style.display = 'none';
+    if (taskDataList) taskDataList.innerHTML = '';
     projectItems = [];
     itemTrackingTaskIds = new Set();
     itemsLoadedProjectId = null;
@@ -910,15 +980,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       const selectedProjectId = projectSelect.value;
-      const [projects, projectUsers, roles] = await Promise.all([
+      const [projects, projectUsers, roles, customers] = await Promise.all([
         window.electronAPI.getAllProjects(),
         window.electronAPI.getAllProjectUsers(),
         window.electronAPI.getAllProjectRoles(),
+        window.electronAPI.getAllCustomers(),
       ]);
 
       allProjects = projects;
       allProjectUsers = projectUsers;
       projectRoles = roles;
+      allCustomers = customers;
 
       if (!updateOptions) return;
 
@@ -1052,6 +1124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           updateStartButton();
         }
         await updateItemSelection();
+        await updateTaskDataSelection();
         if (itemSelect && task.itemId) {
           itemSelect.value = String(task.itemId);
         }
@@ -1098,6 +1171,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           updateStartButton();
         }
         await updateItemSelection();
+        await updateTaskDataSelection();
         if (itemSelect && assignment.itemId) {
           itemSelect.value = String(assignment.itemId);
         }
@@ -1257,6 +1331,193 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (itemInputLabel) {
       const itemTypeName = itemTypesById.get(Number(currentProject?.item_type_id)) || 'Item';
       itemInputLabel.textContent = itemTypeName;
+    }
+  }
+
+  function renderTaskData(rows) {
+    if (!taskDataList) return;
+    taskDataList.innerHTML = '';
+    if (!rows || rows.length === 0) {
+      taskDataList.innerHTML = '<div class="task-data-row"><span class="task-data-label">No task data.</span></div>';
+      return;
+    }
+    rows.forEach((row) => {
+      const valueType = String(row.valueType || '').toLowerCase();
+      let value = '';
+      if (valueType === 'int' || valueType === 'integer') value = row.value_int ?? '';
+      else if (valueType === 'decimal') value = row.value_decimal ?? '';
+      else if (valueType === 'varchar') value = row.value_varchar ?? '';
+      else if (valueType === 'text') value = row.value_text ?? '';
+      else if (valueType === 'bool' || valueType === 'boolean') value = row.value_bool ? 'True' : 'False';
+      else if (valueType === 'date') value = row.value_date ?? '';
+      else if (valueType === 'datetime') value = row.value_datetime ?? '';
+      else if (valueType === 'customer_id') value = row.value_customer_id ?? '';
+      else if (valueType === 'json') value = row.value_json ?? '';
+      else value = '';
+
+      const item = document.createElement('div');
+      item.className = 'task-data-row';
+      const label = document.createElement('span');
+      label.className = 'task-data-label';
+      label.textContent = row.definitionLabel || 'Value';
+      const valueEl = document.createElement('span');
+      valueEl.className = 'task-data-value';
+      valueEl.textContent = value === '' || value == null ? '?' : String(value);
+      item.appendChild(label);
+      item.appendChild(valueEl);
+      taskDataList.appendChild(item);
+    });
+  }
+
+
+  function focusTaskDataInput() {
+    const input = taskOverlayDataList?.querySelector('input, textarea, select');
+    if (input && typeof input.focus === 'function') {
+      input.focus();
+      return;
+    }
+    if (taskOverlayNote && typeof taskOverlayNote.focus === 'function') {
+      taskOverlayNote.focus();
+    }
+  }
+
+  function renderTaskDataOverlay(rows) {
+    if (!taskOverlayData || !taskOverlayDataList) return;
+    taskOverlayDataList.innerHTML = '';
+    currentTaskDataRows = rows || [];
+
+    if (!rows || rows.length === 0) {
+      taskOverlayData.style.display = 'block';
+      const empty = document.createElement('div');
+      empty.className = 'task-data-row';
+      empty.textContent = 'No task data definitions for this task.';
+      taskOverlayDataList.appendChild(empty);
+        return;
+    }
+
+    taskOverlayData.style.display = 'block';
+    rows.forEach((row) => {
+      const valueType = String(row.valueType || '').toLowerCase();
+      const isBoolean = valueType === 'bool' || valueType === 'boolean';
+      const isText = valueType === 'text' || valueType === 'json';
+      const isDate = valueType === 'date';
+      const isDateTime = valueType === 'datetime';
+      const isNumber = valueType === 'int' || valueType === 'integer' || valueType === 'decimal';
+      const isCustomer = valueType === 'customer_id';
+
+      let value = '';
+      if (valueType === 'int' || valueType === 'integer') value = row.value_int ?? '';
+      else if (valueType === 'decimal') value = row.value_decimal ?? '';
+      else if (valueType === 'varchar') value = row.value_varchar ?? '';
+      else if (valueType === 'text') value = row.value_text ?? '';
+      else if (valueType === 'bool' || valueType === 'boolean') value = row.value_bool ? '1' : '0';
+      else if (valueType === 'date') value = row.value_date ?? '';
+      else if (valueType === 'datetime') value = (row.value_datetime || '').replace(' ', 'T').slice(0, 16);
+      else if (valueType === 'customer_id') value = row.value_customer_id ?? '';
+      else if (valueType === 'json') value = row.value_json ?? '';
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'task-overlay__data-row';
+
+      const label = document.createElement('label');
+      label.textContent = row.definitionLabel || 'Value';
+      wrapper.appendChild(label);
+
+      let input;
+      if (isCustomer) {
+        input = document.createElement('select');
+        const optEmpty = document.createElement('option');
+        optEmpty.value = '';
+        optEmpty.textContent = 'Select customer...';
+        input.appendChild(optEmpty);
+
+        const projectTypeId = Number(currentProject?.project_type_id);
+        const allowedCustomerIds = new Set(
+          (allProjects || [])
+            .filter((p) => Number(p.type_id) === projectTypeId && p.customer_id)
+            .map((p) => Number(p.customer_id))
+        );
+
+        const customerList = (allCustomers || [])
+          .filter((c) => (allowedCustomerIds.size ? allowedCustomerIds.has(Number(c.id)) : true));
+
+        customerList.forEach((customer) => {
+          const opt = document.createElement('option');
+          opt.value = String(customer.id);
+          opt.textContent = customer.name;
+          input.appendChild(opt);
+        });
+
+        input.value = String(value ?? '');
+      } else if (isBoolean) {
+        input = document.createElement('select');
+        const optEmpty = document.createElement('option');
+        optEmpty.value = '';
+        optEmpty.textContent = 'Select...';
+        input.appendChild(optEmpty);
+        const optTrue = document.createElement('option');
+        optTrue.value = '1';
+        optTrue.textContent = 'True';
+        input.appendChild(optTrue);
+        const optFalse = document.createElement('option');
+        optFalse.value = '0';
+        optFalse.textContent = 'False';
+        input.appendChild(optFalse);
+        input.value = String(value);
+      } else if (isText) {
+        input = document.createElement('textarea');
+        input.rows = 2;
+        input.value = value ?? '';
+      } else {
+        input = document.createElement('input');
+        input.type = isDate ? 'date' : isDateTime ? 'datetime-local' : 'text';
+        if (isNumber) input.inputMode = 'decimal';
+        input.value = value ?? '';
+      }
+
+      input.disabled = false;
+      input.readOnly = false;
+
+      input.setAttribute('data-task-data-id', row.id);
+      wrapper.appendChild(input);
+      taskOverlayDataList.appendChild(wrapper);
+    });
+    setTimeout(() => focusTaskDataInput(), 0);
+  }
+
+  async function loadTaskDataOverlay(projectId, taskId) {
+    if (!taskOverlayData || !taskOverlayDataList) return;
+    try {
+      const rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
+      if (!rows || rows.length === 0) {
+        renderTaskDataOverlay(currentTaskDataRows || []);
+      } else {
+        renderTaskDataOverlay(rows || []);
+      }
+    } catch (err) {
+      console.warn('[renderer] Failed to load task data overlay:', err);
+      renderTaskDataOverlay(currentTaskDataRows || []);
+    }
+  }
+  async function updateTaskDataSelection() {
+    if (!taskDataSection || !taskDataList) return;
+    const projectId = Number(projectSelect.value);
+    const taskId = Number(taskSelect.value);
+    if (!projectId || !taskId) {
+      taskDataSection.style.display = 'none';
+      taskDataList.innerHTML = '';
+      return;
+    }
+    try {
+      const rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
+      currentTaskDataRows = rows || [];
+      taskDataSection.style.display = 'block';
+      renderTaskData(rows || []);
+    } catch (err) {
+      console.warn('[renderer] Failed to load task data:', err);
+      taskDataSection.style.display = 'none';
+      taskDataList.innerHTML = '';
+      currentTaskDataRows = [];
     }
   }
 
