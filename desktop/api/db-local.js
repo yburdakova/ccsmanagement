@@ -326,6 +326,7 @@ function loginByAuthCodeLocal(code) {
   });
 }
 
+// DELETE + INSERT version
 // function saveUsersToLocal(users) {
 //   if (!users || users.length === 0) {
 //     console.warn('[local-db] Skipping users update: empty dataset');
@@ -360,6 +361,7 @@ function loginByAuthCodeLocal(code) {
 //     stmt.finalize();
 //   });
 // }
+
 // UPSERT version
 function saveUsersToLocal(users) {
   if (!users || users.length === 0) {
@@ -418,6 +420,43 @@ function saveUsersToLocal(users) {
   });
 }
 
+// DELETE + INSERT version
+// function saveProjectsToLocal(projects) {
+//   if (!projects || projects.length === 0) {
+//     console.warn('[local-db] Skipping projects update: empty dataset');
+//     return;
+//   }
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing projects...');
+//     db.run('DELETE FROM projects');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO projects (id, code, name, type_id, item_id, is_active, created_at, customer_id)
+//       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+//     `);
+
+//     projects.forEach((project, i) => {
+//       stmt.run(
+//         project.id,
+//         project.code,
+//         project.name,
+//         project.type_id,
+//         project.item_id,
+//         project.is_active,
+//         project.created_at,
+//         project.customer_id,
+//         (err) => {
+//           if (err) console.error(`[local-db] Failed to insert project ${project.id}:`, err.message);
+//         }
+//       );
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveProjectsToLocal(projects) {
   if (!projects || projects.length === 0) {
     console.warn('[local-db] Skipping projects update: empty dataset');
@@ -425,12 +464,19 @@ function saveProjectsToLocal(projects) {
   }
 
   db.serialize(() => {
-    console.log('[local-db] Clearing projects...');
-    db.run('DELETE FROM projects');
+    console.log('[local-db] Updating projects...');
 
     const stmt = db.prepare(`
       INSERT INTO projects (id, code, name, type_id, item_id, is_active, created_at, customer_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        code = excluded.code,
+        name = excluded.name,
+        type_id = excluded.type_id,
+        item_id = excluded.item_id,
+        is_active = excluded.is_active,
+        created_at = excluded.created_at,
+        customer_id = excluded.customer_id
     `);
 
     projects.forEach((project, i) => {
@@ -449,10 +495,58 @@ function saveProjectsToLocal(projects) {
       );
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT projects:', err.message);
+        return;
+      }
+      const ids = projects.map(p => p.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');  
+        db.run(
+          `DELETE FROM projects WHERE id NOT IN (${placeholders})`, ids, (err) => {
+          if (err) {
+            console.error('[local-db] Failed to delete obsolete after UPSERT projects:', err.message);
+          }
+        });
+      }
+    });
   });
 }
 
+// DELETE + INSERT version
+// function saveProjectUsersToLocal(projectUsers) {
+//   if (!projectUsers || projectUsers.length === 0) {
+//     console.warn('[local-db] Skipping project_users update: empty dataset');
+//     return;
+//   }
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing project_users...');
+//     db.run('DELETE FROM project_users');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO project_users (id, user_id, project_id, project_role_id)
+//       VALUES (?, ?, ?, ?)
+//     `);
+
+//     projectUsers.forEach((pu, i) => {
+//       stmt.run(
+//         pu.id,
+//         pu.user_id,
+//         pu.project_id,
+//         pu.project_role_id,
+//         (err) => {
+//           if (err) console.error(`[local-db] Failed to insert project_user ${pu.id}:`, err.message);
+//         }
+//       );
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveProjectUsersToLocal(projectUsers) {
   if (!projectUsers || projectUsers.length === 0) {
     console.warn('[local-db] Skipping project_users update: empty dataset');
@@ -460,12 +554,15 @@ function saveProjectUsersToLocal(projectUsers) {
   }
 
   db.serialize(() => {
-    console.log('[local-db] Clearing project_users...');
-    db.run('DELETE FROM project_users');
+    console.log('[local-db] Updating project_users...');
 
     const stmt = db.prepare(`
       INSERT INTO project_users (id, user_id, project_id, project_role_id)
       VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        user_id = excluded.user_id,
+        project_id = excluded.project_id,
+        project_role_id = excluded.project_role_id
     `);
 
     projectUsers.forEach((pu, i) => {
@@ -480,9 +577,25 @@ function saveProjectUsersToLocal(projectUsers) {
       );
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT project_users:', err.message);
+        return;
+      }
+      const ids = projectUsers.map(pu => pu.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');  
+        db.run(
+          `DELETE FROM project_users WHERE id NOT IN (${placeholders})`, ids, (err) => {
+          if (err) {
+            console.error('[local-db] Failed to delete obsolete after UPSERT project_users:', err.message);
+          }
+        });
+      }
+    });
   });
 }
+
 
 function saveRefProjectRolesToLocal(roles) {
   if (!roles || roles.length === 0) {
