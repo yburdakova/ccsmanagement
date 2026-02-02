@@ -1314,17 +1314,43 @@ function saveRefItemStatusToLocal(statuses) {
   });
 }
 
+// DELETE + INSERT version
+// function saveCfsItemsToLocal(items) {
+//   if (!items || items.length === 0) return;
 
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing cfs_items...');
+//     db.run('DELETE FROM cfs_items');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO cfs_items (id, project_id, label, task_status_id)
+//       VALUES (?, ?, ?, ?)
+//     `);
+
+//     items.forEach((item, i) => {
+//       stmt.run(item.id, item.project_id, item.label, item.task_status_id, (err) => {
+//         if (err) console.error(`[local-db] Failed to insert cfs_item ${item.id}:`, err.message);
+//       });
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveCfsItemsToLocal(items) {
   if (!items || items.length === 0) return;
 
   db.serialize(() => {
-    console.log('[local-db] Clearing cfs_items...');
-    db.run('DELETE FROM cfs_items');
+    console.log('[local-db] Updating cfs_items...');
 
     const stmt = db.prepare(`
       INSERT INTO cfs_items (id, project_id, label, task_status_id)
       VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        project_id = excluded.project_id,
+        label = excluded.label,
+        task_status_id = excluded.task_status_id
     `);
 
     items.forEach((item, i) => {
@@ -1333,7 +1359,25 @@ function saveCfsItemsToLocal(items) {
       });
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT cfs_items:', err.message);
+        return;
+      }
+      const ids = items.map(i => i.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM cfs_items WHERE id NOT IN (${placeholders})`,
+          ids,
+          (err) => {
+            if (err) {
+              console.error('[local-db] Failed to delete obsolete cfs_items:', err.message);
+            }
+          }
+        );
+      }
+    });
   });
 }
 
