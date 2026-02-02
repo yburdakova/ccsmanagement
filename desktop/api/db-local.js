@@ -1123,6 +1123,54 @@ function saveTaskDataDefinitionsToLocal(definitions) {
   });
 }
 
+// DELETE + INSERT version
+// function saveProjectTaskDataToLocal(taskData) {
+//   if (!taskData || taskData.length === 0) {
+//     console.warn('[local-db] Skipping project_task_data update: empty dataset');
+//     return;
+//   }
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing project_task_data...');
+//     db.run('DELETE FROM project_task_data');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO project_task_data (
+//         id, project_task_id, data_def_id,
+//         value_int, value_decimal, value_varchar, value_text, value_bool,
+//         value_date, value_datetime, value_customer_id, value_json,
+//         created_at, updated_at
+//       )
+//       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+//     `);
+
+//     taskData.forEach((row) => {
+//       stmt.run(
+//         row.id,
+//         row.project_task_id,
+//         row.data_def_id,
+//         row.value_int,
+//         row.value_decimal,
+//         row.value_varchar,
+//         row.value_text,
+//         row.value_bool,
+//         row.value_date,
+//         row.value_datetime,
+//         row.value_customer_id,
+//         row.value_json,
+//         row.created_at,
+//         row.updated_at,
+//         (err) => {
+//           if (err) console.error(`[local-db] Failed to insert project_task_data ${row.id}:`, err.message);
+//         }
+//       );
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveProjectTaskDataToLocal(taskData) {
   if (!taskData || taskData.length === 0) {
     console.warn('[local-db] Skipping project_task_data update: empty dataset');
@@ -1130,8 +1178,7 @@ function saveProjectTaskDataToLocal(taskData) {
   }
 
   db.serialize(() => {
-    console.log('[local-db] Clearing project_task_data...');
-    db.run('DELETE FROM project_task_data');
+    console.log('[local-db] Updating project_task_data...');
 
     const stmt = db.prepare(`
       INSERT INTO project_task_data (
@@ -1141,6 +1188,20 @@ function saveProjectTaskDataToLocal(taskData) {
         created_at, updated_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        project_task_id = excluded.project_task_id,
+        data_def_id = excluded.data_def_id,
+        value_int = excluded.value_int,
+        value_decimal = excluded.value_decimal,
+        value_varchar = excluded.value_varchar,
+        value_text = excluded.value_text,
+        value_bool = excluded.value_bool,
+        value_date = excluded.value_date,
+        value_datetime = excluded.value_datetime,
+        value_customer_id = excluded.value_customer_id,
+        value_json = excluded.value_json,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at
     `);
 
     taskData.forEach((row) => {
@@ -1165,7 +1226,25 @@ function saveProjectTaskDataToLocal(taskData) {
       );
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT project_task_data:', err.message);
+        return;
+      }
+      const ids = taskData.map(td => td.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM project_task_data WHERE id NOT IN (${placeholders})`,
+          ids,
+          (err) => {
+            if (err) {
+              console.error('[local-db] Failed to delete obsolete project_task_data:', err.message);
+            }
+          }
+        );
+      }
+    });
   });
 }
 
