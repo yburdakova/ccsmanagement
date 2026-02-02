@@ -855,6 +855,42 @@ function getAllCustomersLocal() {
   });
 }
 
+// DELETE + INSERT version
+// function saveProjectTasksToLocal(projectTasks) {
+//   if (!projectTasks || projectTasks.length === 0) {
+//     console.warn('[local-db] Skipping project_tasks update: empty dataset');
+//     return;
+//   }
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing project_tasks...');
+//     db.run('DELETE FROM project_tasks');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO project_tasks (id, project_id, task_id, order_number, only_after_number, is_mandatory, override_role_id)
+//       VALUES (?, ?, ?, ?, ?, ?, ?)
+//     `);
+
+//     projectTasks.forEach((pt, i) => {
+//       stmt.run(
+//         pt.id,
+//         pt.project_id,
+//         pt.task_id,
+//         pt.order_number,
+//         pt.only_after_number,
+//         pt.is_mandatory,
+//         pt.override_role_id,
+//         (err) => {
+//           if (err) console.error(`[local-db] Failed to insert project_task ${pt.id}:`, err.message);
+//         }
+//       );
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveProjectTasksToLocal(projectTasks) {
   if (!projectTasks || projectTasks.length === 0) {
     console.warn('[local-db] Skipping project_tasks update: empty dataset');
@@ -862,12 +898,18 @@ function saveProjectTasksToLocal(projectTasks) {
   }
 
   db.serialize(() => {
-    console.log('[local-db] Clearing project_tasks...');
-    db.run('DELETE FROM project_tasks');
+    console.log('[local-db] Updating project_tasks...');
 
     const stmt = db.prepare(`
       INSERT INTO project_tasks (id, project_id, task_id, order_number, only_after_number, is_mandatory, override_role_id)
       VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        project_id = excluded.project_id,
+        task_id = excluded.task_id,
+        order_number = excluded.order_number,
+        only_after_number = excluded.only_after_number,
+        is_mandatory = excluded.is_mandatory,
+        override_role_id = excluded.override_role_id
     `);
 
     projectTasks.forEach((pt, i) => {
@@ -885,7 +927,26 @@ function saveProjectTasksToLocal(projectTasks) {
       );
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT project_tasks:', err.message);
+        return;
+      }
+      const ids = projectTasks.map(pt => pt.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM project_tasks WHERE id NOT IN (${placeholders})`,
+          ids,
+          (err) => {
+            if (err) {
+              console.error('[local-db] Failed to delete obsolete after UPSERT project_tasks:', err.message);
+            }
+          }
+        );
+      }
+    });
+
   });
 }
 
