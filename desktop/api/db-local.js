@@ -1248,16 +1248,42 @@ function saveProjectTaskDataToLocal(taskData) {
   });
 }
 
+// DELETE + INSERT version
+// function saveRefItemStatusToLocal(statuses) {
+//   if (!statuses || statuses.length === 0) return;
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing ref_item_status...');
+//     db.run('DELETE FROM ref_item_status');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO ref_item_status (id, name, label)
+//       VALUES (?, ?, ?)
+//     `);
+
+//     statuses.forEach((s, i) => {
+//       stmt.run(s.id, s.name, s.label, (err) => {
+//         if (err) console.error(`[local-db] Failed to insert ref_item_status ${s.id}:`, err.message);
+//       });
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveRefItemStatusToLocal(statuses) {
   if (!statuses || statuses.length === 0) return;
 
   db.serialize(() => {
-    console.log('[local-db] Clearing ref_item_status...');
-    db.run('DELETE FROM ref_item_status');
+    console.log('[local-db] Updating ref_item_status...');
 
     const stmt = db.prepare(`
       INSERT INTO ref_item_status (id, name, label)
       VALUES (?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        label = excluded.label
     `);
 
     statuses.forEach((s, i) => {
@@ -1266,9 +1292,28 @@ function saveRefItemStatusToLocal(statuses) {
       });
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT ref_item_status:', err.message);
+        return;
+      }
+      const ids = statuses.map(s => s.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM ref_item_status WHERE id NOT IN (${placeholders})`,
+          ids,
+          (err) => {
+            if (err) {
+              console.error('[local-db] Failed to delete obsolete ref_item_status:', err.message);
+            }
+          }
+        );
+      }
+    });
   });
 }
+
 
 function saveCfsItemsToLocal(items) {
   if (!items || items.length === 0) return;
