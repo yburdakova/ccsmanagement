@@ -950,6 +950,40 @@ function saveProjectTasksToLocal(projectTasks) {
   });
 }
 
+// DELETE + INSERT version
+// function saveProjectTaskRolesToLocal(projectTaskRoles) {
+//   if (!projectTaskRoles || projectTaskRoles.length === 0) {
+//     console.warn('[local-db] Skipping project_task_roles update: empty dataset');
+//     return;
+//   }
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing project_task_roles...');
+//     db.run('DELETE FROM project_task_roles');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO project_task_roles (id, project_id, task_id, role_id, is_default)
+//       VALUES (?, ?, ?, ?, ?)
+//     `);
+
+//     projectTaskRoles.forEach((ptr, i) => {
+//       stmt.run(
+//         ptr.id,
+//         ptr.project_id,
+//         ptr.task_id,
+//         ptr.role_id,
+//         ptr.is_default ?? 0,   // ✅ если null, то 0
+//         (err) => {
+//           if (err) console.error(`[local-db] Failed to insert project_task_role ${ptr.id}:`, err.message);
+//         }
+//       );
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveProjectTaskRolesToLocal(projectTaskRoles) {
   if (!projectTaskRoles || projectTaskRoles.length === 0) {
     console.warn('[local-db] Skipping project_task_roles update: empty dataset');
@@ -957,12 +991,16 @@ function saveProjectTaskRolesToLocal(projectTaskRoles) {
   }
 
   db.serialize(() => {
-    console.log('[local-db] Clearing project_task_roles...');
-    db.run('DELETE FROM project_task_roles');
+    console.log('[local-db] Updating project_task_roles...');
 
     const stmt = db.prepare(`
       INSERT INTO project_task_roles (id, project_id, task_id, role_id, is_default)
       VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        project_id = excluded.project_id,
+        task_id = excluded.task_id,
+        role_id = excluded.role_id,
+        is_default = excluded.is_default
     `);
 
     projectTaskRoles.forEach((ptr, i) => {
@@ -971,14 +1009,32 @@ function saveProjectTaskRolesToLocal(projectTaskRoles) {
         ptr.project_id,
         ptr.task_id,
         ptr.role_id,
-        ptr.is_default ?? 0,   // ✅ если null, то 0
+        ptr.is_default ?? 0,   // ✅ if null, then 0
         (err) => {
           if (err) console.error(`[local-db] Failed to insert project_task_role ${ptr.id}:`, err.message);
         }
       );
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT project_task_roles:', err.message);
+        return;
+      }
+      const ids = projectTaskRoles.map(ptr => ptr.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM project_task_roles WHERE id NOT IN (${placeholders})`,
+          ids,
+          (err) => {
+            if (err) {
+              console.error('[local-db] Failed to delete obsolete after UPSERT project_task_roles:', err.message);
+            }
+          }
+        );
+      }
+    });
   });
 }
 
