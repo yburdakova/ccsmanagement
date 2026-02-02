@@ -195,7 +195,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentSessionUuid = await handleClockIn(currentUser.id);
       if (!currentSessionUuid) return;
 
+      window.electronAPI.initLocalDb();
+
       await refreshProjectDataIfOnline({ updateOptions: false });
+      
 
       clockinButton.textContent = 'CLOCK-OUT';
       alert(`Clock-in successful! (uuid=${currentSessionUuid})`);
@@ -536,19 +539,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   const saveTaskDataValues = async () => {
-    if (!currentUser || !currentProject || !currentTaskDataRows.length) return;
+    if (!currentUser || !currentProject) return;
+    if (!taskOverlayDataList) return;
 
-    for (const row of currentTaskDataRows) {
-      const input = document.querySelector(`[data-task-data-id="${row.id}"]`);
-      if (!input) continue;
+    const inputs = taskOverlayDataList.querySelectorAll('input, textarea, select');
+    for (const input of inputs) {
+      const dataDefId = Number(input.getAttribute('data-def-id'));
+      const valueType = input.getAttribute('data-value-type') || '';
+      if (!dataDefId || !valueType) continue;
+
       const value = input.value;
-      const result = await window.electronAPI.saveTaskData({
+      const payload = {
         projectId: currentProject.project_id,
         taskId: Number(taskSelect.value),
-        dataDefId: row.dataDefId,
-        valueType: row.valueType,
+        dataDefId,
+        valueType,
         value
-      });
+      };
+      console.log('[task-data] save payload', payload);
+      const result = await window.electronAPI.saveTaskData(payload);
       if (!result?.success) {
         console.warn('[renderer] Failed to save task data:', result?.error);
       }
@@ -811,6 +820,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Helpers
   // ==================
   async function handleClockIn(userId) {
+    //console.log('[clock-in] click');
     const result = await window.electronAPI.startUnallocated(userId);
     if (!result.success) {
       alert('Clock-in failed: ' + result.error);
@@ -1479,6 +1489,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       input.readOnly = false;
 
       input.setAttribute('data-task-data-id', row.id);
+      input.setAttribute('data-def-id', row.dataDefId);
+      input.setAttribute('data-value-type', row.valueType);
       wrapper.appendChild(input);
       taskOverlayDataList.appendChild(wrapper);
     });

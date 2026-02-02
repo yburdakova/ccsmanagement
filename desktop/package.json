@@ -4,19 +4,24 @@
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron ."
+    "start:local": "cross-env APP_ENV=local electron .",
+    "start:remote": "cross-env APP_ENV=remote electron .",
+    "start:remotetest": "cross-env APP_ENV=remotetest electron ."
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "dotenv": "^17.2.0",
+    "dotenv": "^17.2.3",
     "electron": "^37.2.1",
     "mysql2": "^3.14.2",
     "sqlite3": "5.1.7"
   },
   "overrides": {
     "tar": "7.5.4"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0"
   }
 }

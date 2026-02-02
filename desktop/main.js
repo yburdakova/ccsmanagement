@@ -1,7 +1,23 @@
+const path = require('path');
+const dotenv = require('dotenv');
+const crypto = require('crypto');
+
+// Load env from the desktop app folder regardless of where the process is launched
+const envBase = __dirname;
+dotenv.config({ path: path.resolve(envBase, '.env') });
+
+const profile = process.env.APP_ENV || 'local';
+
+dotenv.config({
+  path: path.resolve(envBase, `.env.${profile}`),
+  override: true,
+});
+
+console.log(`[env] APP_ENV=${profile} DB_HOST=${process.env.DB_HOST}`);
+
 const { app, screen, BrowserWindow, ipcMain, dialog } = require('electron'); 
 const { Menu } = require('electron');
 
-const path = require('path');
 const { isOnline } = require('./utils/network-status');
 const { initializeLocalDb } = require('./api/db-local');
 
@@ -54,7 +70,10 @@ function createWindow(screenWidth) {
 app.whenReady().then(async () => {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   createWindow(width);
-  await initializeLocalDb();
+  //await initializeLocalDb();
+  // initializeLocalDb().catch((err) => {
+  //   console.error('Failed to initialize local DB:', err.message);
+  // });
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -294,10 +313,17 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
   const isConnected = await isOnline();
 
   try {
-    const { uuid } = await startLocal(userId, safeActivityId);
+    console.log('[main] start-unallocated: before local');
+    var startTime = Date.now();
+    //const { uuid } = await startLocal(userId, safeActivityId);
+    const uuid = crypto.randomUUID();
+    await startLocal(userId, safeActivityId, uuid);
+    console.log('[main] start-unallocated: after local', Date.now() - startTime);
 
     if (isConnected) {
+      console.log('[main] start-unallocated: before server');
       const res = await startServer({ uuid, user_id: userId, activity_id: safeActivityId });
+      console.log('[main] start-unallocated: after server', res);
       if (!res.success) throw new Error(res.error);
     }
 

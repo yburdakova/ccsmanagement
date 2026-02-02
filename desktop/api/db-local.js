@@ -924,31 +924,35 @@ function saveTaskDataValueLocal({ projectId, taskId, dataDefId, valueType, value
             `;
 
             const finish = (result) => {
-              const { isOnline } = require('../utils/network-status');
-              isOnline().then((online) => {
-                if (!online) {
-                  const payload = {
-                    type: 'task-data',
-                    project_id: projectId,
-                    task_id: taskId,
-                    data_def_id: dataDefId,
-                    value_type: valueType,
-                    value: parsedValue
-                  };
+              const payload = {
+                type: 'task-data',
+                project_id: projectId,
+                task_id: taskId,
+                data_def_id: dataDefId,
+                value_type: valueType,
+                value: parsedValue
+              };
 
-                  db.run(
-                    `INSERT INTO sync_queue (payload) VALUES (?)`,
-                    [JSON.stringify(payload)],
-                    (err3) => {
-                      if (err3) {
-                        console.error('[local-db] Failed to queue task data update:', err3.message);
-                      } else {
-                        console.log('[local-db] Offline mode: queued task data update');
+              db.run(
+                `INSERT INTO sync_queue (payload) VALUES (?)`,
+                [JSON.stringify(payload)],
+                (err3) => {
+                  if (err3) {
+                    console.error('[local-db] Failed to queue task data update:', err3.message);
+                  } else {
+                    console.log('[local-db] Queued task data update');
+                    const { isOnline } = require('../utils/network-status');
+                    isOnline().then((online) => {
+                      if (online) {
+                        const { syncQueue } = require('./db-local');
+                        syncQueue().catch((err) => {
+                          console.error('[local-db] Failed to sync queue after task data update:', err.message);
+                        });
                       }
-                    }
-                  );
+                    });
+                  }
                 }
-              });
+              );
               resolve(result);
             };
 
@@ -1133,11 +1137,11 @@ function startTaskActivityLocal(userId, projectId, taskId, itemId) {
   });
 }
 
-function startUnallocatedActivityLocal(userId, activityId) {
+function startUnallocatedActivityLocal(userId, activityId, uuid) {
   const startTime = new Date();
   const dateStr = startTime.toISOString().split('T')[0];
   const timeStr = formatMySQLDatetime(startTime);
-  const uuid = crypto.randomUUID();
+  //const uuid = crypto.randomUUID();
 
   return new Promise((resolve, reject) => {
     db.run(`

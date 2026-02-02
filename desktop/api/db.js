@@ -1,3 +1,9 @@
+console.log("[db.js] APP_ENV =", process.env.APP_ENV);
+console.log("[db.js] DB_HOST =", process.env.DB_HOST);
+console.log("[db.js] DB_PORT =", process.env.DB_PORT);
+console.log("[db.js] DB_USER =", process.env.DB_USER);
+console.log("[db.js] DB_NAME =", process.env.DB_NAME);
+
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 const { parseMysqlDate, diffMinutes, formatMySQLDatetime } = require('../utils/time');
