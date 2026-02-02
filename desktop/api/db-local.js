@@ -326,6 +326,41 @@ function loginByAuthCodeLocal(code) {
   });
 }
 
+// function saveUsersToLocal(users) {
+//   if (!users || users.length === 0) {
+//     console.warn('[local-db] Skipping users update: empty dataset');
+//     return;
+//   }
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing local_users...');
+
+//     db.run('DELETE FROM local_users');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO local_users (id, first_name, last_name, login, authcode, system_role, is_active)
+//       VALUES (?, ?, ?, ?, ?, ?, ?)
+//     `);
+
+//     users.forEach((user, i) => {
+//       stmt.run(
+//         user.id,
+//         user.first_name,
+//         user.last_name,
+//         user.login,
+//         user.authcode,
+//         user.system_role,
+//         user.is_active,
+//         (err) => {
+//           if (err) console.error(`[local-db] Failed to insert user ${user.id}:`, err.message);
+//         }
+//       );
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+// UPSERT version
 function saveUsersToLocal(users) {
   if (!users || users.length === 0) {
     console.warn('[local-db] Skipping users update: empty dataset');
@@ -333,12 +368,20 @@ function saveUsersToLocal(users) {
   }
 
   db.serialize(() => {
-    console.log('[local-db] Clearing local_users...');
-    db.run('DELETE FROM local_users');
+    console.log('[local-db] Updating local_users...');
+
+    //db.run('DELETE FROM local_users');
 
     const stmt = db.prepare(`
       INSERT INTO local_users (id, first_name, last_name, login, authcode, system_role, is_active)
       VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        first_name = excluded.first_name,
+        last_name = excluded.last_name,
+        login = excluded.login,
+        authcode = excluded.authcode,
+        system_role = excluded.system_role,
+        is_active = excluded.is_active
     `);
 
     users.forEach((user, i) => {
@@ -356,7 +399,22 @@ function saveUsersToLocal(users) {
       );
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT users:', err.message);
+        return;
+      }
+      const ids = users.map(u => u.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(`DELETE FROM local_users WHERE id NOT IN (${placeholders})`, ids, (err) => {
+          if (err) {
+            console.error('[local-db] Failed to delete obsolete after UPSERT users:', err.message);
+          }
+        });
+      }
+    });
+    
   });
 }
 

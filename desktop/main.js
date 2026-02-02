@@ -316,6 +316,7 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
     console.log('[main] start-unallocated: before local');
     var startTime = Date.now();
     //const { uuid } = await startLocal(userId, safeActivityId);
+    
     const uuid = crypto.randomUUID();
     await startLocal(userId, safeActivityId, uuid);
     console.log('[main] start-unallocated: after local', Date.now() - startTime);
