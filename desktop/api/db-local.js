@@ -1381,16 +1381,43 @@ function saveCfsItemsToLocal(items) {
   });
 }
 
+// DELETE + INSERT version
+// function saveImItemsToLocal(items) {
+//   if (!items || items.length === 0) return;
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing im_items...');
+//     db.run('DELETE FROM im_items');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO im_items (id, project_id, label, task_status_id)
+//       VALUES (?, ?, ?, ?)
+//     `);
+
+//     items.forEach((item, i) => {
+//       stmt.run(item.id, item.project_id, item.label, item.task_status_id, (err) => {
+//         if (err) console.error(`[local-db] Failed to insert im_item ${item.id}:`, err.message);
+//       });
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveImItemsToLocal(items) {
   if (!items || items.length === 0) return;
 
   db.serialize(() => {
-    console.log('[local-db] Clearing im_items...');
-    db.run('DELETE FROM im_items');
+    console.log('[local-db] Updating im_items...');
 
     const stmt = db.prepare(`
       INSERT INTO im_items (id, project_id, label, task_status_id)
       VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        project_id = excluded.project_id,
+        label = excluded.label,
+        task_status_id = excluded.task_status_id
     `);
 
     items.forEach((item, i) => {
@@ -1399,7 +1426,25 @@ function saveImItemsToLocal(items) {
       });
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT im_items:', err.message);
+        return;
+      }
+      const ids = items.map(i => i.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM im_items WHERE id NOT IN (${placeholders})`,
+          ids,
+          (err) => {
+            if (err) {
+              console.error('[local-db] Failed to delete obsolete im_items:', err.message);
+            }
+          }
+        );
+      }
+    });
   });
 }
 
