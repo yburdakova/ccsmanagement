@@ -1038,6 +1038,39 @@ function saveProjectTaskRolesToLocal(projectTaskRoles) {
   });
 }
 
+// DELETE + INSERT version
+// function saveTaskDataDefinitionsToLocal(definitions) {
+//   if (!definitions || definitions.length === 0) {
+//     console.warn('[local-db] Skipping task_data_definitions update: empty dataset');
+//     return;
+//   }
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing task_data_definitions...');
+//     db.run('DELETE FROM task_data_definitions');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO task_data_definitions (id, \`key\`, label, value_type)
+//       VALUES (?, ?, ?, ?)
+//     `);
+
+//     definitions.forEach((def) => {
+//       stmt.run(
+//         def.id,
+//         def.key,
+//         def.label,
+//         def.value_type ?? def.valueType,
+//         (err) => {
+//           if (err) console.error(`[local-db] Failed to insert task_data_definition ${def.id}:`, err.message);
+//         }
+//       );
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveTaskDataDefinitionsToLocal(definitions) {
   if (!definitions || definitions.length === 0) {
     console.warn('[local-db] Skipping task_data_definitions update: empty dataset');
@@ -1045,12 +1078,15 @@ function saveTaskDataDefinitionsToLocal(definitions) {
   }
 
   db.serialize(() => {
-    console.log('[local-db] Clearing task_data_definitions...');
-    db.run('DELETE FROM task_data_definitions');
+    console.log('[local-db] Updating task_data_definitions...');
 
     const stmt = db.prepare(`
       INSERT INTO task_data_definitions (id, \`key\`, label, value_type)
       VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        \`key\` = excluded.\`key\`,
+        label = excluded.label,
+        value_type = excluded.value_type
     `);
 
     definitions.forEach((def) => {
@@ -1065,7 +1101,25 @@ function saveTaskDataDefinitionsToLocal(definitions) {
       );
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT task_data_definitions:', err.message);
+        return;
+      }
+      const ids = definitions.map(d => d.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM task_data_definitions WHERE id NOT IN (${placeholders})`,
+          ids,
+          (err) => {
+            if (err) {
+              console.error('[local-db] Failed to delete obsolete after UPSERT task_data_definitions:', err.message);
+            }
+          }
+        );
+      }
+    });
   });
 }
 
