@@ -596,7 +596,38 @@ function saveProjectUsersToLocal(projectUsers) {
   });
 }
 
+// DELETE + INSERT version
+// function saveRefProjectRolesToLocal(roles) {
+//   if (!roles || roles.length === 0) {
+//     console.warn('[local-db] Skipping roles update: empty dataset');
+//     return;
+//   }
 
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing ref_project_roles...');
+//     db.run('DELETE FROM ref_project_roles');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO ref_project_roles (id, name, label)
+//       VALUES (?, ?, ?)
+//     `);
+
+//     roles.forEach((role, i) => {
+//       stmt.run(
+//         role.id,
+//         role.name,
+//         role.label,
+//         (err) => {
+//           if (err) console.error(`[local-db] Failed to insert role ${role.id}:`, err.message);
+//         }
+//       );
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveRefProjectRolesToLocal(roles) {
   if (!roles || roles.length === 0) {
     console.warn('[local-db] Skipping roles update: empty dataset');
@@ -604,12 +635,14 @@ function saveRefProjectRolesToLocal(roles) {
   }
 
   db.serialize(() => {
-    console.log('[local-db] Clearing ref_project_roles...');
-    db.run('DELETE FROM ref_project_roles');
+    console.log('[local-db] Updating ref_project_roles...');
 
     const stmt = db.prepare(`
       INSERT INTO ref_project_roles (id, name, label)
       VALUES (?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        label = excluded.label
     `);
 
     roles.forEach((role, i) => {
@@ -623,7 +656,22 @@ function saveRefProjectRolesToLocal(roles) {
       );
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT ref_project_roles:', err.message);
+        return;
+      }
+      const ids = roles.map(r => r.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM ref_project_roles WHERE id NOT IN (${placeholders})`, ids, (err) => {
+          if (err) {
+            console.error('[local-db] Failed to delete obsolete after UPSERT ref_project_roles:', err.message);
+          }
+        });
+      }
+    }); 
   });
 }
 
