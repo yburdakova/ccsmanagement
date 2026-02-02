@@ -675,6 +675,42 @@ function saveRefProjectRolesToLocal(roles) {
   });
 }
 
+// DELETE + INSERT version
+// function saveTasksToLocal(tasks) {
+//   if (!tasks || tasks.length === 0) {
+//     console.warn('[local-db] Skipping tasks update: empty dataset');
+//     return;
+//   }
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing tasks...');
+//     db.run('DELETE FROM tasks');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO tasks (id, name, description, category_id, default_role_id, in_progress_status_id, completed_status_id)
+//       VALUES (?, ?, ?, ?, ?, ?, ?)
+//     `);
+
+//     tasks.forEach((task, i) => {
+//       stmt.run(
+//         task.id,
+//         task.name,
+//         task.description,
+//         task.category_id,
+//         task.default_role_id,
+//         task.in_progress_status_id,
+//         task.completed_status_id,
+//         (err) => {
+//           if (err) console.error(`[local-db] Failed to insert task ${task.id}:`, err.message);
+//         }
+//       );
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveTasksToLocal(tasks) {
   if (!tasks || tasks.length === 0) {
     console.warn('[local-db] Skipping tasks update: empty dataset');
@@ -682,12 +718,18 @@ function saveTasksToLocal(tasks) {
   }
 
   db.serialize(() => {
-    console.log('[local-db] Clearing tasks...');
-    db.run('DELETE FROM tasks');
+    console.log('[local-db] Updating tasks...');
 
     const stmt = db.prepare(`
       INSERT INTO tasks (id, name, description, category_id, default_role_id, in_progress_status_id, completed_status_id)
       VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        description = excluded.description,
+        category_id = excluded.category_id,
+        default_role_id = excluded.default_role_id,
+        in_progress_status_id = excluded.in_progress_status_id,
+        completed_status_id = excluded.completed_status_id
     `);
 
     tasks.forEach((task, i) => {
@@ -705,7 +747,25 @@ function saveTasksToLocal(tasks) {
       );
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT tasks:', err.message);
+        return;
+      }
+      const ids = tasks.map(t => t.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM tasks WHERE id NOT IN (${placeholders})`,
+          ids,
+          (err) => {
+            if (err) {
+              console.error('[local-db] Failed to delete obsolete after UPSERT tasks:', err.message);
+            }
+          }
+        );
+      }
+    });
   });
 }
 
