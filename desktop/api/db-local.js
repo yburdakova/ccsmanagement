@@ -769,6 +769,33 @@ function saveTasksToLocal(tasks) {
   });
 }
 
+// DELETE + INSERT version
+// function saveCustomersToLocal(customers) {
+//   if (!customers || customers.length === 0) {
+//     console.warn('[local-db] Skipping customers update: empty dataset');
+//     return;
+//   }
+
+//   db.serialize(() => {
+//     console.log('[local-db] Clearing customers...');
+//     db.run('DELETE FROM customers');
+
+//     const stmt = db.prepare(`
+//       INSERT INTO customers (id, name)
+//       VALUES (?, ?)
+//     `);
+
+//     customers.forEach((customer) => {
+//       stmt.run(customer.id, customer.name, (err) => {
+//         if (err) console.error(`[local-db] Failed to insert customer ${customer.id}:`, err.message);
+//       });
+//     });
+
+//     stmt.finalize();
+//   });
+// }
+
+// UPSERT version
 function saveCustomersToLocal(customers) {
   if (!customers || customers.length === 0) {
     console.warn('[local-db] Skipping customers update: empty dataset');
@@ -776,12 +803,13 @@ function saveCustomersToLocal(customers) {
   }
 
   db.serialize(() => {
-    console.log('[local-db] Clearing customers...');
-    db.run('DELETE FROM customers');
+    console.log('[local-db] Updating customers...');
 
     const stmt = db.prepare(`
       INSERT INTO customers (id, name)
       VALUES (?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name
     `);
 
     customers.forEach((customer) => {
@@ -790,7 +818,25 @@ function saveCustomersToLocal(customers) {
       });
     });
 
-    stmt.finalize();
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT customers:', err.message);
+        return;
+      }
+      const ids = customers.map(c => c.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM customers WHERE id NOT IN (${placeholders})`,
+          ids,
+          (err) => {
+            if (err) {
+              console.error('[local-db] Failed to delete obsolete after UPSERT customers:', err.message);
+            }
+          }
+        );
+      }
+    });
   });
 }
 
