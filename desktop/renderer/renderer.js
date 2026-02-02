@@ -50,7 +50,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const assignmentsCount = document.getElementById('assignments-count');
   const timerEl = document.querySelector('.timer');
   const savedProjectKey = 'rememberedProject';
-  const workTimerStateKey = 'workTimerState';
+  //const workTimerStateKey = 'workTimerState';
+  const getWorkTimerStateKey = (userId) => `workTimerState:${userId}`;
   const itemInputLabel = document.getElementById('item-input-label');
 
   authInput.focus();
@@ -137,6 +138,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       await window.electronAPI.logout({ userId: currentUser.id });
     }
 
+    
+
+
     currentUser = null;
     currentSessionUuid = null;
     currentTaskUuid = null;
@@ -183,6 +187,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     authInput.value = '';
     authInput.blur();
     setTimeout(() => authInput.focus(), 50);
+
+    if (currentUser?.id) {
+      localStorage.removeItem(getWorkTimerStateKey(currentUser.id));
+    }
+
 
     console.log('[renderer] User logged out and UI reset');
   });
@@ -851,7 +860,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function readWorkTimerState() {
     try {
-      const raw = localStorage.getItem(workTimerStateKey);
+      //const raw = localStorage.getItem(workTimerStateKey);
+      // ++
+      if (!currentUser?.id) return null;
+      const raw = localStorage.getItem(getWorkTimerStateKey(currentUser.id));
+      // ++
       return raw ? JSON.parse(raw) : null;
     } catch (err) {
       console.warn('[renderer] Failed to read work timer state:', err);
@@ -869,7 +882,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (elapsedMs == null) return;
     const payload = { date: getTodayKey(), elapsedMs };
     try {
-      localStorage.setItem(workTimerStateKey, JSON.stringify(payload));
+      //localStorage.setItem(workTimerStateKey, JSON.stringify(payload));
+      // ++
+      if (!currentUser?.id) return;
+      localStorage.setItem(getWorkTimerStateKey(currentUser.id), JSON.stringify(payload));
+      // ++
     } catch (err) {
       console.warn('[renderer] Failed to persist work timer state:', err);
     }
