@@ -29,6 +29,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const taskOverlayNote = document.getElementById('task-overlay-note');
   const taskOverlayData = document.getElementById('task-overlay-data');
   const taskOverlayDataList = document.getElementById('task-overlay-data-list');
+  const taskFinishModal = document.getElementById('task-finish-modal');
+  const taskFinishName = document.getElementById('task-finish-name');
+  const taskFinishData = document.getElementById('task-finish-data');
+  const taskFinishDataList = document.getElementById('task-finish-data-list');
+  const taskFinishOk = document.getElementById('task-finish-ok');
+  const taskFinishCancel = document.getElementById('task-finish-cancel');
   const activityOverlay = document.getElementById('activity-overlay');
   const activityOverlayName = document.getElementById('activity-overlay-name');
   const activityOverlayTimer = document.getElementById('activity-overlay-timer');
@@ -522,7 +528,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
     taskOverlayName.textContent = selectedTask;
-    await loadTaskDataOverlay(projectId, taskId);
     if (taskOverlayItem) {
       if (currentTaskItemId && projectItems.length) {
         const item = projectItems.find((entry) => Number(entry.id) === Number(currentTaskItemId));
@@ -544,14 +549,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       taskOverlayNote.readOnly = false;
       setTimeout(() => taskOverlayNote.focus(), 50);
     }
-    setTimeout(() => focusTaskDataInput(), 0);
   });
 
-  const saveTaskDataValues = async () => {
+  const saveTaskDataValues = async (container) => {
     if (!currentUser || !currentProject) return;
-    if (!taskOverlayDataList) return;
+    if (!container) return;
 
-    const inputs = taskOverlayDataList.querySelectorAll('input, textarea, select');
+    const inputs = container.querySelectorAll('input, textarea, select');
     for (const input of inputs) {
       const dataDefId = Number(input.getAttribute('data-def-id'));
       const valueType = input.getAttribute('data-value-type') || '';
@@ -573,21 +577,147 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  const handleFinishTask = async (applyStatus) => {
-    if (!currentUser || !currentTaskUuid) {
-      if (taskOverlay) taskOverlay.style.display = 'none';
-      clearNoteInput(taskOverlayNote);
-    if (taskOverlayData) taskOverlayData.style.display = 'none';
-    if (taskOverlayDataList) taskOverlayDataList.innerHTML = '';
-    currentTaskDataRows = [];
-      stopTaskTimer(true);
-      updateStartButton();
+  const renderFinishTaskData = (rows) => {
+    if (!taskFinishData || !taskFinishDataList) return;
+    taskFinishDataList.innerHTML = '';
+
+    if (!rows || rows.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'task-data-row';
+      empty.textContent = 'No task data definitions for this task.';
+      taskFinishDataList.appendChild(empty);
       return;
     }
 
-    const note = getNoteValue(taskOverlayNote);
-    if (applyStatus) {
-      await saveTaskDataValues();
+    rows.forEach((row) => {
+      const valueType = String(row.valueType || '').toLowerCase();
+      const isBoolean = valueType === 'bool' || valueType === 'boolean';
+      const isText = valueType === 'text' || valueType === 'json';
+      const isDate = valueType === 'date';
+      const isDateTime = valueType === 'datetime';
+      const isNumber = valueType === 'int' || valueType === 'integer' || valueType === 'decimal';
+      const isCustomer = valueType === 'customer_id';
+
+      let value = '';
+      if (valueType === 'int' || valueType === 'integer') value = row.value_int ?? '';
+      else if (valueType === 'decimal') value = row.value_decimal ?? '';
+      else if (valueType === 'varchar') value = row.value_varchar ?? '';
+      else if (valueType === 'text') value = row.value_text ?? '';
+      else if (valueType === 'bool' || valueType === 'boolean') value = row.value_bool ? '1' : '0';
+      else if (valueType === 'date') value = row.value_date ?? '';
+      else if (valueType === 'datetime') value = (row.value_datetime || '').replace(' ', 'T').slice(0, 16);
+      else if (valueType === 'customer_id') value = row.value_customer_id ?? '';
+      else if (valueType === 'json') value = row.value_json ?? '';
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'task-overlay__data-row';
+
+      const label = document.createElement('label');
+      label.textContent = row.definitionLabel || 'Value';
+      wrapper.appendChild(label);
+
+      let input;
+      if (isCustomer) {
+        input = document.createElement('select');
+        const optEmpty = document.createElement('option');
+        optEmpty.value = '';
+        optEmpty.textContent = 'Select customer...';
+        input.appendChild(optEmpty);
+
+        const projectTypeId = Number(currentProject?.project_type_id);
+        const allowedCustomerIds = new Set(
+          (allProjects || [])
+            .filter((p) => Number(p.type_id) === projectTypeId && p.customer_id)
+            .map((p) => Number(p.customer_id))
+        );
+
+        const customerList = (allCustomers || [])
+          .filter((c) => (allowedCustomerIds.size ? allowedCustomerIds.has(Number(c.id)) : true));
+
+        customerList.forEach((customer) => {
+          const opt = document.createElement('option');
+          opt.value = String(customer.id);
+          opt.textContent = customer.name;
+          input.appendChild(opt);
+        });
+
+        input.value = String(value ?? '');
+      } else if (isBoolean) {
+        input = document.createElement('select');
+        const optEmpty = document.createElement('option');
+        optEmpty.value = '';
+        optEmpty.textContent = 'Select...';
+        input.appendChild(optEmpty);
+        const optTrue = document.createElement('option');
+        optTrue.value = '1';
+        optTrue.textContent = 'True';
+        input.appendChild(optTrue);
+        const optFalse = document.createElement('option');
+        optFalse.value = '0';
+        optFalse.textContent = 'False';
+        input.appendChild(optFalse);
+        input.value = String(value);
+      } else if (isText) {
+        input = document.createElement('textarea');
+        input.rows = 2;
+        input.value = value ?? '';
+      } else {
+        input = document.createElement('input');
+        input.type = isDate ? 'date' : isDateTime ? 'datetime-local' : 'text';
+        if (isNumber) input.inputMode = 'decimal';
+        input.value = value ?? '';
+      }
+
+      input.disabled = false;
+      input.readOnly = false;
+
+      input.setAttribute('data-task-data-id', row.id);
+      input.setAttribute('data-def-id', row.dataDefId);
+      input.setAttribute('data-value-type', row.valueType);
+      wrapper.appendChild(input);
+      taskFinishDataList.appendChild(wrapper);
+    });
+  };
+
+  const openFinishTaskModal = async () => {
+    if (!taskFinishModal || !taskFinishDataList) return false;
+    if (!currentProject) return false;
+    const projectId = Number(projectSelect.value);
+    const taskId = Number(taskSelect.value);
+    if (!projectId || !taskId) return false;
+
+    let rows = [];
+    try {
+      rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
+    } catch (err) {
+      console.warn('[renderer] Failed to load task data for finish modal:', err);
+    }
+
+    const dataRows = rows && rows.length ? rows : currentTaskDataRows;
+    if (!dataRows || dataRows.length === 0) return false;
+
+    if (taskFinishName) {
+      taskFinishName.textContent = taskOverlayName?.textContent || 'Task data';
+    }
+    renderFinishTaskData(dataRows);
+    taskFinishModal.style.display = 'flex';
+    if (taskFinishData) taskFinishData.style.display = 'block';
+    setTimeout(() => {
+      const input = taskFinishDataList.querySelector('input, textarea, select');
+      if (input && typeof input.focus === 'function') input.focus();
+    }, 0);
+    return true;
+  };
+
+  const closeFinishTaskModal = () => {
+    if (!taskFinishModal || !taskFinishDataList) return;
+    taskFinishModal.style.display = 'none';
+    taskFinishDataList.innerHTML = '';
+  };
+
+  const finalizeTask = async (applyStatus, note, dataContainer) => {
+    if (applyStatus && dataContainer) {
+      await saveTaskDataValues(dataContainer);
     }
     const result = await window.electronAPI.completeActiveActivity({
       uuid: currentTaskUuid,
@@ -598,7 +728,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (!result.success) {
       alert('Task finish failed: ' + result.error);
-      return;
+      return false;
     }
 
     const itemIdToRefresh = currentTaskItemId;
@@ -644,7 +774,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const unallocatedResult = await window.electronAPI.startUnallocated(currentUser.id);
     if (!unallocatedResult.success) {
       alert('Failed to start unallocated time: ' + unallocatedResult.error);
-      return;
+      return false;
     }
     currentSessionUuid = unallocatedResult.uuid;
     await refreshItemOptions(itemIdToRefresh);
@@ -655,6 +785,43 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderUnfinishedTasks(tasks);
     }
     await refreshAssignmentsListIfOpen();
+    return true;
+  };
+
+  const handleFinishTask = async (applyStatus) => {
+    if (!currentUser || !currentTaskUuid) {
+      if (taskOverlay) taskOverlay.style.display = 'none';
+      clearNoteInput(taskOverlayNote);
+      if (taskOverlayData) taskOverlayData.style.display = 'none';
+      if (taskOverlayDataList) taskOverlayDataList.innerHTML = '';
+      currentTaskDataRows = [];
+      stopTaskTimer(true);
+      updateStartButton();
+      return;
+    }
+
+    const note = getNoteValue(taskOverlayNote);
+    if (applyStatus) {
+      const opened = await openFinishTaskModal();
+      if (opened) {
+        if (taskFinishOk) {
+          taskFinishOk.onclick = async () => {
+            taskFinishOk.disabled = true;
+            const success = await finalizeTask(true, note, taskFinishDataList);
+            taskFinishOk.disabled = false;
+            if (success) closeFinishTaskModal();
+          };
+        }
+        if (taskFinishCancel) {
+          taskFinishCancel.onclick = () => {
+            closeFinishTaskModal();
+          };
+        }
+        return;
+      }
+    }
+
+    await finalizeTask(applyStatus, note, null);
   };
 
   finishTaskButton?.addEventListener('click', () => handleFinishTask(true));

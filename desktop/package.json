@@ -4,8 +4,8 @@
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start:local": "cross-env APP_ENV=local electron .",
-    "start:remote": "cross-env APP_ENV=remote electron .",
+    "start:local":      "cross-env APP_ENV=local electron .",
+    "start:remote":     "cross-env APP_ENV=remote electron .",
     "start:remotetest": "cross-env APP_ENV=remotetest electron ."
   },
   "keywords": [],
