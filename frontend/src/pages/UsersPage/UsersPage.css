@@ -29,3 +29,94 @@
 .users-table tbody tr:hover {
   background: #f6f9fc;
 }
+
+.users-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.users-actions .btn-icon-small.danger .material-symbols-outlined {
+  color: #b42318;
+}
+
+.users-form {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.users-form h3 {
+  margin: 0;
+}
+
+.users-form__error {
+  color: #b42318;
+  font-size: 14px;
+}
+
+.users-form__grid {
+  display: grid;
+  gap: 16px;
+}
+
+.users-form__row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .users-form__row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .users-form__row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.users-form__grid label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+  color: #2f3438;
+}
+
+.users-form__grid input {
+  border: 1px solid #cfd6db;
+  border-radius: 6px;
+  padding: 8px;
+  font-family: inherit;
+}
+
+.users-form__grid select {
+  border: 1px solid #cfd6db;
+  border-radius: 6px;
+  padding: 8px;
+  font-family: inherit;
+  background: #ffffff;
+}
+
+.users-form__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.users-form__checkbox--inline {
+  align-self: end;
+  padding-bottom: 2px;
+}
+
+.users-form__checkbox input {
+  width: 16px;
+  height: 16px;
+}
