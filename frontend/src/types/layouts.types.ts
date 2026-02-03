@@ -7,6 +7,7 @@ export type ManagePageProps = {
   onAdd: () => void;
   onCancel: () => void;
   onSave: () => void;
+  showAdd?: boolean;
   listSlot: React.ReactNode;
   formSlot: React.ReactNode | null;
 };

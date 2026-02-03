@@ -1,0 +1,31 @@
+.users-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.users-table thead {
+  background: #e6eef5;
+  text-align: left;
+}
+
+.users-table th,
+.users-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.users-table tr:last-child td {
+  border-bottom: none;
+}
+
+.users-table tbody tr:hover {
+  background: #f6f9fc;
+}

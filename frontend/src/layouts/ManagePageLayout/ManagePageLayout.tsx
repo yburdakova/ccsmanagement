@@ -9,6 +9,7 @@ const ManagePage: React.FC<ManagePageProps> = ({
   onAdd,
   onCancel,
   onSave,
+  showAdd = true,
   listSlot,
   formSlot
 }) => {
@@ -19,7 +20,7 @@ const ManagePage: React.FC<ManagePageProps> = ({
         <h2 className="manage-page__title">{title}</h2>
 
         <div className="manage-page__actions">
-          {!isCreating && !isEditing && (
+          {showAdd && !isCreating && !isEditing && (
             <button className="btn btn-icon" onClick={onAdd}>
             <span className="material-symbols-outlined">add_notes</span>
           </button>

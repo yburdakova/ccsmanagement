@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 // Load environment variables from .env file
 const envPath = process.env.NODE_ENV === 'remotetest' ? '.env.remotetest' :
-                process.env.NODE_ENV === 'remote' ? '.env.remote' : '.env';
+                process.env.NODE_ENV === 'remote' ? '.env.remote' : '.env.local';
 dotenv.config({ path: path.resolve(__dirname, envPath) });
 
 
