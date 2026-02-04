@@ -9,6 +9,7 @@ import lookupsRoutes from './routes/lookups.routes.js';
 import timeTrackingRoutes from './routes/time-tracking.routes.js';
 import itemsRoutes from './routes/items.routes.js';
 import usersRoutes from './routes/users.routes.js';
+import customersRoutes from './routes/customers.routes.js';
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ app.use('/api/lookups', lookupsRoutes);
 app.use('/api/time-tracking', timeTrackingRoutes);
 app.use('/api/items', itemsRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/customers', customersRoutes);
 
 
 http.createServer(app).listen(PORT, () => {
