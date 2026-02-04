@@ -228,6 +228,32 @@ const parseTaskDataValue = (valueType, value) => {
   return String(value);
 };
 
+const getTrackingDataColumn = (valueType = '') => getTaskDataColumn(valueType);
+
+const upsertTrackingDataValue = async (conn, trackingUuid, dataDefId, valueType, value) => {
+  const column = getTrackingDataColumn(valueType);
+  if (!column) {
+    return { success: false, error: 'Invalid value type' };
+  }
+
+  const parsedValue = parseTaskDataValue(valueType, value);
+
+  await conn.query(
+    `
+      INSERT INTO users_time_tracking_data (tracking_uuid, data_def_id, ${column})
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE ${column} = VALUES(${column}), updated_at = CURRENT_TIMESTAMP
+    `,
+    [trackingUuid, dataDefId, parsedValue]
+  );
+
+  return { success: true };
+};
+
+// Manual test:
+// 1) Start tracking, finish with pages_count=240.
+// 2) Verify: SELECT * FROM users_time_tracking_data WHERE tracking_uuid = '<uuid>' AND data_def_id = 1;
+
 async function saveTaskDataValueGlobal({ projectId, taskId, dataDefId, valueType, value }) {
   const column = getTaskDataColumn(valueType);
   if (!column) {
@@ -735,13 +761,20 @@ async function startTaskActivityGlobal({ uuid, user_id, project_id, task_id, ite
   }
 }
 
-async function completeActiveActivityGlobal({ uuid, is_completed_project_task, timestamp, note }) {
+async function completeActiveActivityGlobal({ uuid, is_completed_project_task, timestamp, note, taskData }) {
   const endTime = timestamp ? new Date(timestamp) : new Date();
   const conn = await pool.getConnection();
   const endStr = formatMySQLDatetime(endTime);
   const safeNote = note != null ? String(note).trim().slice(0, 500) : null;
 
   try {
+    if (!uuid || typeof uuid !== 'string') {
+      conn.release();
+      return { success: false, error: 'Missing tracking uuid' };
+    }
+
+    await conn.beginTransaction();
+
     const [rows] = await conn.query(
       `
       SELECT id, start_time, end_time, activity_id, user_id, project_id, task_id, item_id
@@ -752,6 +785,7 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
     );
 
     if (rows.length === 0) {
+      await conn.rollback();
       conn.release();
       console.warn(`[server-db] No activity found for uuid=${uuid}, ignoring`);
       return { success: true, ignored: true };
@@ -760,6 +794,7 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
     const activity = rows[0];
 
     if (activity.end_time) {
+      await conn.rollback();
       conn.release();
       console.warn(`[server-db]  Activity already completed (uuid=${uuid}), skipping`);
       return { success: true, duplicate: true }; 
@@ -784,6 +819,15 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
       `,
       [endStr, safeDurationMin, isFinished, uuid]
     );
+
+    if (Array.isArray(taskData) && taskData.length > 0) {
+      for (const row of taskData) {
+        const dataDefId = Number(row.data_def_id);
+        const valueType = row.value_type || '';
+        if (!dataDefId || !valueType) continue;
+        await upsertTrackingDataValue(conn, uuid, dataDefId, valueType, row.value);
+      }
+    }
 
     if (safeNote) {
       if (Number(activity.activity_id) === 2) {
@@ -812,9 +856,13 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
       }
     }
 
+    await conn.commit();
     conn.release();
     return { success: true };
   } catch (err) {
+    try {
+      await conn.rollback();
+    } catch {}
     conn.release();
     console.error('[server-db] Complete activity failed:', err.message);
     return { success: false, error: err.message };

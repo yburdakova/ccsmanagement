@@ -377,7 +377,7 @@ ipcMain.handle('sync-queue', async () => {
   }
 });
 
-ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskCompleted, note }) => {
+ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskCompleted, note, taskData }) => {
   const { completeActiveActivityLocal: completeLocal } = require('./api/db-local');
   const { completeActiveActivityGlobal: completeServer } = require('./api/db');
   const isConnected = await isOnline();
@@ -387,7 +387,8 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
       uuid,
       is_completed_project_task: isTaskCompleted,
       timestamp: new Date().toISOString(),
-      note
+      note,
+      taskData
     });
 
     if (!localResult.success) {
@@ -400,7 +401,8 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
         user_id: userId,
         is_completed_project_task: isTaskCompleted,
         timestamp: localResult.endTime.toISOString(),
-        note
+        note,
+        taskData
       });
 
       if (!result.success) throw new Error(result.error);

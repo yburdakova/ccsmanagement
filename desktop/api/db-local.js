@@ -1741,7 +1741,14 @@ async function syncQueue() {
           } else if (type === 'start-task') {
             result = await startTaskActivityGlobal(payload);
           } else if (type === 'complete') {
-            result = await completeActiveActivityGlobal(payload);
+            result = await completeActiveActivityGlobal({
+              uuid: payload.uuid,
+              user_id: payload.user_id,
+              is_completed_project_task: payload.is_completed_project_task,
+              timestamp: payload.timestamp,
+              note: payload.note,
+              taskData: payload.task_data
+            });
           } else if (type === 'task-data') {
             result = await saveTaskDataValueGlobal({
               projectId: payload.project_id,
@@ -1898,7 +1905,7 @@ function startUnallocatedActivityLocal(userId, activityId, uuid) {
   });
 }
 
-function completeActiveActivityLocal({ uuid, is_completed_project_task, timestamp, note }) {
+function completeActiveActivityLocal({ uuid, is_completed_project_task, timestamp, note, taskData }) {
   const endTime = timestamp ? new Date(timestamp) : new Date();
   const endStr = formatMySQLDatetime(endTime);
   const safeNote = note != null ? String(note).trim().slice(0, 500) : null;
@@ -1957,7 +1964,8 @@ function completeActiveActivityLocal({ uuid, is_completed_project_task, timestam
             user_id: row.user_id,
             is_completed_project_task,
             timestamp: endTime.toISOString(),
-            note: safeNote
+            note: safeNote,
+            task_data: Array.isArray(taskData) ? taskData : null
           };
 
           db.run(

@@ -551,30 +551,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  const saveTaskDataValues = async (container) => {
-    if (!currentUser || !currentProject) return;
-    if (!container) return;
-
+  const collectTaskDataValues = (container) => {
+    if (!container) return [];
     const inputs = container.querySelectorAll('input, textarea, select');
+    const rows = [];
+
     for (const input of inputs) {
       const dataDefId = Number(input.getAttribute('data-def-id'));
       const valueType = input.getAttribute('data-value-type') || '';
       if (!dataDefId || !valueType) continue;
+      rows.push({
+        data_def_id: dataDefId,
+        value_type: valueType,
+        value: input.value
+      });
+    }
 
-      const value = input.value;
-      const payload = {
-        projectId: currentProject.project_id,
-        taskId: Number(taskSelect.value),
-        dataDefId,
-        valueType,
-        value
-      };
-      console.log('[task-data] save payload', payload);
-      const result = await window.electronAPI.saveTaskData(payload);
-      if (!result?.success) {
-        console.warn('[renderer] Failed to save task data:', result?.error);
+    return rows;
+  };
+
+  const validateTaskDataValues = (rows) => {
+    const pagesRow = rows.find((row) => Number(row.data_def_id) === 1);
+    if (pagesRow) {
+      const raw = String(pagesRow.value ?? '').trim();
+      if (!raw) {
+        return { ok: false, message: 'Pages scanned is required.' };
+      }
+      const num = Number(raw);
+      if (!Number.isInteger(num) || num < 0) {
+        return { ok: false, message: 'Pages scanned must be an integer >= 0.' };
       }
     }
+    return { ok: true };
   };
 
   const renderFinishTaskData = (rows) => {
@@ -716,14 +724,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const finalizeTask = async (applyStatus, note, dataContainer) => {
+    let taskData = null;
     if (applyStatus && dataContainer) {
-      await saveTaskDataValues(dataContainer);
+      taskData = collectTaskDataValues(dataContainer);
+      const validation = validateTaskDataValues(taskData);
+      if (!validation.ok) {
+        alert(validation.message);
+        return false;
+      }
     }
     const result = await window.electronAPI.completeActiveActivity({
       uuid: currentTaskUuid,
       userId: currentUser.id,
       isTaskCompleted: applyStatus,
-      note
+      note,
+      taskData
     });
 
     if (!result.success) {
