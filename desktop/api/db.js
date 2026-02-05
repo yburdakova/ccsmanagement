@@ -228,7 +228,13 @@ const parseTaskDataValue = (valueType, value) => {
   return String(value);
 };
 
-const getTrackingDataColumn = (valueType = '') => getTaskDataColumn(valueType);
+// `users_time_tracking_data` schema does NOT have `value_customer_id`.
+// Customer IDs are stored as numeric values in `value_int` (BIGINT in MySQL).
+const getTrackingDataColumn = (valueType = '') => {
+  const type = normalizeValueType(valueType);
+  if (type === 'customer_id') return 'value_int';
+  return getTaskDataColumn(type);
+};
 
 const upsertTrackingDataValue = async (conn, trackingUuid, dataDefId, valueType, value) => {
   const column = getTrackingDataColumn(valueType);
