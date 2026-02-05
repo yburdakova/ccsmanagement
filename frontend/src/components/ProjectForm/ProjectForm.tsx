@@ -254,30 +254,12 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
                                 ...data,
                                 dataDefId: nextDefId,
                                 valueType: def?.valueType || data.valueType,
+                                value: '',
                             }
                             : data
                     ),
                 };
             })
-        );
-    };
-
-    const handleTaskDataValueChange = (
-        taskRowId: string,
-        dataRowId: string,
-        nextValue: string
-    ) => {
-        setTaskRows((prev) =>
-            prev.map((row) =>
-                row.id === taskRowId
-                    ? {
-                        ...row,
-                        taskData: row.taskData.map((data) =>
-                            data.id === dataRowId ? { ...data, value: nextValue } : data
-                        ),
-                    }
-                    : row
-            )
         );
     };
 
@@ -862,17 +844,6 @@ const handleApplyTaskRoles = (rowId: string) => {
                             ) : (
                                 <div className="project-task-data__rows">
                                     {row.taskData.map((dataRow) => {
-                                        const definition = safeTaskDataDefinitions.find(
-                                            (entry) => String(entry.id) === String(dataRow.dataDefId)
-                                        );
-                                        const valueType = definition?.valueType || dataRow.valueType || 'varchar';
-                                        const isBoolean = valueType === 'bool' || valueType === 'boolean';
-                                        const isText = valueType === 'text' || valueType === 'json';
-                                        const isDate = valueType === 'date';
-                                        const isDateTime = valueType === 'datetime';
-                                        const isNumber = valueType === 'int' || valueType === 'integer' || valueType === 'decimal';
-                                        const isCustomer = valueType === 'customer_id';
-
                                         return (
                                             <div key={dataRow.id} className="project-task-data__row">
                                                 <select
@@ -893,74 +864,6 @@ const handleApplyTaskRoles = (rowId: string) => {
                                                     ))}
                                                     <option value="__new__">+ Add new definition...</option>
                                                 </select>
-
-                                                {isCustomer ? (
-                                                    <select
-                                                        value={dataRow.value}
-                                                        onChange={(e) =>
-                                                            handleTaskDataValueChange(
-                                                                row.id,
-                                                                dataRow.id,
-                                                                e.target.value
-                                                            )
-                                                        }
-                                                    >
-                                                        <option value="">Select customer...</option>
-                                                        {customerOptions.map((customer) => (
-                                                            <option key={customer.id} value={customer.id}>
-                                                                {customer.name}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                ) : isBoolean ? (
-                                                    <select
-                                                        value={dataRow.value}
-                                                        onChange={(e) =>
-                                                            handleTaskDataValueChange(
-                                                                row.id,
-                                                                dataRow.id,
-                                                                e.target.value
-                                                            )
-                                                        }
-                                                    >
-                                                        <option value="">Select...</option>
-                                                        <option value="1">True</option>
-                                                        <option value="0">False</option>
-                                                    </select>
-                                                ) : isText ? (
-                                                    <textarea
-                                                        value={dataRow.value}
-                                                        onChange={(e) =>
-                                                            handleTaskDataValueChange(
-                                                                row.id,
-                                                                dataRow.id,
-                                                                e.target.value
-                                                            )
-                                                        }
-                                                        rows={2}
-                                                    />
-                                                ) : (
-                                                    <input
-                                                        type={
-                                                            isDate
-                                                                ? 'date'
-                                                                : isDateTime
-                                                                    ? 'datetime-local'
-                                                                    : isNumber
-                                                                        ? 'number'
-                                                                        : 'text'
-                                                        }
-                                                        step={valueType === 'decimal' ? '0.01' : undefined}
-                                                        value={dataRow.value}
-                                                        onChange={(e) =>
-                                                            handleTaskDataValueChange(
-                                                                row.id,
-                                                                dataRow.id,
-                                                                e.target.value
-                                                            )
-                                                        }
-                                                    />
-                                                )}
 
                                                 <button
                                                     type="button"

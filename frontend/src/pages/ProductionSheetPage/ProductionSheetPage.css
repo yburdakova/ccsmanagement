@@ -23,6 +23,103 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.production-sheet__control {
+  border: 1px solid #cfd6db;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: inherit;
+  background: #ffffff;
+  height: 38px;
+  box-sizing: border-box;
+}
+
+.production-sheet__actions .note-btn {
+  height: 38px;
+}
+
+.production-sheet__presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.production-sheet__preset {
+  background: #6c757d;
+}
+
+.production-sheet__preset:hover {
+  background: #596269;
+}
+
+.production-sheet__preset--active,
+.production-sheet__preset--active:hover {
+  background: #0078d4;
+}
+
+/* Ensure presets override the generic .note-btn styles defined later in this file */
+.production-sheet__actions .note-btn.production-sheet__preset {
+  background: #6c757d;
+}
+
+.production-sheet__actions .note-btn.production-sheet__preset:hover {
+  background: #596269;
+}
+
+.production-sheet__actions .note-btn.production-sheet__preset--active,
+.production-sheet__actions .note-btn.production-sheet__preset--active:hover {
+  background: #0078d4;
+}
+
+.production-sheet__user-select {
+  min-width: 220px;
+}
+
+.production-sheet__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.production-sheet__tile {
+  background: #ffffff;
+  border: 1px solid #e3e6e8;
+  border-radius: 10px;
+  padding: 8px 10px;
+  min-width: 130px;
+  display: grid;
+  gap: 1px;
+}
+
+.production-sheet__tile-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #5d6670;
+}
+
+.production-sheet__tile-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: #2f3438;
+}
+
+.production-sheet__tile-sub {
+  font-size: 12px;
+  color: #6b737a;
+}
+
+.production-sheet__datetime {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.production-sheet__datetime-date {
+  font-size: 10px;
+  color: #7a828a;
+  font-weight: 500;
 }
 
 .time-table {
@@ -39,6 +136,7 @@
   background: #ffffff;
   border: 1px solid #e3e6e8;
   border-radius: 8px;
+  font-size: 11px;
 }
 
 .time-table__row > :nth-child(3),
@@ -50,6 +148,7 @@
 .time-table__row--header {
   background: #f5f6f7;
   font-weight: 700;
+  font-size: 11px;
 }
 
 .time-table__empty {

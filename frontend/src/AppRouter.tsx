@@ -8,6 +8,8 @@ import MainLayout from './layouts/MainLayout/MainLayout';
 import DataPage from './pages/DataPage/DataPage';
 import ProductionSheetPage from './pages/ProductionSheetPage/ProductionSheetPage';
 import InventoryItemsPage from './pages/InventoryItemsPage/InventoryItemsPage';
+import MetricsPage from './pages/MetricsPage/MetricsPage';
+import ProductionSheetsPage from './pages/ProductionSheetsPage/ProductionSheetsPage';
 
 
 const AppRouter = () => {
@@ -19,6 +21,8 @@ const AppRouter = () => {
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/production-sheet" element={<ProductionSheetPage />} />
+          <Route path="/metrics" element={<MetricsPage />} />
+          <Route path="/production-sheets" element={<ProductionSheetsPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/users" element={<UsersPage />} />
