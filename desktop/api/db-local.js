@@ -72,11 +72,32 @@ const parseTaskDataValue = (valueType, value) => {
   return String(value);
 };
 
-const dbDir = path.join(__dirname, '../db');
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir);
-}
+const getDbDir = () => {
+  try {
+    const { app } = require('electron');
+    if (app?.isPackaged) {
+      // Strict requirement: keep the DB alongside the packaged executable.
+      // electron-builder portable apps run from a temp dir; use PORTABLE_EXECUTABLE_DIR when available.
+      const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
+      if (portableDir && typeof portableDir === 'string') {
+        return path.join(portableDir, 'db');
+      }
+      return path.join(path.dirname(process.execPath), 'db');
+    }
+  } catch {}
+  return path.join(__dirname, '../db');
+};
 
+const dbDir = getDbDir();
+try {
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+} catch (err) {
+  const message = err?.message || String(err);
+  console.error(`[local-db] Failed to create db directory: ${dbDir} (${message})`);
+  throw err;
+}
 const dbPath = path.join(dbDir, 'local.db');
 
 const db = new sqlite3.Database(dbPath, (err) => {

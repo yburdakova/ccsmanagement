@@ -1012,12 +1012,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ==================
   async function handleClockIn(userId) {
     //console.log('[clock-in] click');
-    const result = await window.electronAPI.startUnallocated(userId);
-    if (!result.success) {
-      alert('Clock-in failed: ' + result.error);
+    try {
+      const result = await window.electronAPI.startUnallocated(userId);
+      if (!result.success) {
+        alert('Clock-in failed: ' + result.error);
+        return null;
+      }
+      return result.uuid;
+    } catch (err) {
+      alert('Clock-in failed: ' + (err?.message || String(err)));
       return null;
     }
-    return result.uuid;
   }
 
   function startTimer() {

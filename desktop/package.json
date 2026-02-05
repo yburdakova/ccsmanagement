@@ -6,7 +6,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start:local":      "cross-env APP_ENV=local electron .",
     "start:remote":     "cross-env APP_ENV=remote electron .",
-    "start:remotetest": "cross-env APP_ENV=remotetest electron ."
+    "start:remotetest": "cross-env APP_ENV=remotetest electron .",
+    "dist:remotetest": "node scripts/write-app-env.js remotetest && npx electron-builder --win portable",
+    "dist:remote": "node scripts/write-app-env.js remote && npx electron-builder --win portable",
+    "dist:local": "node scripts/write-app-env.js local && npx electron-builder --win portable"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +17,6 @@
   "description": "",
   "dependencies": {
     "dotenv": "^17.2.3",
-    "electron": "^37.2.1",
     "mysql2": "^3.14.2",
     "sqlite3": "5.1.7"
   },
@@ -22,6 +24,44 @@
     "tar": "7.5.4"
   },
   "devDependencies": {
-    "cross-env": "^10.1.0"
+    "cross-env": "^10.1.0",
+    "electron": "^37.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.ccs.user.desktop",
+    "productName": "ccs-user-module",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*"
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "build/app-env.json",
+        "to": "app-env.json"
+      },
+      {
+        "from": ".env",
+        "to": ".env"
+      },
+      {
+        "from": ".env.local",
+        "to": ".env.local"
+      },
+      {
+        "from": ".env.remote",
+        "to": ".env.remote"
+      },
+      {
+        "from": ".env.remotetest",
+        "to": ".env.remotetest"
+      }
+    ],
+    "win": {
+      "target": "portable"
+    }
   }
 }

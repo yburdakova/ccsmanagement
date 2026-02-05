@@ -1,9 +1,32 @@
 const path = require('path');
 const dotenv = require('dotenv');
 const crypto = require('crypto');
+const { app, screen, BrowserWindow, ipcMain, dialog } = require('electron'); 
+const { Menu } = require('electron');
 
-// Load env from the desktop app folder regardless of where the process is launched
-const envBase = __dirname;
+const readPackagedEnvProfile = () => {
+  try {
+    const envFile = path.join(process.resourcesPath, 'app-env.json');
+    const fs = require('fs');
+    if (!fs.existsSync(envFile)) return null;
+    const raw = fs.readFileSync(envFile, 'utf8');
+    const parsed = JSON.parse(raw);
+    const value = String(parsed?.APP_ENV ?? parsed?.appEnv ?? '').trim();
+    return value || null;
+  } catch (err) {
+    console.warn('[env] Failed to read packaged app-env.json:', err.message);
+    return null;
+  }
+};
+
+// If packaged, load .env files from resources (they're shipped via electron-builder extraResources).
+const envBase = app.isPackaged ? process.resourcesPath : __dirname;
+
+if (!process.env.APP_ENV) {
+  const fromPackaged = readPackagedEnvProfile();
+  if (fromPackaged) process.env.APP_ENV = fromPackaged;
+}
+
 dotenv.config({ path: path.resolve(envBase, '.env') });
 
 const profile = process.env.APP_ENV || 'local';
@@ -14,9 +37,6 @@ dotenv.config({
 });
 
 console.log(`[env] APP_ENV=${profile} DB_HOST=${process.env.DB_HOST}`);
-
-const { app, screen, BrowserWindow, ipcMain, dialog } = require('electron'); 
-const { Menu } = require('electron');
 
 const { isOnline } = require('./utils/network-status');
 const { initializeLocalDb } = require('./api/db-local');
@@ -44,7 +64,9 @@ function createWindow(screenWidth) {
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   Menu.setApplicationMenu(null);
-  win.webContents.openDevTools();
+  if (!app.isPackaged) {
+    win.webContents.openDevTools();
+  }
   mainWindow = win;
 
   win.on('close', (event) => {
@@ -70,10 +92,20 @@ function createWindow(screenWidth) {
 app.whenReady().then(async () => {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   createWindow(width);
-  //await initializeLocalDb();
-  // initializeLocalDb().catch((err) => {
-  //   console.error('Failed to initialize local DB:', err.message);
-  // });
+  if (app.isPackaged) {
+    const { initializeLocalDb } = require('./api/db-local');
+    initializeLocalDb().catch((err) => {
+      console.error('[main] Failed to initialize local DB:', err.message);
+      try {
+        dialog.showMessageBoxSync({
+          type: 'error',
+          title: 'Local DB init failed',
+          message: 'Failed to initialize local database.',
+          detail: String(err?.message || err),
+        });
+      } catch {}
+    });
+  }
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
