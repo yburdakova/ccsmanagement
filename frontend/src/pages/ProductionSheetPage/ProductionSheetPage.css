@@ -110,6 +110,26 @@
   color: #6b737a;
 }
 
+.production-sheet__bulk-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 6px 2px;
+}
+
+.production-sheet__bulk-btn {
+  height: 34px;
+}
+
+.production-sheet__bulk-btn--danger {
+  background: #b42318;
+}
+
+.production-sheet__bulk-btn--danger:hover {
+  background: #8a1b12;
+}
+
 .production-sheet__datetime {
   display: flex;
   flex-direction: column;
@@ -149,6 +169,21 @@
   background: #f5f6f7;
   font-weight: 700;
   font-size: 11px;
+}
+
+.time-table--selectable .time-table__row {
+  grid-template-columns: 1.2fr 2fr 0.8fr 0.8fr 0.6fr 2fr 0.5fr 0.5fr;
+}
+
+.time-table__select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.time-table__select input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
 }
 
 .time-table__empty {

@@ -23,12 +23,27 @@ type Props = {
   userId: number;
   title?: string;
   headerControls?: ReactNode;
+  enableRowSelection?: boolean;
+  onDeleteSelectedRows?: (ids: number[]) => Promise<void>;
+  onUpdateRow?: (
+    id: number,
+    patch: {
+      startDate: string;
+      startTime: string;
+      endDate: string;
+      endTime: string | null;
+      note: string | null;
+    }
+  ) => Promise<void>;
 };
 
 const ProductionSheetView = ({
   userId,
   title = 'Production Sheet',
   headerControls,
+  enableRowSelection = false,
+  onDeleteSelectedRows,
+  onUpdateRow,
 }: Props) => {
   const formatDateInputValue = (value: Date) => {
     const year = value.getFullYear();
@@ -60,6 +75,7 @@ const ProductionSheetView = ({
   const [dateFrom, setDateFrom] = useState(initialWeek.start);
   const [dateTo, setDateTo] = useState(initialWeek.end);
   const [rows, setRows] = useState<TimeSlice[]>([]);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -70,6 +86,12 @@ const ProductionSheetView = ({
   const [newTaskDate, setNewTaskDate] = useState(today);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingNoteValue, setEditingNoteValue] = useState('');
+  const [isEditEntryOpen, setIsEditEntryOpen] = useState(false);
+  const [editEntryStartDate, setEditEntryStartDate] = useState('');
+  const [editEntryStartTime, setEditEntryStartTime] = useState('');
+  const [editEntryEndDate, setEditEntryEndDate] = useState('');
+  const [editEntryEndTime, setEditEntryEndTime] = useState('');
+  const [editEntryNote, setEditEntryNote] = useState('');
 
   const activityOptions = [
     { id: 9, label: 'Set-Up/Shout-Down' },
@@ -100,6 +122,149 @@ const ProductionSheetView = ({
   useEffect(() => {
     loadRows();
   }, [loadRows]);
+
+  useEffect(() => {
+    if (!enableRowSelection) return;
+    setSelectedRowIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(rows.map((r) => r.id));
+      const next = new Set<number>();
+      for (const id of prev) {
+        if (visible.has(id)) next.add(id);
+      }
+      return next;
+    });
+  }, [rows, enableRowSelection]);
+
+  const allVisibleSelected =
+    enableRowSelection && rows.length > 0 && selectedRowIds.size === rows.length;
+
+  const anySelected = enableRowSelection && selectedRowIds.size > 0;
+
+  const toggleSelectAllVisible = () => {
+    if (!enableRowSelection) return;
+    setSelectedRowIds((prev) => {
+      if (rows.length === 0) return prev;
+      if (prev.size === rows.length) return new Set();
+      return new Set(rows.map((r) => r.id));
+    });
+  };
+
+  const toggleSelectRow = (rowId: number) => {
+    if (!enableRowSelection) return;
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (!enableRowSelection || !onDeleteSelectedRows) return;
+    const ids = Array.from(selectedRowIds);
+    if (ids.length === 0) return;
+    const confirmed = window.confirm(`Delete ${ids.length} selected row(s)?`);
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+      await onDeleteSelectedRows(ids);
+      setSelectedRowIds(new Set());
+      await loadRows();
+    } catch (e) {
+      console.error('Error deleting selected rows:', e);
+      setError('Unable to delete selected rows.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const selectedRowForEdit =
+    enableRowSelection && selectedRowIds.size === 1
+      ? rows.find((r) => r.id === Array.from(selectedRowIds)[0]) ?? null
+      : null;
+
+  const toDateInputValue = (value: string | null | undefined) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    const isoDateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoDateMatch) {
+      const [, yyyy, mm, dd] = isoDateMatch;
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return '';
+    const yyyy = String(parsed.getFullYear());
+    const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+    const dd = String(parsed.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const formatTimeInputValue = (value: string | null) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    const hours = String(parsed.getHours()).padStart(2, '0');
+    const minutes = String(parsed.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
+  const openEntryEditor = () => {
+    if (!selectedRowForEdit) return;
+    const dateValue = toDateInputValue(selectedRowForEdit.date);
+    setEditEntryStartDate(dateValue);
+    setEditEntryStartTime(formatTimeInputValue(selectedRowForEdit.start_time));
+    setEditEntryEndDate(dateValue);
+    setEditEntryEndTime(formatTimeInputValue(selectedRowForEdit.end_time));
+    setEditEntryNote(selectedRowForEdit.note ?? '');
+    setIsEditEntryOpen(true);
+  };
+
+  const closeEntryEditor = () => {
+    setIsEditEntryOpen(false);
+    setEditEntryStartDate('');
+    setEditEntryStartTime('');
+    setEditEntryEndDate('');
+    setEditEntryEndTime('');
+    setEditEntryNote('');
+  };
+
+  const handleSaveEntryEdit = async () => {
+    if (!selectedRowForEdit || !onUpdateRow) return;
+    if (!editEntryStartDate || !editEntryEndDate) {
+      setError('Start date and end date are required.');
+      return;
+    }
+    if (!editEntryStartTime) {
+      setError('Start time is required.');
+      return;
+    }
+    if (editEntryEndTime && editEntryEndTime <= editEntryStartTime) {
+      setError('End time must be after start time.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      await onUpdateRow(selectedRowForEdit.id, {
+        startDate: editEntryStartDate,
+        startTime: editEntryStartTime,
+        endDate: editEntryEndDate,
+        endTime: editEntryEndTime.trim() ? editEntryEndTime : null,
+        note: editEntryNote.trim() || null,
+      });
+      closeEntryEditor();
+      await loadRows();
+    } catch (e) {
+      console.error('Error updating entry:', e);
+      setError('Unable to update entry.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const applyPresetToday = () => {
     setDateFrom(today);
@@ -402,7 +567,27 @@ const ProductionSheetView = ({
       )}
 
       {!loading && !error && (
-        <div className="time-table">
+        <div className={`time-table ${enableRowSelection ? 'time-table--selectable' : ''}`}>
+          {enableRowSelection && anySelected && (
+            <div className="production-sheet__bulk-actions">
+              <button
+                type="button"
+                className="note-btn production-sheet__bulk-btn"
+                onClick={openEntryEditor}
+                disabled={loading || selectedRowIds.size !== 1 || !onUpdateRow}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className="note-btn production-sheet__bulk-btn production-sheet__bulk-btn--danger"
+                onClick={handleBulkDelete}
+                disabled={loading}
+              >
+                Delete
+              </button>
+            </div>
+          )}
           <div className="time-table__row time-table__row--header">
             <div>Task</div>
             <div>Project</div>
@@ -411,6 +596,16 @@ const ProductionSheetView = ({
             <div>Duration</div>
             <div>Note</div>
             <div></div>
+            {enableRowSelection && (
+              <div className="time-table__select">
+                <input
+                  type="checkbox"
+                  aria-label="Select all"
+                  checked={allVisibleSelected}
+                  onChange={toggleSelectAllVisible}
+                />
+              </div>
+            )}
           </div>
 
           {rows.length === 0 && (
@@ -435,8 +630,79 @@ const ProductionSheetView = ({
                   <span className="material-symbols-outlined">edit</span>
                 </button>
               </div>
+              {enableRowSelection && (
+                <div className="time-table__select">
+                  <input
+                    type="checkbox"
+                    aria-label="Select row"
+                    checked={selectedRowIds.has(row.id)}
+                    onChange={() => toggleSelectRow(row.id)}
+                  />
+                </div>
+              )}
             </div>
           ))}
+        </div>
+      )}
+
+      {isEditEntryOpen && selectedRowForEdit && (
+        <div className="production-sheet__modal">
+          <div className="production-sheet__modal-card">
+            <h3>Edit time entry</h3>
+            <label>
+              Start date
+              <input
+                type="date"
+                value={editEntryStartDate}
+                onChange={(e) => setEditEntryStartDate(e.target.value)}
+              />
+            </label>
+            <label>
+              Start time
+              <input
+                type="time"
+                value={editEntryStartTime}
+                onChange={(e) => setEditEntryStartTime(e.target.value)}
+              />
+            </label>
+            <label>
+              End date
+              <input
+                type="date"
+                value={editEntryEndDate}
+                onChange={(e) => setEditEntryEndDate(e.target.value)}
+              />
+            </label>
+            <label>
+              End time
+              <input
+                type="time"
+                value={editEntryEndTime}
+                onChange={(e) => setEditEntryEndTime(e.target.value)}
+              />
+            </label>
+            <label>
+              Note
+              <textarea
+                value={editEntryNote}
+                onChange={(e) => setEditEntryNote(e.target.value)}
+                rows={3}
+              />
+            </label>
+            <div className="production-sheet__modal-actions">
+              <button type="button" className="note-btn" onClick={handleSaveEntryEdit} disabled={loading}>
+                Save
+              </button>
+              <button
+                type="button"
+                className="note-btn production-sheet__modal-cancel"
+                onClick={closeEntryEditor}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

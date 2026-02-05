@@ -4,6 +4,250 @@ import pool from '../db.config.js';
 
 const router = express.Router();
 
+// POST /api/time-tracking/bulk-delete
+// Body: { ids: number[] }
+router.post('/bulk-delete', async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const parsedIds = ids
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id) && id > 0);
+
+  if (parsedIds.length === 0) {
+    return res.status(400).json({ error: 'ids is required' });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [rows] = await conn.query(
+      `
+      SELECT uuid
+      FROM users_time_tracking
+      WHERE id IN (?)
+      FOR UPDATE
+      `,
+      [parsedIds]
+    );
+
+    const uuids = rows
+      .map((row) => String(row.uuid || '').trim())
+      .filter(Boolean);
+
+    if (uuids.length > 0) {
+      await conn.query(
+        `DELETE FROM users_time_tracking_data WHERE tracking_uuid IN (?)`,
+        [uuids]
+      );
+    }
+
+    const [result] = await conn.query(
+      `DELETE FROM users_time_tracking WHERE id IN (?)`,
+      [parsedIds]
+    );
+
+    await conn.commit();
+    res.json({ success: true, deleted: result.affectedRows ?? 0 });
+  } catch (error) {
+    try {
+      await conn.rollback();
+    } catch {}
+    console.error('Error bulk deleting time tracking entries:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    conn.release();
+  }
+});
+
+// DELETE /api/time-tracking/:id
+router.delete('/:id', async (req, res) => {
+  const entryId = Number(req.params.id);
+  if (!entryId) {
+    return res.status(400).json({ error: 'Invalid entry id' });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query(
+      `SELECT uuid FROM users_time_tracking WHERE id = ? FOR UPDATE`,
+      [entryId]
+    );
+
+    const uuid = rows.length ? String(rows[0].uuid || '').trim() : '';
+    if (uuid) {
+      await conn.query(
+        `DELETE FROM users_time_tracking_data WHERE tracking_uuid = ?`,
+        [uuid]
+      );
+    }
+
+    const [result] = await conn.query(
+      `DELETE FROM users_time_tracking WHERE id = ?`,
+      [entryId]
+    );
+
+    await conn.commit();
+    res.json({ success: true, deleted: result.affectedRows ?? 0 });
+  } catch (error) {
+    try {
+      await conn.rollback();
+    } catch {}
+    console.error('Error deleting time tracking entry:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    conn.release();
+  }
+});
+
+// PUT /api/time-tracking/:id
+// Body supports:
+// { startDate: "YYYY-MM-DD", startTime: "HH:MM", endDate: "YYYY-MM-DD", endTime: "HH:MM" | null, note?: string | null }
+router.put('/:id', async (req, res) => {
+  const entryId = Number(req.params.id);
+  if (!entryId) {
+    return res.status(400).json({ error: 'Invalid entry id' });
+  }
+
+  const normalizeDate = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    return raw;
+  };
+
+  const normalizeTime = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  };
+
+  const startDate = normalizeDate(req.body?.startDate ?? req.body?.start_date);
+  const endDate = normalizeDate(req.body?.endDate ?? req.body?.end_date);
+  const startTime = normalizeTime(req.body?.startTime ?? req.body?.start_time);
+  const endTimeRaw = req.body?.endTime ?? req.body?.end_time;
+  const endTime = endTimeRaw == null || String(endTimeRaw).trim() === '' ? null : normalizeTime(endTimeRaw);
+  const note =
+    req.body?.note === undefined
+      ? undefined
+      : req.body?.note == null
+        ? null
+        : String(req.body.note).trim() || null;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({ error: 'startDate and endDate are required (YYYY-MM-DD)' });
+  }
+  if (!startTime) {
+    return res.status(400).json({ error: 'startTime is required (HH:MM)' });
+  }
+  if (endTimeRaw != null && endTimeRaw !== '' && !endTime) {
+    return res.status(400).json({ error: 'endTime must be HH:MM or empty' });
+  }
+  if (endTime && endTime <= startTime) {
+    return res.status(400).json({ error: 'End time must be after start time' });
+  }
+  if (startDate !== endDate) {
+    return res.status(400).json({ error: 'Start date and end date must match' });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [existing] = await conn.query(
+      `
+      SELECT id, user_id, date
+      FROM users_time_tracking
+      WHERE id = ?
+      FOR UPDATE
+      `,
+      [entryId]
+    );
+
+    if (existing.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+
+    const userId = Number(existing[0].user_id);
+    const formatDateTime = (day, time) => `${day} ${time}:00`;
+
+    const startStr = formatDateTime(startDate, startTime);
+    const endStr = endTime ? formatDateTime(endDate, endTime) : null;
+
+    if (endStr) {
+      const [overlaps] = await conn.query(
+        `
+        SELECT utt.id
+        FROM users_time_tracking utt
+        WHERE utt.user_id = ?
+          AND utt.date = ?
+          AND utt.id <> ?
+          AND utt.start_time < ?
+          AND COALESCE(utt.end_time, utt.start_time) > ?
+        LIMIT 1
+        `,
+        [userId, startDate, entryId, endStr, startStr]
+      );
+
+      if (overlaps.length > 0) {
+        await conn.rollback();
+        return res.status(409).json({ error: 'Time range overlaps an existing entry.' });
+      }
+    }
+
+    const durationMinutes = endTime
+      ? (Number(endTime.slice(0, 2)) * 60 + Number(endTime.slice(3, 5))) -
+        (Number(startTime.slice(0, 2)) * 60 + Number(startTime.slice(3, 5)))
+      : null;
+
+    const updateFields = [];
+    const updateValues = [];
+
+    updateFields.push('date = ?');
+    updateValues.push(startDate);
+
+    updateFields.push('start_time = ?');
+    updateValues.push(startStr);
+
+    updateFields.push('end_time = ?');
+    updateValues.push(endStr);
+
+    updateFields.push('duration = ?');
+    updateValues.push(durationMinutes);
+
+    if (note !== undefined) {
+      updateFields.push('note = ?');
+      updateValues.push(note);
+    }
+
+    updateValues.push(entryId);
+
+    await conn.query(
+      `UPDATE users_time_tracking SET ${updateFields.join(', ')} WHERE id = ?`,
+      updateValues
+    );
+
+    await conn.commit();
+    res.json({ success: true });
+  } catch (error) {
+    try {
+      await conn.rollback();
+    } catch {}
+    console.error('Error updating time tracking entry:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    conn.release();
+  }
+});
+
 // GET /api/time-tracking/metrics?userId=1&date=YYYY-MM-DD
 // Returns rows for specific production tasks with pages-per-minute derived from
 // users_time_tracking_data (data_def_id=1 => pages).

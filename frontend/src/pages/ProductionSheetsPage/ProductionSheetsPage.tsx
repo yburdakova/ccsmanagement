@@ -89,6 +89,19 @@ const ProductionSheetsPage = () => {
       userId={resolvedUserId}
       title="Production Sheets"
       headerControls={headerControls}
+      enableRowSelection
+      onDeleteSelectedRows={async (ids) => {
+        await apiRequest('/time-tracking/bulk-delete', {
+          method: 'POST',
+          body: { ids },
+        });
+      }}
+      onUpdateRow={async (id, patch) => {
+        await apiRequest(`/time-tracking/${id}`, {
+          method: 'PUT',
+          body: patch,
+        });
+      }}
     />
   );
 };
