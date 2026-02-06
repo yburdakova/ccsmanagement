@@ -263,7 +263,8 @@ router.get('/metrics', async (req, res) => {
     });
   }
 
-  const allowedTaskIds = [1, 2, 3, 4, 5, 6, 30];
+  // Tasks that should show pages/min speed (pages stored in users_time_tracking_data.data_def_id=1 -> value_int).
+  const allowedTaskIds = [1, 3, 6, 34, 36, 38];
 
   try {
     const startDate = date ?? dateFrom;
@@ -277,16 +278,34 @@ router.get('/metrics', async (req, res) => {
         utt.date,
         utt.start_time,
         utt.end_time,
-        COALESCE(utt.duration, TIMESTAMPDIFF(MINUTE, utt.start_time, utt.end_time)) AS duration,
+        COALESCE(
+          NULLIF(utt.duration, 0),
+          CASE
+            WHEN utt.end_time IS NULL THEN NULL
+            ELSE GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, utt.start_time, utt.end_time) / 60))
+          END
+        ) AS duration,
         t.description AS task_name,
         p.name AS project_name,
-        COALESCE(utd.value_int, CAST(utd.value_decimal AS SIGNED)) AS pages,
+        utd.value_int AS pages,
         CASE
-          WHEN COALESCE(utt.duration, TIMESTAMPDIFF(MINUTE, utt.start_time, utt.end_time)) > 0
-           AND COALESCE(utd.value_int, utd.value_decimal) IS NOT NULL
+          WHEN COALESCE(
+            NULLIF(utt.duration, 0),
+            CASE
+              WHEN utt.end_time IS NULL THEN NULL
+              ELSE GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, utt.start_time, utt.end_time) / 60))
+            END
+          ) > 0
+           AND utd.value_int IS NOT NULL
           THEN ROUND(
-            COALESCE(utd.value_int, utd.value_decimal) /
-            COALESCE(utt.duration, TIMESTAMPDIFF(MINUTE, utt.start_time, utt.end_time)),
+            utd.value_int /
+            COALESCE(
+              NULLIF(utt.duration, 0),
+              CASE
+                WHEN utt.end_time IS NULL THEN NULL
+                ELSE GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, utt.start_time, utt.end_time) / 60))
+              END
+            ),
             2
           )
           ELSE NULL

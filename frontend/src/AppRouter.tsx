@@ -10,6 +10,7 @@ import ProductionSheetPage from './pages/ProductionSheetPage/ProductionSheetPage
 import InventoryItemsPage from './pages/InventoryItemsPage/InventoryItemsPage';
 import MetricsPage from './pages/MetricsPage/MetricsPage';
 import ProductionSheetsPage from './pages/ProductionSheetsPage/ProductionSheetsPage';
+import AdminMetricsPage from './pages/AdminMetricsPage/AdminMetricsPage';
 
 
 const AppRouter = () => {
@@ -22,6 +23,7 @@ const AppRouter = () => {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/production-sheet" element={<ProductionSheetPage />} />
           <Route path="/metrics" element={<MetricsPage />} />
+          <Route path="/admin-metrics" element={<AdminMetricsPage />} />
           <Route path="/production-sheets" element={<ProductionSheetsPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/customers" element={<CustomersPage />} />

@@ -24,6 +24,16 @@
   flex-wrap: wrap;
 }
 
+.metrics-page__control {
+  border: 1px solid #cfd6db;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: inherit;
+  background: #ffffff;
+  height: 38px;
+  box-sizing: border-box;
+}
+
 .metrics-page__btn {
   padding: 6px 10px;
   border: none;
@@ -31,6 +41,7 @@
   background: #0078d4;
   color: #ffffff;
   cursor: pointer;
+  height: 38px;
 }
 
 .metrics-page__btn:hover {

@@ -43,6 +43,8 @@ const MainLayout = () => {
         return 'Metrics';
       case '/production-sheets':
         return 'Production Sheets';
+      case '/admin-metrics':
+        return 'Metrics';
       default:
         return '';
     }
@@ -129,6 +131,9 @@ const MainLayout = () => {
                     </NavLink>
                     <NavLink to="/production-sheets" className="navItem">
                       <div className="navItem"><span className="gg-icon">history</span>Production Sheets</div>
+                    </NavLink>
+                    <NavLink to="/admin-metrics" className="navItem">
+                      <div className="navItem"><span className="gg-icon">analytics</span>Metrics</div>
                     </NavLink>
                   </>
                 )}
