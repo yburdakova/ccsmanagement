@@ -7,12 +7,14 @@ type TimeSlice = {
   activity_id: number | null;
   project_id: number | null;
   task_id: number | null;
+  item_id: number | null;
   date?: string | null;
   activity_name?: string | null;
   activity_description?: string | null;
   task_name: string | null;
   task_type: string | null;
   project_name: string | null;
+  item_name: string | null;
   note: string | null;
   start_time: string | null;
   end_time: string | null;
@@ -591,6 +593,7 @@ const ProductionSheetView = ({
           <div className="time-table__row time-table__row--header">
             <div>Task</div>
             <div>Project</div>
+            <div>Item</div>
             <div>Start</div>
             <div>End</div>
             <div>Duration</div>
@@ -616,6 +619,7 @@ const ProductionSheetView = ({
             <div key={row.id} className="time-table__row">
               <div>{getTaskLabel(row)}</div>
               <div>{row.project_name || '-'}</div>
+              <div>{row.item_name || '-'}</div>
               <div>{renderDateTimeCell(row.start_time, formatRowDate(row))}</div>
               <div>{renderDateTimeCell(row.end_time, formatRowDate(row))}</div>
               <div>{formatDuration(row.duration)}</div>

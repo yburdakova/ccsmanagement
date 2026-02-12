@@ -149,7 +149,7 @@
 
 .time-table__row {
   display: grid;
-  grid-template-columns: 1.2fr 2fr 0.8fr 0.8fr 0.6fr 2fr 0.5fr;
+  grid-template-columns: 1.2fr 1.8fr 1.3fr 0.8fr 0.8fr 0.6fr 2fr 0.5fr;
   gap: 12px;
   align-items: start;
   padding: 10px 12px;
@@ -159,9 +159,9 @@
   font-size: 11px;
 }
 
-.time-table__row > :nth-child(3),
 .time-table__row > :nth-child(4),
-.time-table__row > :nth-child(5) {
+.time-table__row > :nth-child(5),
+.time-table__row > :nth-child(6) {
   text-align: center;
 }
 
@@ -172,7 +172,7 @@
 }
 
 .time-table--selectable .time-table__row {
-  grid-template-columns: 1.2fr 2fr 0.8fr 0.8fr 0.6fr 2fr 0.5fr 0.5fr;
+  grid-template-columns: 1.2fr 1.8fr 1.3fr 0.8fr 0.8fr 0.6fr 2fr 0.5fr 0.5fr;
 }
 
 .time-table__select {

@@ -135,9 +135,10 @@ const MetricsView = ({ userId, title = 'Metrics', headerControls }: Props) => {
     </div>
   );
 
-  const formatPagesPerMinute = (value: number | null) => {
-    if (value == null || !Number.isFinite(value)) return '-';
-    return value.toFixed(2);
+  const formatPagesPerMinute = (value: number | string | null) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '-';
+    return numeric.toFixed(2);
   };
 
   const formatDuration = (minutesValue: number | null) => {
@@ -232,4 +233,3 @@ const MetricsView = ({ userId, title = 'Metrics', headerControls }: Props) => {
 };
 
 export default MetricsView;
-

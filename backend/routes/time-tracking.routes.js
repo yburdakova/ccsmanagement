@@ -346,6 +346,43 @@ router.get('/', async (req, res) => {
   }
 
   try {
+    const tableExists = async (tableName) => {
+      const [rows] = await pool.query(
+        `
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+          AND table_name = ?
+        LIMIT 1
+        `,
+        [tableName]
+      );
+      return rows.length > 0;
+    };
+
+    const hasCfsItems = await tableExists('cfs_items');
+    const hasImItems = await tableExists('im_items');
+    const itemNameExpr = hasCfsItems && hasImItems
+      ? 'COALESCE(i.label, cfs.label, im.label)'
+      : hasCfsItems
+        ? 'COALESCE(i.label, cfs.label)'
+        : hasImItems
+          ? 'COALESCE(i.label, im.label)'
+          : 'i.label';
+
+    const cfsJoin = hasCfsItems
+      ? `
+      LEFT JOIN cfs_items cfs
+        ON cfs.id = utt.item_id
+       AND cfs.project_id = utt.project_id`
+      : '';
+    const imJoin = hasImItems
+      ? `
+      LEFT JOIN im_items im
+        ON im.id = utt.item_id
+       AND im.project_id = utt.project_id`
+      : '';
+
     const startDate = date ?? dateFrom;
     const endDate = date ?? dateTo;
     const [rows] = await pool.query(
@@ -355,6 +392,7 @@ router.get('/', async (req, res) => {
         utt.activity_id,
         utt.project_id,
         utt.task_id,
+        utt.item_id,
         utt.date,
         utt.start_time,
         utt.end_time,
@@ -365,6 +403,7 @@ router.get('/', async (req, res) => {
         t.description AS task_name,
         c.name AS task_type,
         p.name AS project_name,
+        ${itemNameExpr} AS item_name,
         COALESCE(utd.value_int, CAST(utd.value_decimal AS SIGNED)) AS pages,
         CASE
           WHEN utt.activity_id = 2
@@ -382,6 +421,9 @@ router.get('/', async (req, res) => {
       LEFT JOIN tasks t ON t.id = utt.task_id
       LEFT JOIN ref_task_category c ON c.id = t.category_id
       LEFT JOIN projects p ON p.id = utt.project_id
+      LEFT JOIN items i ON i.id = utt.item_id
+      ${cfsJoin}
+      ${imJoin}
       LEFT JOIN users_time_tracking_data utd
         ON utd.tracking_uuid = utt.uuid
        AND utd.data_def_id = 1
