@@ -24,11 +24,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
   const taskOverlayName = document.getElementById('task-overlay-name');
+  const taskOverlayLabel = document.getElementById('task-overlay-label');
   const taskOverlayItem = document.getElementById('task-overlay-item');
+  const taskOverlayStart = document.getElementById('task-overlay-start');
+  const taskOverlayProjectSelect = document.getElementById('task-overlay-project-select');
+  const taskOverlayTaskSelect = document.getElementById('task-overlay-task-select');
+  const taskOverlayItemSelect = document.getElementById('task-overlay-item-select');
+  const taskOverlayContinueButton = document.getElementById('task-overlay-continue-button');
+  const taskOverlayCancelButton = document.getElementById('task-overlay-cancel-button');
   const taskOverlayTimer = document.getElementById('task-overlay-timer');
   const taskOverlayNote = document.getElementById('task-overlay-note');
+  const taskOverlayNoteWrap = taskOverlayNote?.closest('.task-overlay__note');
   const taskOverlayData = document.getElementById('task-overlay-data');
   const taskOverlayDataList = document.getElementById('task-overlay-data-list');
+  const taskOverlayActiveActions = document.getElementById('task-overlay-active-actions');
   const taskFinishModal = document.getElementById('task-finish-modal');
   const taskFinishName = document.getElementById('task-finish-name');
   const taskFinishData = document.getElementById('task-finish-data');
@@ -114,6 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (productionSection) productionSection.style.display = 'none';
   if (notesSection) notesSection.style.display = 'none';
   updateBookmarkButtons(!!getSavedProject());
+  updateStartButton();
 
   // ==================
   // Login
@@ -216,7 +226,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       
 
       clockinButton.textContent = 'CLOCK-OUT';
-      alert(`Clock-in successful! (uuid=${currentSessionUuid})`);
+      //alert(`Clock-in successful! (uuid=${currentSessionUuid})`);
+      updateStartButton();
       resumeOrStartWorkTimer();
       if (activitySection) activitySection.style.display = '';
       if (productionSection) productionSection.style.display = '';
@@ -233,7 +244,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         projectSelect.appendChild(option);
       });
 
-      projectSection.style.display = 'block';
+      projectSection.style.display = 'none';
 
       const saved = getSavedProject();
       if (saved) {
@@ -271,7 +282,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       clockinButton.textContent = 'CLOCK-IN';
-      alert(`Clock-out successful! (uuid=${activeUuid})`);
+      //alert(`Clock-out successful! (uuid=${activeUuid})`);
       persistWorkTimerState();
       currentSessionUuid = null;
       currentTaskUuid = null;
@@ -401,11 +412,100 @@ document.addEventListener('DOMContentLoaded', async () => {
   meetingButton?.addEventListener('click', handleMeetingClick);
   adminButton?.addEventListener('click', handleAdministrationClick);
 
-  startTaskButton?.addEventListener('click', async () => {
+  const cloneSelectOptions = (source, target) => {
+    if (!source || !target) return;
+    target.innerHTML = '';
+    Array.from(source.options || []).forEach((option) => {
+      const clone = document.createElement('option');
+      clone.value = option.value;
+      clone.textContent = option.textContent;
+      target.appendChild(clone);
+    });
+    target.disabled = !!source.disabled;
+    target.value = source.value;
+  };
+
+  const updateTaskOverlayContinueButton = () => {
+    if (!taskOverlayContinueButton) return;
+    const hasProject = !!projectSelect.value;
+    const hasTask = !!taskSelect.value && taskSelect.selectedIndex > 0;
+    taskOverlayContinueButton.textContent = pendingUnfinishedTask ? 'CONTINUE' : 'START';
+    taskOverlayContinueButton.disabled = !(hasProject && hasTask);
+  };
+
+  const syncTaskOverlaySelectors = () => {
+    cloneSelectOptions(projectSelect, taskOverlayProjectSelect);
+    cloneSelectOptions(taskSelect, taskOverlayTaskSelect);
+    cloneSelectOptions(itemSelect, taskOverlayItemSelect);
+    if (taskOverlayItemSelect) {
+      taskOverlayItemSelect.style.display =
+        itemSection?.style.display === 'none' ? 'none' : 'block';
+    }
+    updateTaskOverlayContinueButton();
+  };
+
+  const setTaskOverlayMode = (mode) => {
+    const isPrestart = mode === 'prestart';
+    if (taskOverlayLabel) {
+      taskOverlayLabel.textContent = isPrestart ? 'Prepare task' : 'In progress';
+    }
+    if (taskOverlayStart) taskOverlayStart.style.display = isPrestart ? 'flex' : 'none';
+    if (taskOverlayTimer) taskOverlayTimer.style.display = isPrestart ? 'none' : 'block';
+    if (taskOverlayNoteWrap) taskOverlayNoteWrap.style.display = isPrestart ? 'none' : 'block';
+    if (taskOverlayData) {
+      taskOverlayData.style.display = isPrestart
+        ? 'none'
+        : (currentTaskDataRows && currentTaskDataRows.length ? 'block' : 'none');
+    }
+    if (taskOverlayActiveActions) taskOverlayActiveActions.style.display = isPrestart ? 'none' : 'flex';
+  };
+
+  const openTaskStartOverlay = () => {
+    if (!taskOverlay) return;
+    const selectedTask = taskSelect.options[taskSelect.selectedIndex]?.textContent?.trim() || 'Select task';
+    taskOverlayName.textContent = selectedTask;
+    taskOverlayItem.textContent = '';
+    taskOverlayItem.style.display = 'none';
+    setTaskOverlayMode('prestart');
+    syncTaskOverlaySelectors();
+    taskOverlay.style.display = 'flex';
+    if (taskOverlay) taskOverlay.focus();
+  };
+
+  const showInProgressOverlay = (selectedTask, selectedItemId) => {
+    taskOverlayName.textContent = selectedTask;
+    if (taskOverlayItem) {
+      if (selectedItemId && projectItems.length) {
+        const item = projectItems.find((entry) => Number(entry.id) === Number(selectedItemId));
+        const label = item?.name ? String(item.name).trim() : '';
+        taskOverlayItem.textContent = label ? `Item: ${label}` : '';
+        taskOverlayItem.style.display = label ? 'block' : 'none';
+      } else {
+        taskOverlayItem.textContent = '';
+        taskOverlayItem.style.display = 'none';
+      }
+    }
+    setTaskOverlayMode('in-progress');
+    clearNoteInput(taskOverlayNote);
+    taskOverlay.style.display = 'flex';
+    if (startTaskButton) startTaskButton.disabled = true;
+    startTaskTimer();
+    if (taskOverlay) taskOverlay.focus();
+    if (taskOverlayNote) {
+      taskOverlayNote.disabled = false;
+      taskOverlayNote.readOnly = false;
+      setTimeout(() => taskOverlayNote.focus(), 50);
+    }
+  };
+
+  const startSelectedTaskFromCurrentSelection = async () => {
     if (!taskOverlay || !taskOverlayName || !taskOverlayTimer) return;
     if (!currentUser) return;
     const selectedTask = taskSelect.options[taskSelect.selectedIndex]?.textContent?.trim() || '';
-    if (!selectedTask || taskSelect.value === '' || !projectSelect.value) return;
+    if (!selectedTask || taskSelect.value === '' || !projectSelect.value) {
+      alert('Please select project and task.');
+      return;
+    }
 
     if (currentSessionUuid) {
       const unallocatedResult = await window.electronAPI.completeActiveActivity({
@@ -467,6 +567,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       await refreshAssignmentsListIfOpen();
     }
+
     const result = await window.electronAPI.startTaskActivity(
       currentUser.id,
       Number(projectSelect.value),
@@ -527,28 +628,46 @@ document.addEventListener('DOMContentLoaded', async () => {
         await refreshItemOptions(currentTaskItemId);
       }
     }
-    taskOverlayName.textContent = selectedTask;
-    if (taskOverlayItem) {
-      if (currentTaskItemId && projectItems.length) {
-        const item = projectItems.find((entry) => Number(entry.id) === Number(currentTaskItemId));
-        const label = item?.name ? String(item.name).trim() : '';
-        taskOverlayItem.textContent = label ? `Item: ${label}` : '';
-        taskOverlayItem.style.display = label ? 'block' : 'none';
-      } else {
-        taskOverlayItem.textContent = '';
-        taskOverlayItem.style.display = 'none';
-      }
+    showInProgressOverlay(selectedTask, selectedItemId);
+  };
+
+  startTaskButton?.addEventListener('click', () => {
+    if (!currentUser || currentTaskUuid) return;
+    openTaskStartOverlay();
+  });
+
+  taskOverlayCancelButton?.addEventListener('click', () => {
+    if (!currentTaskUuid && taskOverlay) {
+      taskOverlay.style.display = 'none';
     }
-    clearNoteInput(taskOverlayNote);
-    taskOverlay.style.display = 'flex';
-    if (startTaskButton) startTaskButton.disabled = true;
-    startTaskTimer();
-    if (taskOverlay) taskOverlay.focus();
-    if (taskOverlayNote) {
-      taskOverlayNote.disabled = false;
-      taskOverlayNote.readOnly = false;
-      setTimeout(() => taskOverlayNote.focus(), 50);
-    }
+  });
+
+  taskOverlayContinueButton?.addEventListener('click', async () => {
+    await startSelectedTaskFromCurrentSelection();
+  });
+
+  taskOverlayProjectSelect?.addEventListener('change', async () => {
+    if (!projectSelect) return;
+    projectSelect.value = taskOverlayProjectSelect.value;
+    await applyProjectSelection(projectSelect.value);
+    await updateItemSelection();
+    await updateTaskDataSelection();
+    syncTaskOverlaySelectors();
+  });
+
+  taskOverlayTaskSelect?.addEventListener('change', async () => {
+    if (!taskSelect) return;
+    taskSelect.value = taskOverlayTaskSelect.value;
+    userSelectedTask = taskSelect.selectedIndex > 0;
+    await updateItemSelection();
+    await updateTaskDataSelection();
+    syncTaskOverlaySelectors();
+  });
+
+  taskOverlayItemSelect?.addEventListener('change', () => {
+    if (!itemSelect) return;
+    itemSelect.value = taskOverlayItemSelect.value;
+    syncTaskOverlaySelectors();
   });
 
   const collectTaskDataValues = (container) => {
@@ -876,6 +995,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     userSelectedTask = taskSelect.selectedIndex > 0;
     updateStartButton();
     await updateItemSelection();
+    await updateTaskDataSelection();
     if (pendingUnfinishedTask && pendingTaskSelection) {
       const sameSelection =
         String(pendingTaskSelection.projectId) === String(projectSelect.value) &&
@@ -896,6 +1016,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         pendingAssignment = null;
         pendingAssignmentSelection = null;
       }
+    }
+    if (taskOverlayStart && taskOverlayStart.style.display !== 'none') {
+      syncTaskOverlaySelectors();
     }
   });
 
@@ -921,6 +1044,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         pendingAssignmentSelection = null;
       }
     }
+    if (taskOverlayStart && taskOverlayStart.style.display !== 'none') {
+      syncTaskOverlaySelectors();
+    }
   });
 
   // ==================
@@ -937,7 +1063,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     roleText.textContent = `Your role: ${selected.role_label}`;
     currentProject = selected;
 
-    taskSection.style.display = 'block';
+    taskSection.style.display = 'none';
     await populateTasks(currentUser, selected);
     userSelectedTask = false;
     updateStartButton();
@@ -968,6 +1094,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (pendingAssignment) {
       pendingAssignment = null;
       pendingAssignmentSelection = null;
+    }
+    if (taskOverlayStart && taskOverlayStart.style.display !== 'none') {
+      syncTaskOverlaySelectors();
     }
   });
 
@@ -1143,13 +1272,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function updateStartButton() {
     if (!startTaskButton) return;
-    const hasProject = !!projectSelect.value;
-    const hasTask =
-      userSelectedTask &&
-      !taskSelect.disabled &&
-      taskSelect.selectedIndex > 0 &&
-      !!taskSelect.value;
-    startTaskButton.disabled = !(hasProject && hasTask);
+    const isClockedIn =
+      !!currentSessionUuid || String(clockinButton?.textContent || '').trim() === 'CLOCK-OUT';
+    startTaskButton.disabled = !currentUser || !isClockedIn || !!currentTaskUuid;
+    startTaskButton.textContent = pendingUnfinishedTask ? 'CONTINUE' : 'START';
   }
 
   function getNoteValue(input) {
@@ -1344,6 +1470,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
         unfinishedList.style.display = 'none';
+        openTaskStartOverlay();
       });
       const project = document.createElement('div');
       project.className = 'notes-item__project';
@@ -1727,8 +1854,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
       currentTaskDataRows = rows || [];
-      taskDataSection.style.display = 'block';
-      renderTaskData(rows || []);
+      taskDataSection.style.display = 'none';
+      taskDataList.innerHTML = '';
     } catch (err) {
       console.warn('[renderer] Failed to load task data:', err);
       taskDataSection.style.display = 'none';

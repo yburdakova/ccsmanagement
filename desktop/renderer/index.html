@@ -56,7 +56,7 @@
         </div>
         <div class="production-section">
 
-        <div class="project-selector-section">
+        <div class="project-selector-section" style="display: none;">
           <div class="selection-with-saving-box">
             <select id="project-select" class="project-select">
               <option value="">— Select Project —</option>
@@ -71,7 +71,11 @@
         </div>
       
 
-        <p id="project-role"></p>
+        <p id="project-role" style="display: none;"></p>
+
+        <div id="task-start-section" style="margin-top: 10px;">
+          <button id="start-task-button">START</button>
+        </div>
 
         <div id="task-selector-section" style="margin-top: 10px; display: none;">
           <div class="task-box">
@@ -86,7 +90,6 @@
               <option value="">Select item</option>
             </select>
           </div>
-          <button id="start-task-button" disabled>START</button>
         </div>
         <div id="task-data-section" class="task-data-section" style="display: none;">
           <div class="task-data-title">Task data</div>
@@ -95,9 +98,24 @@
 
           <div id="task-overlay" class="task-overlay" style="display: none;">
             <div class="task-overlay__content">
-              <div class="task-overlay__label">In progress</div>
+              <div id="task-overlay-label" class="task-overlay__label">In progress</div>
               <div id="task-overlay-name" class="task-overlay__name"></div>
               <div id="task-overlay-item" class="task-overlay__item"></div>
+              <div id="task-overlay-start" class="task-overlay__start" style="display: none;">
+                <select id="task-overlay-project-select">
+                  <option value="">Select Project</option>
+                </select>
+                <select id="task-overlay-task-select" disabled>
+                  <option value="">Select Task</option>
+                </select>
+                <select id="task-overlay-item-select" style="display: none;">
+                  <option value="">Select item</option>
+                </select>
+                <div class="task-overlay__actions">
+                  <button id="task-overlay-continue-button" disabled>START</button>
+                  <button id="task-overlay-cancel-button" class="task-finish__cancel">Cancel</button>
+                </div>
+              </div>
               <div id="task-overlay-timer" class="task-overlay__timer">00:00:00</div>
               <div class="task-overlay__note">
                 <textarea id="task-overlay-note" class="task-overlay__note-field" rows="3" placeholder="Note (optional)"></textarea>
@@ -105,10 +123,10 @@
               <div id="task-overlay-data" class="task-overlay__data" style="display: none;">
                 <div id="task-overlay-data-list" class="task-overlay__data-list"></div>
               </div>
-              <div class="task-overlay__actions">
-                <button id="finish-task-button">FINISH</button>
-                <button id="stop-task-button">STOP</button>
-              </div>
+                <div id="task-overlay-active-actions" class="task-overlay__actions">
+                  <button id="finish-task-button">FINISH</button>
+                  <button id="stop-task-button">STOP</button>
+                </div>
             </div>
           </div>
 
