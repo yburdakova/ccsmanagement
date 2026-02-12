@@ -500,7 +500,6 @@ const ProductionSheetView = ({
       <div className="production-sheet__header">
         <h2>{title}</h2>
         <div className="production-sheet__meta">
-          <span>{dateFrom === dateTo ? dateFrom : `${dateFrom} — ${dateTo}`}</span>
           <span>Total work time: {formatTotalTime(totalWorkMinutes)}</span>
         </div>
         <div className="production-sheet__actions">
