@@ -298,7 +298,7 @@ db.serialize(() => {
 
 async function initializeLocalDb() {
   const { isOnline } = require('../utils/network-status');
-  const globalApi = require('./db');
+  const dataApi = require('./data-provider');
 
   const online = await isOnline();
 
@@ -306,19 +306,19 @@ async function initializeLocalDb() {
     console.log('[init] Online mode: syncing from global DB');
 
     try {
-      const users = await globalApi.getAllUsers();
-      const projects = await globalApi.getAllProjects();
-      const projectUsers = await globalApi.getAllProjectUsers();
-      const roles = await globalApi.getAllProjectRoles();
-      const tasks = await globalApi.getAllTasks();
-      const customers = await globalApi.getAllCustomers();
-      const projectTasks = await globalApi.getAllProjectTasks();
-      const projectTaskRoles = await globalApi.getAllProjectTaskRoles();
-      const taskDataDefinitions = await globalApi.getAllTaskDataDefinitions();
-      const projectTaskData = await globalApi.getAllProjectTaskData();
-      const refItemStatus = await globalApi.getAllRefItemStatus();
-      const cfsItems = await globalApi.getAllCfsItems();
-      const imItems = await globalApi.getAllImItems();
+      const users = await dataApi.getAllUsers();
+      const projects = await dataApi.getAllProjects();
+      const projectUsers = await dataApi.getAllProjectUsers();
+      const roles = await dataApi.getAllProjectRoles();
+      const tasks = await dataApi.getAllTasks();
+      const customers = await dataApi.getAllCustomers();
+      const projectTasks = await dataApi.getAllProjectTasks();
+      const projectTaskRoles = await dataApi.getAllProjectTaskRoles();
+      const taskDataDefinitions = await dataApi.getAllTaskDataDefinitions();
+      const projectTaskData = await dataApi.getAllProjectTaskData();
+      const refItemStatus = await dataApi.getAllRefItemStatus();
+      const cfsItems = await dataApi.getAllCfsItems();
+      const imItems = await dataApi.getAllImItems();
 
       saveRefItemStatusToLocal(refItemStatus);
       saveCfsItemsToLocal(cfsItems);
@@ -1792,12 +1792,7 @@ function saveTaskDataValueLocal({ projectId, taskId, dataDefId, valueType, value
 }
 
 async function syncQueue() {
-  const {
-    startUnallocatedActivityGlobal,
-    startTaskActivityGlobal,
-    completeActiveActivityGlobal,
-    saveTaskDataValueGlobal
-  } = require('./db');
+  const dataApi = require('./data-provider');
 
   return new Promise((resolve, reject) => {
     db.all(`SELECT * FROM sync_queue`, async (err, rows) => {
@@ -1815,11 +1810,11 @@ async function syncQueue() {
           let result;
 
           if (type === 'start') {
-            result = await startUnallocatedActivityGlobal(payload);
+            result = await dataApi.startUnallocatedActivityGlobal(payload);
           } else if (type === 'start-task') {
-            result = await startTaskActivityGlobal(payload);
+            result = await dataApi.startTaskActivityGlobal(payload);
           } else if (type === 'complete') {
-            result = await completeActiveActivityGlobal({
+            result = await dataApi.completeActiveActivityGlobal({
               uuid: payload.uuid,
               user_id: payload.user_id,
               is_completed_project_task: payload.is_completed_project_task,
@@ -1828,7 +1823,7 @@ async function syncQueue() {
               taskData: payload.task_data
             });
           } else if (type === 'task-data') {
-            result = await saveTaskDataValueGlobal({
+            result = await dataApi.saveTaskDataValueGlobal({
               projectId: payload.project_id,
               taskId: payload.task_id,
               dataDefId: payload.data_def_id,

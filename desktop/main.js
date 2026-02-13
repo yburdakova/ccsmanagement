@@ -40,6 +40,7 @@ console.log(`[env] APP_ENV=${profile} DB_HOST=${process.env.DB_HOST}`);
 
 const { isOnline } = require('./utils/network-status');
 const { initializeLocalDb } = require('./api/db-local');
+const dataApi = require('./api/data-provider');
 
 let mainWindow = null;
 
@@ -128,11 +129,10 @@ ipcMain.handle('init-local-db', async () => {
 });
 
 ipcMain.handle('get-users', async () => {
-  const { getAllUsers } = require('./api/db');
   const { saveUsersToLocal } = require('./api/db-local');
 
   try {
-    const users = await getAllUsers();
+    const users = await dataApi.getAllUsers();
     saveUsersToLocal(users);
     console.log('Fetched and saved users locally:', users.length);
     return users;
@@ -143,11 +143,10 @@ ipcMain.handle('get-users', async () => {
 });
 
 ipcMain.handle('get-all-projects', async () => {
-  const { getAllProjects } = require('./api/db');
   const { saveProjectsToLocal } = require('./api/db-local');
 
   try {
-    const projects = await getAllProjects();
+    const projects = await dataApi.getAllProjects();
     saveProjectsToLocal(projects);
     console.log('Fetched and saved projects locally:', projects.length);
     return projects;
@@ -158,11 +157,10 @@ ipcMain.handle('get-all-projects', async () => {
 });
 
 ipcMain.handle('get-all-project-users', async () => {
-  const { getAllProjectUsers } = require('./api/db');
   const { saveProjectUsersToLocal } = require('./api/db-local');
 
   try {
-    const projectUsers = await getAllProjectUsers();
+    const projectUsers = await dataApi.getAllProjectUsers();
     saveProjectUsersToLocal(projectUsers);
     console.log('Fetched and saved project_users locally:', projectUsers.length);
     return projectUsers;
@@ -173,11 +171,10 @@ ipcMain.handle('get-all-project-users', async () => {
 });
 
 ipcMain.handle('get-ref-project-roles', async () => {
-  const { getAllProjectRoles } = require('./api/db');
   const { saveRefProjectRolesToLocal } = require('./api/db-local');
 
   try {
-    const roles = await getAllProjectRoles();
+    const roles = await dataApi.getAllProjectRoles();
     saveRefProjectRolesToLocal(roles);
     console.log('Fetched and saved project roles locally:', roles.length);
     return roles;
@@ -188,11 +185,10 @@ ipcMain.handle('get-ref-project-roles', async () => {
 });
 
 ipcMain.handle('get-all-tasks', async () => {
-  const { getAllTasks } = require('./api/db');
   const { saveTasksToLocal } = require('./api/db-local');
 
   try {
-    const tasks = await getAllTasks();
+    const tasks = await dataApi.getAllTasks();
     saveTasksToLocal(tasks);
     console.log('Fetched and saved tasks locally:', tasks.length);
     return tasks;
@@ -203,11 +199,10 @@ ipcMain.handle('get-all-tasks', async () => {
 });
 
 ipcMain.handle('get-all-project-tasks', async () => {
-  const { getAllProjectTasks } = require('./api/db');
   const { saveProjectTasksToLocal } = require('./api/db-local');
 
   try {
-    const projectTasks = await getAllProjectTasks();
+    const projectTasks = await dataApi.getAllProjectTasks();
     saveProjectTasksToLocal(projectTasks);
     console.log('Fetched and saved project_tasks locally:', projectTasks.length);
     return projectTasks;
@@ -218,11 +213,10 @@ ipcMain.handle('get-all-project-tasks', async () => {
 });
 
 ipcMain.handle('get-all-project-task-roles', async () => {
-  const { getAllProjectTaskRoles } = require('./api/db');
   const { saveProjectTaskRolesToLocal } = require('./api/db-local');
 
   try {
-    const projectTaskRoles = await getAllProjectTaskRoles();
+    const projectTaskRoles = await dataApi.getAllProjectTaskRoles();
     saveProjectTaskRolesToLocal(projectTaskRoles);
     console.log('Fetched and saved project_task_roles locally:', projectTaskRoles.length);
     return projectTaskRoles;
@@ -233,14 +227,13 @@ ipcMain.handle('get-all-project-task-roles', async () => {
 });
 
 ipcMain.handle('get-all-customers', async () => {
-  const { getAllCustomers } = require('./api/db');
   const { getAllCustomersLocal, saveCustomersToLocal } = require('./api/db-local');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
     if (online) {
-      const customers = await getAllCustomers();
+      const customers = await dataApi.getAllCustomers();
       saveCustomersToLocal(customers);
       return customers;
     }
@@ -253,12 +246,11 @@ ipcMain.handle('get-all-customers', async () => {
 
 ipcMain.handle('get-project-task-data', async (event, { projectId, taskId }) => {
   const { getProjectTaskDataByTask: getLocalProjectTaskDataByTask, replaceProjectTaskDataForTask } = require('./api/db-local');
-  const { getProjectTaskDataByTask: getRemoteProjectTaskDataByTask } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
   try {
     const online = await isOnline();
     if (online) {
-      const rows = await getRemoteProjectTaskDataByTask(projectId, taskId);
+      const rows = await dataApi.getProjectTaskDataByTask(projectId, taskId);
       await replaceProjectTaskDataForTask(projectId, taskId, rows);
       return rows;
     }
@@ -281,13 +273,12 @@ ipcMain.handle('save-task-data', async (event, payload) => {
 
 ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
   const { getAvailableTasksForUser } = require('./api/db-local');
-  const { getAvailableTasksForUser: getAvailableTasksGlobal } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
     if (online) {
-      const tasks = await getAvailableTasksGlobal(userId, projectId);
+      const tasks = await dataApi.getAvailableTasksForUser(userId, projectId);
       console.log(`[main] Fetched global tasks for user=${userId}, project=${projectId}:`, tasks.length);
       return tasks;
     }
@@ -302,13 +293,12 @@ ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
 });
 
 ipcMain.handle('get-item-types', async () => {
-  const { getAllItemTypes } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
     if (!online) return [];
-    return await getAllItemTypes();
+    return await dataApi.getAllItemTypes();
   } catch (error) {
     console.error('Error fetching item types:', error);
     return [];
@@ -316,7 +306,6 @@ ipcMain.handle('get-item-types', async () => {
 });
 
 ipcMain.handle('login-with-code', async (event, code) => {
-  const { loginByAuthCode } = require('./api/db');
   const { loginByAuthCodeLocal } = require('./api/db-local');
   const { isOnline } = require('./utils/network-status');
 
@@ -324,7 +313,7 @@ ipcMain.handle('login-with-code', async (event, code) => {
 
   try {
     if (online) {
-      const user = await loginByAuthCode(code);
+      const user = await dataApi.loginByAuthCode(code);
       return user || null;
     } else {
       const user = await loginByAuthCodeLocal(code);
@@ -339,7 +328,6 @@ ipcMain.handle('login-with-code', async (event, code) => {
 
 ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
   const { startUnallocatedActivityLocal: startLocal } = require('./api/db-local');
-  const { startUnallocatedActivityGlobal: startServer } = require('./api/db');
 
   const safeActivityId = Number(activityId) || 4;
   const isConnected = await isOnline();
@@ -355,7 +343,7 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
 
     if (isConnected) {
       console.log('[main] start-unallocated: before server');
-      const res = await startServer({ uuid, user_id: userId, activity_id: safeActivityId });
+      const res = await dataApi.startUnallocatedActivityGlobal({ uuid, user_id: userId, activity_id: safeActivityId });
       console.log('[main] start-unallocated: after server', res);
       if (!res.success) throw new Error(res.error);
     }
@@ -369,7 +357,6 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
 
 ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId, itemId }) => {
   const { startTaskActivityLocal: startLocal } = require('./api/db-local');
-  const { startTaskActivityGlobal: startServer } = require('./api/db');
   const isConnected = await isOnline();
 
   try {
@@ -381,7 +368,7 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
     const { uuid } = await startLocal(userId, projectId, taskId, itemId);
 
     if (isConnected) {
-      const res = await startServer({
+      const res = await dataApi.startTaskActivityGlobal({
         uuid,
         user_id: userId,
         project_id: projectId,
@@ -411,7 +398,6 @@ ipcMain.handle('sync-queue', async () => {
 
 ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskCompleted, note, taskData }) => {
   const { completeActiveActivityLocal: completeLocal } = require('./api/db-local');
-  const { completeActiveActivityGlobal: completeServer } = require('./api/db');
   const isConnected = await isOnline();
 
   try {
@@ -428,7 +414,7 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
     }
 
     if (isConnected) {
-      const result = await completeServer({
+      const result = await dataApi.completeActiveActivityGlobal({
         uuid: localResult.uuid,
         user_id: userId,
         is_completed_project_task: isTaskCompleted,
@@ -473,16 +459,15 @@ ipcMain.handle('logout', async (event) => {
 });
 
 ipcMain.handle('get-project-items', async (event, { projectId, projectTypeId }) => {
-  const { getItemsByProject, getCfsItemsByProject, getImItemsByProject } = require('./api/db');
   try {
-    const items = await getItemsByProject(projectId);
+    const items = await dataApi.getItemsByProject(projectId);
     if (items.length) {
       return items;
     }
     if (projectTypeId === 1) {
-      return await getCfsItemsByProject(projectId);
+      return await dataApi.getCfsItemsByProject(projectId);
     } else if (projectTypeId === 2) {
-      return await getImItemsByProject(projectId);
+      return await dataApi.getImItemsByProject(projectId);
     } else {
       return [];
     }
@@ -493,13 +478,12 @@ ipcMain.handle('get-project-items', async (event, { projectId, projectTypeId }) 
 });
 
 ipcMain.handle('get-item-tracking-tasks', async (event, { projectId }) => {
-  const { getItemTrackingTasksByProject } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
     if (!online) return [];
-    return await getItemTrackingTasksByProject(projectId);
+    return await dataApi.getItemTrackingTasksByProject(projectId);
   } catch (error) {
     console.error('Error fetching item tracking tasks:', error);
     return [];
@@ -507,13 +491,12 @@ ipcMain.handle('get-item-tracking-tasks', async (event, { projectId }) => {
 });
 
 ipcMain.handle('get-item-status-rule', async (event, { projectId, taskId, applyAfterFinish }) => {
-  const { getItemStatusRuleByTask } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
     if (!online) return null;
-    return await getItemStatusRuleByTask(projectId, taskId, applyAfterFinish);
+    return await dataApi.getItemStatusRuleByTask(projectId, taskId, applyAfterFinish);
   } catch (error) {
     console.error('Error fetching item status rule:', error);
     return null;
@@ -521,7 +504,6 @@ ipcMain.handle('get-item-status-rule', async (event, { projectId, taskId, applyA
 });
 
 ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
-  const { updateItemStatusGlobal } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
 
   try {
@@ -529,7 +511,7 @@ ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
     if (!online) {
       return { success: false, error: 'Offline mode' };
     }
-    return await updateItemStatusGlobal(itemId, statusId);
+    return await dataApi.updateItemStatusGlobal(itemId, statusId);
   } catch (error) {
     console.error('Error updating item status:', error);
     return { success: false, error: error.message };
@@ -537,13 +519,12 @@ ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
 });
 
 ipcMain.handle('get-unfinished-tasks', async (event, { userId }) => {
-  const { getUnfinishedTasksByUser } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
     if (!online) return [];
-    return await getUnfinishedTasksByUser(userId);
+    return await dataApi.getUnfinishedTasksByUser(userId);
   } catch (error) {
     console.error('Error fetching unfinished tasks:', error);
     return [];
@@ -551,13 +532,12 @@ ipcMain.handle('get-unfinished-tasks', async (event, { userId }) => {
 });
 
 ipcMain.handle('get-assignments', async (event, { userId }) => {
-  const { getAssignmentsByUser } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
     if (!online) return [];
-    return await getAssignmentsByUser(userId);
+    return await dataApi.getAssignmentsByUser(userId);
   } catch (error) {
     console.error('Error fetching assignments:', error);
     return [];
@@ -565,16 +545,15 @@ ipcMain.handle('get-assignments', async (event, { userId }) => {
 });
 
 ipcMain.handle('mark-unfinished-finished', async (event, { recordId, uuid }) => {
-  const { markUnfinishedTaskFinished, markUnfinishedTaskFinishedByUuid } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
     if (!online) return { success: false, error: 'Offline mode' };
     if (uuid) {
-      return await markUnfinishedTaskFinishedByUuid(uuid);
+      return await dataApi.markUnfinishedTaskFinishedByUuid(uuid);
     }
-    return await markUnfinishedTaskFinished(recordId);
+    return await dataApi.markUnfinishedTaskFinished(recordId);
   } catch (error) {
     console.error('Error updating unfinished task:', error);
     return { success: false, error: error.message };
@@ -582,13 +561,12 @@ ipcMain.handle('mark-unfinished-finished', async (event, { recordId, uuid }) => 
 });
 
 ipcMain.handle('mark-assignment-accepted', async (event, { assignmentId }) => {
-  const { markAssignmentAccepted } = require('./api/db');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
     if (!online) return { success: false, error: 'Offline mode' };
-    return await markAssignmentAccepted(assignmentId);
+    return await dataApi.markAssignmentAccepted(assignmentId);
   } catch (error) {
     console.error('Error updating assignment:', error);
     return { success: false, error: error.message };

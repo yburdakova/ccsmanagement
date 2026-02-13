@@ -7,6 +7,7 @@
     "start:local":      "cross-env APP_ENV=local electron .",
     "start:remote":     "cross-env APP_ENV=remote electron .",
     "start:remotetest": "cross-env APP_ENV=remotetest electron .",
+    "start:backend":    "cross-env APP_ENV=backend electron .",
     "dist:remotetest": "node scripts/write-app-env.js remotetest && npx electron-builder --win portable",
     "dist:remote": "node scripts/write-app-env.js remote && npx electron-builder --win portable",
     "dist:local": "node scripts/write-app-env.js local && npx electron-builder --win portable"
@@ -58,6 +59,10 @@
       {
         "from": ".env.remotetest",
         "to": ".env.remotetest"
+      },
+      {
+        "from": ".env.backend",
+        "to": ".env.backend"
       }
     ],
     "win": {
