@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import http from 'http';
+import { createDesktopWsServer } from './ws/desktop-ws.js';
 
 import loginRoutes from './routes/login.routes.js';
 import projectsRoutes from './routes/projects.routes.js';
@@ -31,7 +32,12 @@ app.use('/api/customers', customersRoutes);
 app.use('/api/desktop', desktopRoutes);
 
 
-http.createServer(app).listen(PORT, () => {
+const server = http.createServer(app);
+const desktopWs = createDesktopWsServer(server);
+
+server.listen(PORT, () => {
     console.log(`API HTTP server running on port ${PORT}`);
     console.log(`Connected DB: ${dbname}`);
+    console.log(`WebSocket started on endpoint: ws://<host>:${PORT}/ws/desktop`);
+    console.log('Desktop WS clients: ' + desktopWs.getClientCount());
 }); 

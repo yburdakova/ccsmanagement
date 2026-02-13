@@ -19,7 +19,8 @@
   "dependencies": {
     "dotenv": "^17.2.3",
     "mysql2": "^3.14.2",
-    "sqlite3": "5.1.7"
+    "sqlite3": "5.1.7",
+    "ws": "^8.18.3"
   },
   "overrides": {
     "tar": "7.5.4"

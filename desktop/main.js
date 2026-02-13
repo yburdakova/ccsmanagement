@@ -41,6 +41,7 @@ console.log(`[env] APP_ENV=${profile} DB_HOST=${process.env.DB_HOST}`);
 const { isOnline } = require('./utils/network-status');
 const { initializeLocalDb } = require('./api/db-local');
 const dataApi = require('./api/data-provider');
+const { connectDesktopWs, disconnectDesktopWs } = require('./ws/desktop-ws-client');
 
 let mainWindow = null;
 
@@ -314,6 +315,9 @@ ipcMain.handle('login-with-code', async (event, code) => {
   try {
     if (online) {
       const user = await dataApi.loginByAuthCode(code);
+      if (profile === 'backend' && user?.id) {
+        connectDesktopWs(user.id);
+      }
       return user || null;
     } else {
       const user = await loginByAuthCodeLocal(code);
@@ -437,6 +441,9 @@ ipcMain.handle('logout', async (event) => {
   const { completeActiveActivityLocal: completeLocal, syncQueue } = require('./api/db-local');
 
   try {
+    if (profile === 'backend') {
+      disconnectDesktopWs();
+    }
     const result = await completeLocal({
       uuid: null,
       is_completed_project_task: false,
@@ -577,6 +584,9 @@ app.on('will-quit', async (event) => {
   event.preventDefault();
 
   try {
+    if (profile === 'backend') {
+      disconnectDesktopWs();
+    }
     const { completeActiveActivityLocal: completeLocal, syncQueue } = require('./api/db-local');
 
     const result = await completeLocal({
