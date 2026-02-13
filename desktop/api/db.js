@@ -126,31 +126,61 @@ async function getAllProjectTaskData() {
 
 async function getProjectTaskDataByTask(projectId, taskId) {
   try {
-    const [rows] = await pool.query(
-      `
-        SELECT ptd.id,
-               ptd.project_task_id AS projectTaskId,
-               ptd.data_def_id AS dataDefId,
-               tdd.label AS definitionLabel,
-               tdd.value_type AS valueType,
-               ptd.value_int,
-               ptd.value_decimal,
-               ptd.value_varchar,
-               ptd.value_text,
-               ptd.value_bool,
-               ptd.value_date,
-               ptd.value_datetime,
-               ptd.value_customer_id,
-               ptd.value_json
-        FROM project_task_data ptd
-        JOIN project_tasks pt ON pt.id = ptd.project_task_id
-        JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
-        WHERE pt.project_id = ? AND pt.task_id = ?
-        ORDER BY ptd.id
-      `,
-      [projectId, taskId]
-    );
-    return rows;
+    try {
+      const [rows] = await pool.query(
+        `
+          SELECT ptd.id,
+                 ptd.project_task_id AS projectTaskId,
+                 ptd.data_def_id AS dataDefId,
+                 tdd.label AS definitionLabel,
+                 tdd.value_type AS valueType,
+                 ptd.is_required AS isRequired,
+                 ptd.value_int,
+                 ptd.value_decimal,
+                 ptd.value_varchar,
+                 ptd.value_text,
+                 ptd.value_bool,
+                 ptd.value_date,
+                 ptd.value_datetime,
+                 ptd.value_customer_id,
+                 ptd.value_json
+          FROM project_task_data ptd
+          JOIN project_tasks pt ON pt.id = ptd.project_task_id
+          JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
+          WHERE pt.project_id = ? AND pt.task_id = ?
+          ORDER BY ptd.id
+        `,
+        [projectId, taskId]
+      );
+      return rows;
+    } catch (error) {
+      if (error.code !== 'ER_BAD_FIELD_ERROR') throw error;
+      const [rows] = await pool.query(
+        `
+          SELECT ptd.id,
+                 ptd.project_task_id AS projectTaskId,
+                 ptd.data_def_id AS dataDefId,
+                 tdd.label AS definitionLabel,
+                 tdd.value_type AS valueType,
+                 ptd.value_int,
+                 ptd.value_decimal,
+                 ptd.value_varchar,
+                 ptd.value_text,
+                 ptd.value_bool,
+                 ptd.value_date,
+                 ptd.value_datetime,
+                 ptd.value_customer_id,
+                 ptd.value_json
+          FROM project_task_data ptd
+          JOIN project_tasks pt ON pt.id = ptd.project_task_id
+          JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
+          WHERE pt.project_id = ? AND pt.task_id = ?
+          ORDER BY ptd.id
+        `,
+        [projectId, taskId]
+      );
+      return rows.map((row) => ({ ...row, isRequired: 0 }));
+    }
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
       console.warn('[server-db] Missing project task data tables, skipping.');

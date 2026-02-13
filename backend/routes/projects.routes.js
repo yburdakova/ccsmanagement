@@ -6,6 +6,7 @@ const router = express.Router();
 console.log('Projects route loaded');
 
 const idColumnCache = new Map();
+let projectTaskDataSupportsIsRequired = null;
 
 const normalizeValueType = (valueType = '') =>
   String(valueType || '').trim().toLowerCase();
@@ -73,6 +74,74 @@ const parseTaskDataValue = (valueType, value) => {
     return normalized.length === 16 ? `${normalized}:00` : normalized;
   }
   return String(value);
+};
+
+const parseIsRequired = (value) => {
+  if (value === true || value === 1) return 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === '1' || normalized === 'true') return 1;
+  }
+  return 0;
+};
+
+const insertProjectTaskDataRow = async (
+  connection,
+  projectTaskId,
+  dataDefId,
+  column,
+  value,
+  isRequired
+) => {
+  if (projectTaskDataSupportsIsRequired !== false) {
+    try {
+      await connection.query(
+        `
+          INSERT INTO project_task_data (project_task_id, data_def_id, ${column}, is_required)
+          VALUES (?, ?, ?, ?)
+        `,
+        [projectTaskId, dataDefId, value, isRequired]
+      );
+      projectTaskDataSupportsIsRequired = true;
+      return;
+    } catch (err) {
+      if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
+      projectTaskDataSupportsIsRequired = false;
+    }
+  }
+
+  await connection.query(
+    `
+      INSERT INTO project_task_data (project_task_id, data_def_id, ${column})
+      VALUES (?, ?, ?)
+    `,
+    [projectTaskId, dataDefId, value]
+  );
+};
+
+const resolveTaskDataValueType = async (connection, dataDefId, incomingValueType) => {
+  const incoming = String(incomingValueType || '').trim();
+  if (getTaskDataColumn(incoming)) return incoming;
+
+  try {
+    const [[row]] = await connection.query(
+      `
+        SELECT value_type AS valueType
+        FROM task_data_definitions
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [dataDefId]
+    );
+    const fromDb = String(row?.valueType || '').trim();
+    if (getTaskDataColumn(fromDb)) return fromDb;
+  } catch (err) {
+    if (err.code !== 'ER_NO_SUCH_TABLE' && err.code !== 'ER_BAD_TABLE_ERROR') {
+      throw err;
+    }
+  }
+
+  return 'varchar';
 };
 
 const getIdColumnMode = async (connection, tableName) => {
@@ -206,32 +275,63 @@ router.get('/:id', async (req, res) => {
 
     let taskDataRows = [];
     try {
-      const [rows] = await pool.query(
-        `
-          SELECT ptd.id,
-                 pt.task_id AS taskId,
-                 ptd.project_task_id AS projectTaskId,
-                 ptd.data_def_id AS dataDefId,
-                 tdd.label AS definitionLabel,
-                 tdd.\`key\` AS definitionKey,
-                 tdd.value_type AS valueType,
-                 ptd.value_int,
-                 ptd.value_decimal,
-                 ptd.value_varchar,
-                 ptd.value_text,
-                 ptd.value_bool,
-                 ptd.value_date,
-                 ptd.value_datetime,
-                 ptd.value_customer_id,
-                 ptd.value_json
-          FROM project_task_data ptd
-          JOIN project_tasks pt ON pt.id = ptd.project_task_id
-          JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
-          WHERE pt.project_id = ?
-        `,
-        [projectId]
-      );
-      taskDataRows = rows;
+      try {
+        const [rows] = await pool.query(
+          `
+            SELECT ptd.id,
+                   pt.task_id AS taskId,
+                   ptd.project_task_id AS projectTaskId,
+                   ptd.data_def_id AS dataDefId,
+                   tdd.label AS definitionLabel,
+                   tdd.\`key\` AS definitionKey,
+                   tdd.value_type AS valueType,
+                   ptd.is_required AS isRequired,
+                   ptd.value_int,
+                   ptd.value_decimal,
+                   ptd.value_varchar,
+                   ptd.value_text,
+                   ptd.value_bool,
+                   ptd.value_date,
+                   ptd.value_datetime,
+                   ptd.value_customer_id,
+                   ptd.value_json
+            FROM project_task_data ptd
+            JOIN project_tasks pt ON pt.id = ptd.project_task_id
+            JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
+            WHERE pt.project_id = ?
+          `,
+          [projectId]
+        );
+        taskDataRows = rows;
+      } catch (err) {
+        if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
+        const [rows] = await pool.query(
+          `
+            SELECT ptd.id,
+                   pt.task_id AS taskId,
+                   ptd.project_task_id AS projectTaskId,
+                   ptd.data_def_id AS dataDefId,
+                   tdd.label AS definitionLabel,
+                   tdd.\`key\` AS definitionKey,
+                   tdd.value_type AS valueType,
+                   ptd.value_int,
+                   ptd.value_decimal,
+                   ptd.value_varchar,
+                   ptd.value_text,
+                   ptd.value_bool,
+                   ptd.value_date,
+                   ptd.value_datetime,
+                   ptd.value_customer_id,
+                   ptd.value_json
+            FROM project_task_data ptd
+            JOIN project_tasks pt ON pt.id = ptd.project_task_id
+            JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
+            WHERE pt.project_id = ?
+          `,
+          [projectId]
+        );
+        taskDataRows = rows.map((row) => ({ ...row, isRequired: 0 }));
+      }
     } catch (err) {
       if (
         err.code === 'ER_NO_SUCH_TABLE' ||
@@ -303,6 +403,7 @@ router.get('/:id', async (req, res) => {
           dataDefId: row.dataDefId,
           valueType,
           value,
+          isRequired: Number(row.isRequired) === 1 ? 1 : 0,
         });
       }
     }
@@ -562,16 +663,23 @@ router.post('/', async (req, res) => {
       for (const dataRow of task.taskData || []) {
         const dataDefId = Number(dataRow?.dataDefId);
         if (!dataDefId) continue;
-        const column = getTaskDataColumn(dataRow.valueType);
+        const valueType = await resolveTaskDataValueType(
+          connection,
+          dataDefId,
+          dataRow?.valueType
+        );
+        const column = getTaskDataColumn(valueType);
         if (!column) continue;
-        const value = parseTaskDataValue(dataRow.valueType, dataRow.value);
+        const value = parseTaskDataValue(valueType, dataRow.value);
+        const isRequired = parseIsRequired(dataRow?.isRequired);
 
-        await connection.query(
-          `
-            INSERT INTO project_task_data (project_task_id, data_def_id, ${column})
-            VALUES (?, ?, ?)
-          `,
-          [projectTaskId, dataDefId, value]
+        await insertProjectTaskDataRow(
+          connection,
+          projectTaskId,
+          dataDefId,
+          column,
+          value,
+          isRequired
         );
       }
     }
@@ -879,16 +987,23 @@ router.put('/:id', async (req, res) => {
       for (const dataRow of task.taskData || []) {
         const dataDefId = Number(dataRow?.dataDefId);
         if (!dataDefId) continue;
-        const column = getTaskDataColumn(dataRow.valueType);
+        const valueType = await resolveTaskDataValueType(
+          connection,
+          dataDefId,
+          dataRow?.valueType
+        );
+        const column = getTaskDataColumn(valueType);
         if (!column) continue;
-        const value = parseTaskDataValue(dataRow.valueType, dataRow.value);
+        const value = parseTaskDataValue(valueType, dataRow.value);
+        const isRequired = parseIsRequired(dataRow?.isRequired);
 
-        await connection.query(
-          `
-            INSERT INTO project_task_data (project_task_id, data_def_id, ${column})
-            VALUES (?, ?, ?)
-          `,
-          [projectTaskId, dataDefId, value]
+        await insertProjectTaskDataRow(
+          connection,
+          projectTaskId,
+          dataDefId,
+          column,
+          value,
+          isRequired
         );
       }
     }

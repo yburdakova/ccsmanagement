@@ -115,6 +115,7 @@ const ProjectsPage = () => {
             dataDefId: number;
             valueType: string;
             value: string | number | boolean | null;
+            isRequired?: boolean | number | null;
           }[];
         }[];
         itemTracking?: {
@@ -154,6 +155,7 @@ const ProjectsPage = () => {
             dataDefId: String(dataRow.dataDefId),
             valueType: dataRow.valueType || '',
             value: dataRow.value != null ? String(dataRow.value) : '',
+            isRequired: Number(dataRow.isRequired ?? 0) === 1,
           })),
         }))
       );
@@ -218,8 +220,9 @@ const ProjectsPage = () => {
                 );
                 return {
                   dataDefId: Number(dataRow.dataDefId),
-                  valueType: def?.valueType || dataRow.valueType,
+                  valueType: def?.valueType || dataRow.valueType || 'varchar',
                   value: dataRow.value,
+                  isRequired: dataRow.isRequired ? 1 : 0,
                 };
               }),
           })),

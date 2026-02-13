@@ -112,6 +112,7 @@ export type TaskDataRow = {
   dataDefId: string;
   valueType: string;
   value: string;
+  isRequired: boolean;
 };
 
 export type ItemTrackingRow = {

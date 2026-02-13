@@ -238,6 +238,7 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY,
       project_task_id INTEGER,
       data_def_id INTEGER,
+      is_required INTEGER NOT NULL DEFAULT 0,
       value_int INTEGER,
       value_decimal REAL,
       value_varchar TEXT,
@@ -276,6 +277,23 @@ db.serialize(() => {
         task_status_id INTEGER
       )
     `);
+
+  db.all(`PRAGMA table_info(project_task_data)`, (err, rows) => {
+    if (err) {
+      console.error('[local-db] Failed to inspect project_task_data:', err.message);
+      return;
+    }
+    const hasIsRequired = rows.some((row) => row.name === 'is_required');
+    if (!hasIsRequired) {
+      db.run(`ALTER TABLE project_task_data ADD COLUMN is_required INTEGER NOT NULL DEFAULT 0`, (alterErr) => {
+        if (alterErr) {
+          console.error('[local-db] Failed to add is_required column:', alterErr.message);
+        } else {
+          console.log('[local-db] Added is_required column to project_task_data');
+        }
+      });
+    }
+  });
 });
 
 async function initializeLocalDb() {
@@ -533,6 +551,7 @@ function saveProjectsToLocal(projects) {
       }
     });
   });
+
 }
 
 // DELETE + INSERT version
@@ -1204,14 +1223,16 @@ function saveProjectTaskDataToLocal(taskData) {
     const stmt = db.prepare(`
       INSERT INTO project_task_data (
         id, project_task_id, data_def_id,
+        is_required,
         value_int, value_decimal, value_varchar, value_text, value_bool,
         value_date, value_datetime, value_customer_id, value_json,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         project_task_id = excluded.project_task_id,
         data_def_id = excluded.data_def_id,
+        is_required = excluded.is_required,
         value_int = excluded.value_int,
         value_decimal = excluded.value_decimal,
         value_varchar = excluded.value_varchar,
@@ -1230,6 +1251,7 @@ function saveProjectTaskDataToLocal(taskData) {
         row.id,
         row.project_task_id,
         row.data_def_id,
+        row.is_required ?? row.isRequired ?? 0,
         row.value_int,
         row.value_decimal,
         row.value_varchar,
@@ -1524,11 +1546,12 @@ function replaceProjectTaskDataForTask(projectId, taskId, taskData) {
               const stmt = db.prepare(`
                 INSERT INTO project_task_data (
                   id, project_task_id, data_def_id,
+                  is_required,
                   value_int, value_decimal, value_varchar, value_text, value_bool,
                   value_date, value_datetime, value_customer_id, value_json,
                   created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               `);
 
               taskData.forEach((rowData) => {
@@ -1536,6 +1559,7 @@ function replaceProjectTaskDataForTask(projectId, taskId, taskData) {
                   rowData.id,
                   rowData.projectTaskId ?? projectTaskId,
                   rowData.dataDefId,
+                  rowData.is_required ?? rowData.isRequired ?? 0,
                   rowData.value_int,
                   rowData.value_decimal,
                   rowData.value_varchar,
@@ -1565,37 +1589,70 @@ function replaceProjectTaskDataForTask(projectId, taskId, taskData) {
 
 function getProjectTaskDataByTask(projectId, taskId) {
   return new Promise((resolve, reject) => {
-    db.all(
-      `
-        SELECT ptd.id,
-               ptd.project_task_id AS projectTaskId,
-               ptd.data_def_id AS dataDefId,
-               tdd.label AS definitionLabel,
-               tdd.value_type AS valueType,
-               ptd.value_int,
-               ptd.value_decimal,
-               ptd.value_varchar,
-               ptd.value_text,
-               ptd.value_bool,
-               ptd.value_date,
-               ptd.value_datetime,
-               ptd.value_customer_id,
-               ptd.value_json
-        FROM project_task_data ptd
-        JOIN project_tasks pt ON pt.id = ptd.project_task_id
-        JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
-        WHERE pt.project_id = ? AND pt.task_id = ?
-        ORDER BY ptd.id
-      `,
-      [projectId, taskId],
-      (err, rows) => {
-        if (err) {
-          console.error('[local-db] Failed to fetch project task data:', err.message);
-          return reject(err);
-        }
+    const queryWithRequired = `
+      SELECT ptd.id,
+             ptd.project_task_id AS projectTaskId,
+             ptd.data_def_id AS dataDefId,
+             tdd.label AS definitionLabel,
+             tdd.value_type AS valueType,
+             ptd.is_required AS isRequired,
+             ptd.value_int,
+             ptd.value_decimal,
+             ptd.value_varchar,
+             ptd.value_text,
+             ptd.value_bool,
+             ptd.value_date,
+             ptd.value_datetime,
+             ptd.value_customer_id,
+             ptd.value_json
+      FROM project_task_data ptd
+      JOIN project_tasks pt ON pt.id = ptd.project_task_id
+      JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
+      WHERE pt.project_id = ? AND pt.task_id = ?
+      ORDER BY ptd.id
+    `;
+    const queryFallback = `
+      SELECT ptd.id,
+             ptd.project_task_id AS projectTaskId,
+             ptd.data_def_id AS dataDefId,
+             tdd.label AS definitionLabel,
+             tdd.value_type AS valueType,
+             ptd.value_int,
+             ptd.value_decimal,
+             ptd.value_varchar,
+             ptd.value_text,
+             ptd.value_bool,
+             ptd.value_date,
+             ptd.value_datetime,
+             ptd.value_customer_id,
+             ptd.value_json
+      FROM project_task_data ptd
+      JOIN project_tasks pt ON pt.id = ptd.project_task_id
+      JOIN task_data_definitions tdd ON tdd.id = ptd.data_def_id
+      WHERE pt.project_id = ? AND pt.task_id = ?
+      ORDER BY ptd.id
+    `;
+
+    db.all(queryWithRequired, [projectId, taskId], (err, rows) => {
+      if (!err) {
         resolve(rows);
+        return;
       }
-    );
+
+      if (!String(err.message || '').includes('no such column: ptd.is_required')) {
+        console.error('[local-db] Failed to fetch project task data:', err.message);
+        reject(err);
+        return;
+      }
+
+      db.all(queryFallback, [projectId, taskId], (err2, rows2) => {
+        if (err2) {
+          console.error('[local-db] Failed to fetch project task data fallback:', err2.message);
+          return reject(err2);
+        }
+        resolve((rows2 || []).map((row) => ({ ...row, isRequired: 0 })));
+      });
+    });
   });
 }
 

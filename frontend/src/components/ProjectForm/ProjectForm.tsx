@@ -54,7 +54,10 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
                     row.rolesId.join(',') +
                     ':' +
                     (row.taskData || [])
-                        .map((data) => `${data.id}:${data.dataDefId}:${data.valueType}:${data.value}`)
+                        .map(
+                            (data) =>
+                                `${data.id}:${data.dataDefId}:${data.valueType}:${data.value}:${data.isRequired ? 1 : 0}`
+                        )
                         .join(',')
             )
             .join('|');
@@ -199,6 +202,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
                                 dataDefId: '',
                                 valueType: '',
                                 value: '',
+                                isRequired: false,
                             },
                         ],
                     }
@@ -255,11 +259,31 @@ const ProjectForm: React.FC<ProjectFormProps> = ({
                                 dataDefId: nextDefId,
                                 valueType: def?.valueType || data.valueType,
                                 value: '',
+                                isRequired: data.isRequired ?? false,
                             }
                             : data
                     ),
                 };
             })
+        );
+    };
+
+    const handleTaskDataRequiredChange = (
+        taskRowId: string,
+        dataRowId: string,
+        checked: boolean
+    ) => {
+        setTaskRows((prev) =>
+            prev.map((row) =>
+                row.id === taskRowId
+                    ? {
+                          ...row,
+                          taskData: row.taskData.map((data) =>
+                              data.id === dataRowId ? { ...data, isRequired: checked } : data
+                          ),
+                      }
+                    : row
+            )
         );
     };
 
@@ -864,6 +888,21 @@ const handleApplyTaskRoles = (rowId: string) => {
                                                     ))}
                                                     <option value="__new__">+ Add new definition...</option>
                                                 </select>
+
+                                                <label>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={Boolean(dataRow.isRequired)}
+                                                        onChange={(e) =>
+                                                            handleTaskDataRequiredChange(
+                                                                row.id,
+                                                                dataRow.id,
+                                                                e.target.checked
+                                                            )
+                                                        }
+                                                    />
+                                                    Required
+                                                </label>
 
                                                 <button
                                                     type="button"

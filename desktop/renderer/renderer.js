@@ -613,6 +613,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       taskId,
       1
     );
+    await loadTaskDataOverlay(projectId, taskId);
     if (
       currentTaskItemId &&
       currentTaskStatusRule &&
@@ -682,23 +683,76 @@ document.addEventListener('DOMContentLoaded', async () => {
       rows.push({
         data_def_id: dataDefId,
         value_type: valueType,
-        value: input.value
+        value: input.value,
+        is_required: input.getAttribute('data-required') === '1' ? 1 : 0,
+        definition_label: input.getAttribute('data-label') || 'Value'
       });
     }
 
     return rows;
   };
 
-  const validateTaskDataValues = (rows) => {
-    const pagesRow = rows.find((row) => Number(row.data_def_id) === 1);
-    if (pagesRow) {
-      const raw = String(pagesRow.value ?? '').trim();
-      if (!raw) {
-        return { ok: false, message: 'Pages scanned is required.' };
+  const validateTaskDataValues = (rows, expectedRows, container) => {
+    const collected = Array.isArray(rows) ? rows : [];
+    const expected = Array.isArray(expectedRows) ? expectedRows : [];
+    const collectedByDefId = new Map();
+    const presentDefIds = new Set();
+
+    if (container) {
+      const inputs = container.querySelectorAll('input, textarea, select');
+      for (const input of inputs) {
+        const defId = Number(input.getAttribute('data-def-id'));
+        const label = String(input.getAttribute('data-label') || 'Value');
+        const isRequired = input.getAttribute('data-required') === '1';
+        const raw = String(input.value ?? '').trim();
+        if (defId) presentDefIds.add(defId);
+        if (isRequired && raw === '') {
+          return { ok: false, message: `${label} is required.` };
+        }
       }
-      const num = Number(raw);
-      if (!Number.isInteger(num) || num < 0) {
-        return { ok: false, message: 'Pages scanned must be an integer >= 0.' };
+    }
+
+    for (const row of collected) {
+      const defId = Number(row.data_def_id);
+      if (!defId) continue;
+      collectedByDefId.set(defId, row);
+    }
+
+    for (const expectedRow of expected) {
+      const isRequired = Number(expectedRow.isRequired ?? expectedRow.is_required ?? 0) === 1;
+      if (!isRequired) continue;
+      const defId = Number(expectedRow.dataDefId ?? expectedRow.data_def_id);
+      if (!defId) continue;
+      const label = String(expectedRow.definitionLabel || expectedRow.definition_label || 'Value');
+      if (presentDefIds.has(defId)) continue;
+      const collectedRow = collectedByDefId.get(defId);
+      const raw = String(collectedRow?.value ?? '').trim();
+      if (raw === '') {
+        return { ok: false, message: `${label} is required.` };
+      }
+    }
+
+    for (const row of collected) {
+      const valueType = String(row.value_type || '').toLowerCase();
+      const raw = String(row.value ?? '').trim();
+      const label = String(row.definition_label || 'Value');
+
+      if (raw === '') continue;
+
+      if (valueType === 'int' || valueType === 'integer') {
+        const num = Number(raw);
+        if (!Number.isInteger(num)) {
+          return { ok: false, message: `${label} must be an integer.` };
+        }
+      } else if (valueType === 'decimal') {
+        const num = Number(raw);
+        if (!Number.isFinite(num)) {
+          return { ok: false, message: `${label} must be a number.` };
+        }
+      } else if (valueType === 'bool' || valueType === 'boolean') {
+        if (raw !== '0' && raw !== '1') {
+          return { ok: false, message: `${label} must be True or False.` };
+        }
       }
     }
     return { ok: true };
@@ -740,7 +794,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       wrapper.className = 'task-overlay__data-row';
 
       const label = document.createElement('label');
-      label.textContent = row.definitionLabel || 'Value';
+      const isRequired = Number(row.isRequired ?? row.is_required ?? 0) === 1;
+      label.textContent = `${row.definitionLabel || 'Value'}${isRequired ? ' *' : ''}`;
       wrapper.appendChild(label);
 
       let input;
@@ -801,6 +856,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       input.setAttribute('data-task-data-id', row.id);
       input.setAttribute('data-def-id', row.dataDefId);
       input.setAttribute('data-value-type', row.valueType);
+      input.setAttribute('data-required', isRequired ? '1' : '0');
+      input.setAttribute('data-label', row.definitionLabel || 'Value');
       wrapper.appendChild(input);
       taskFinishDataList.appendChild(wrapper);
     });
@@ -846,7 +903,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let taskData = null;
     if (applyStatus && dataContainer) {
       taskData = collectTaskDataValues(dataContainer);
-      const validation = validateTaskDataValues(taskData);
+      const validation = validateTaskDataValues(taskData, currentTaskDataRows, dataContainer);
       if (!validation.ok) {
         alert(validation.message);
         return false;
@@ -936,23 +993,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const note = getNoteValue(taskOverlayNote);
     if (applyStatus) {
-      const opened = await openFinishTaskModal();
-      if (opened) {
-        if (taskFinishOk) {
-          taskFinishOk.onclick = async () => {
-            taskFinishOk.disabled = true;
-            const success = await finalizeTask(true, note, taskFinishDataList);
-            taskFinishOk.disabled = false;
-            if (success) closeFinishTaskModal();
-          };
-        }
-        if (taskFinishCancel) {
-          taskFinishCancel.onclick = () => {
-            closeFinishTaskModal();
-          };
-        }
-        return;
-      }
+      await finalizeTask(true, note, taskOverlayDataList);
+      return;
     }
 
     await finalizeTask(applyStatus, note, null);
@@ -1761,7 +1803,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       wrapper.className = 'task-overlay__data-row';
 
       const label = document.createElement('label');
-      label.textContent = row.definitionLabel || 'Value';
+      const isRequired = Number(row.isRequired ?? row.is_required ?? 0) === 1;
+      label.textContent = `${row.definitionLabel || 'Value'}${isRequired ? ' *' : ''}`;
       wrapper.appendChild(label);
 
       let input;
@@ -1822,6 +1865,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       input.setAttribute('data-task-data-id', row.id);
       input.setAttribute('data-def-id', row.dataDefId);
       input.setAttribute('data-value-type', row.valueType);
+      input.setAttribute('data-required', isRequired ? '1' : '0');
+      input.setAttribute('data-label', row.definitionLabel || 'Value');
       wrapper.appendChild(input);
       taskOverlayDataList.appendChild(wrapper);
     });
