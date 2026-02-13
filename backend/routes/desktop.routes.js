@@ -213,6 +213,13 @@ router.get('/bootstrap', async (_req, res) => {
       [tasks],
       [projectTasks],
       [projectTaskRoles],
+      [customers],
+      [itemTypes],
+      [taskDataDefinitions],
+      [projectTaskData],
+      [refItemStatus],
+      [cfsItems],
+      [imItems],
     ] = await Promise.all([
       pool.query(`SELECT id, first_name, last_name, login, authcode, system_role, is_active FROM users WHERE is_active = 1`),
       pool.query(`SELECT * FROM projects`),
@@ -226,23 +233,14 @@ router.get('/bootstrap', async (_req, res) => {
       pool.query(`SELECT * FROM tasks`),
       pool.query(`SELECT * FROM project_tasks`),
       pool.query(`SELECT * FROM project_task_roles`),
+      pool.query(`SELECT id, name FROM customers ORDER BY name`),
+      pool.query(`SELECT id, name FROM ref_item_types ORDER BY name`),
+      pool.query(`SELECT id, \`key\`, label, value_type FROM task_data_definitions`),
+      pool.query(`SELECT * FROM project_task_data`),
+      pool.query(`SELECT id, label AS name, label FROM ref_item_status`),
+      pool.query(`SELECT id, project_id, label, task_status_id FROM cfs_items`),
+      pool.query(`SELECT id, project_id, label, task_status_id FROM im_items`),
     ]);
-
-    let customers = [];
-    let itemTypes = [];
-    let taskDataDefinitions = [];
-    let projectTaskData = [];
-    let refItemStatus = [];
-    let cfsItems = [];
-    let imItems = [];
-
-    try { [customers] = await pool.query(`SELECT id, name FROM customers ORDER BY name`); } catch {}
-    try { [itemTypes] = await pool.query(`SELECT id, name FROM ref_item_types ORDER BY name`); } catch {}
-    try { [taskDataDefinitions] = await pool.query(`SELECT id, \`key\`, label, value_type FROM task_data_definitions`); } catch {}
-    try { [projectTaskData] = await pool.query(`SELECT * FROM project_task_data`); } catch {}
-    try { [refItemStatus] = await pool.query(`SELECT id, label AS name, label FROM ref_item_status`); } catch {}
-    try { [cfsItems] = await pool.query(`SELECT id, project_id, label, task_status_id FROM cfs_items`); } catch {}
-    try { [imItems] = await pool.query(`SELECT id, project_id, label, task_status_id FROM im_items`); } catch {}
 
     res.json({
       users,

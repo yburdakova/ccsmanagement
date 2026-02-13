@@ -364,26 +364,43 @@ async function initializeLocalDb() {
         imItemsRes,
       ] = settled;
 
-      const readOrEmpty = (result, name) => {
-        if (result.status === 'fulfilled') return result.value || [];
+      const readSnapshot = (result, name) => {
+        if (result.status === 'fulfilled') {
+          return { ok: true, data: result.value || [] };
+        }
         console.warn(`[init] Failed to fetch ${name}:`, result.reason?.message || result.reason);
-        return [];
+        return { ok: false, data: null };
       };
 
-      saveRefItemStatusToLocal(readOrEmpty(refItemStatusRes, 'ref_item_status'));
-      saveCfsItemsToLocal(readOrEmpty(cfsItemsRes, 'cfs_items'));
-      saveImItemsToLocal(readOrEmpty(imItemsRes, 'im_items'));
-      saveUsersToLocal(readOrEmpty(usersRes, 'users'));
-      saveProjectsToLocal(readOrEmpty(projectsRes, 'projects'));
-      saveProjectUsersToLocal(readOrEmpty(projectUsersRes, 'project_users'));
-      saveRefProjectRolesToLocal(readOrEmpty(rolesRes, 'ref_project_roles'));
-      saveTasksToLocal(readOrEmpty(tasksRes, 'tasks'));
-      saveCustomersToLocal(readOrEmpty(customersRes, 'customers'));
-      saveItemTypesToLocal(readOrEmpty(itemTypesRes, 'ref_item_types'));
-      saveProjectTasksToLocal(readOrEmpty(projectTasksRes, 'project_tasks'));
-      saveProjectTaskRolesToLocal(readOrEmpty(projectTaskRolesRes, 'project_task_roles'));
-      saveTaskDataDefinitionsToLocal(readOrEmpty(taskDataDefinitionsRes, 'task_data_definitions'));
-      saveProjectTaskDataToLocal(readOrEmpty(projectTaskDataRes, 'project_task_data'));
+      const refItemStatusSnapshot = readSnapshot(refItemStatusRes, 'ref_item_status');
+      const cfsItemsSnapshot = readSnapshot(cfsItemsRes, 'cfs_items');
+      const imItemsSnapshot = readSnapshot(imItemsRes, 'im_items');
+      const usersSnapshot = readSnapshot(usersRes, 'users');
+      const projectsSnapshot = readSnapshot(projectsRes, 'projects');
+      const projectUsersSnapshot = readSnapshot(projectUsersRes, 'project_users');
+      const rolesSnapshot = readSnapshot(rolesRes, 'ref_project_roles');
+      const tasksSnapshot = readSnapshot(tasksRes, 'tasks');
+      const customersSnapshot = readSnapshot(customersRes, 'customers');
+      const itemTypesSnapshot = readSnapshot(itemTypesRes, 'ref_item_types');
+      const projectTasksSnapshot = readSnapshot(projectTasksRes, 'project_tasks');
+      const projectTaskRolesSnapshot = readSnapshot(projectTaskRolesRes, 'project_task_roles');
+      const taskDataDefinitionsSnapshot = readSnapshot(taskDataDefinitionsRes, 'task_data_definitions');
+      const projectTaskDataSnapshot = readSnapshot(projectTaskDataRes, 'project_task_data');
+
+      if (refItemStatusSnapshot.ok) saveRefItemStatusToLocal(refItemStatusSnapshot.data);
+      if (cfsItemsSnapshot.ok) saveCfsItemsToLocal(cfsItemsSnapshot.data);
+      if (imItemsSnapshot.ok) saveImItemsToLocal(imItemsSnapshot.data);
+      if (usersSnapshot.ok) saveUsersToLocal(usersSnapshot.data);
+      if (projectsSnapshot.ok) saveProjectsToLocal(projectsSnapshot.data);
+      if (projectUsersSnapshot.ok) saveProjectUsersToLocal(projectUsersSnapshot.data);
+      if (rolesSnapshot.ok) saveRefProjectRolesToLocal(rolesSnapshot.data);
+      if (tasksSnapshot.ok) saveTasksToLocal(tasksSnapshot.data);
+      if (customersSnapshot.ok) saveCustomersToLocal(customersSnapshot.data);
+      if (itemTypesSnapshot.ok) saveItemTypesToLocal(itemTypesSnapshot.data);
+      if (projectTasksSnapshot.ok) saveProjectTasksToLocal(projectTasksSnapshot.data);
+      if (projectTaskRolesSnapshot.ok) saveProjectTaskRolesToLocal(projectTaskRolesSnapshot.data);
+      if (taskDataDefinitionsSnapshot.ok) saveTaskDataDefinitionsToLocal(taskDataDefinitionsSnapshot.data);
+      if (projectTaskDataSnapshot.ok) saveProjectTaskDataToLocal(projectTaskDataSnapshot.data);
 
       console.log('[init] Local DB refreshed from global DB');
       const syncResult = await syncQueue();
@@ -426,6 +443,16 @@ function loginByAuthCodeLocal(code) {
   });
 }
 
+function clearTableContents(tableName, label) {
+  db.run(`DELETE FROM ${tableName}`, (err) => {
+    if (err) {
+      console.error(`[local-db] Failed to clear ${label}:`, err.message);
+    } else {
+      console.log(`[local-db] Cleared ${label} (empty dataset)`);
+    }
+  });
+}
+
 // DELETE + INSERT version
 // function saveUsersToLocal(users) {
 //   if (!users || users.length === 0) {
@@ -465,7 +492,7 @@ function loginByAuthCodeLocal(code) {
 // UPSERT version
 function saveUsersToLocal(users) {
   if (!users || users.length === 0) {
-    console.warn('[local-db] Skipping users update: empty dataset');
+    clearTableContents('local_users', 'local_users');
     return;
   }
 
@@ -559,7 +586,7 @@ function saveUsersToLocal(users) {
 // UPSERT version
 function saveProjectsToLocal(projects) {
   if (!projects || projects.length === 0) {
-    console.warn('[local-db] Skipping projects update: empty dataset');
+    clearTableContents('projects', 'projects');
     return;
   }
 
@@ -650,7 +677,7 @@ function saveProjectsToLocal(projects) {
 // UPSERT version
 function saveProjectUsersToLocal(projectUsers) {
   if (!projectUsers || projectUsers.length === 0) {
-    console.warn('[local-db] Skipping project_users update: empty dataset');
+    clearTableContents('project_users', 'project_users');
     return;
   }
 
@@ -731,7 +758,7 @@ function saveProjectUsersToLocal(projectUsers) {
 // UPSERT version
 function saveRefProjectRolesToLocal(roles) {
   if (!roles || roles.length === 0) {
-    console.warn('[local-db] Skipping roles update: empty dataset');
+    clearTableContents('ref_project_roles', 'ref_project_roles');
     return;
   }
 
@@ -814,7 +841,7 @@ function saveRefProjectRolesToLocal(roles) {
 // UPSERT version
 function saveTasksToLocal(tasks) {
   if (!tasks || tasks.length === 0) {
-    console.warn('[local-db] Skipping tasks update: empty dataset');
+    clearTableContents('tasks', 'tasks');
     return;
   }
 
@@ -899,7 +926,7 @@ function saveTasksToLocal(tasks) {
 // UPSERT version
 function saveCustomersToLocal(customers) {
   if (!customers || customers.length === 0) {
-    console.warn('[local-db] Skipping customers update: empty dataset');
+    clearTableContents('customers', 'customers');
     return;
   }
 
@@ -994,7 +1021,7 @@ function getAllCustomersLocal() {
 // UPSERT version
 function saveProjectTasksToLocal(projectTasks) {
   if (!projectTasks || projectTasks.length === 0) {
-    console.warn('[local-db] Skipping project_tasks update: empty dataset');
+    clearTableContents('project_tasks', 'project_tasks');
     return;
   }
 
@@ -1087,7 +1114,7 @@ function saveProjectTasksToLocal(projectTasks) {
 // UPSERT version
 function saveProjectTaskRolesToLocal(projectTaskRoles) {
   if (!projectTaskRoles || projectTaskRoles.length === 0) {
-    console.warn('[local-db] Skipping project_task_roles update: empty dataset');
+    clearTableContents('project_task_roles', 'project_task_roles');
     return;
   }
 
@@ -1174,7 +1201,7 @@ function saveProjectTaskRolesToLocal(projectTaskRoles) {
 // UPSERT version
 function saveTaskDataDefinitionsToLocal(definitions) {
   if (!definitions || definitions.length === 0) {
-    console.warn('[local-db] Skipping task_data_definitions update: empty dataset');
+    clearTableContents('task_data_definitions', 'task_data_definitions');
     return;
   }
 
@@ -1274,7 +1301,7 @@ function saveTaskDataDefinitionsToLocal(definitions) {
 // UPSERT version
 function saveProjectTaskDataToLocal(taskData) {
   if (!taskData || taskData.length === 0) {
-    console.warn('[local-db] Skipping project_task_data update: empty dataset');
+    clearTableContents('project_task_data', 'project_task_data');
     return;
   }
 
@@ -1377,7 +1404,10 @@ function saveProjectTaskDataToLocal(taskData) {
 
 // UPSERT version
 function saveRefItemStatusToLocal(statuses) {
-  if (!statuses || statuses.length === 0) return;
+  if (!statuses || statuses.length === 0) {
+    clearTableContents('ref_item_status', 'ref_item_status');
+    return;
+  }
 
   db.serialize(() => {
     console.log('[local-db] Updating ref_item_status...');
@@ -1719,7 +1749,7 @@ function getProjectTaskDataByTask(projectId, taskId) {
 
 function saveItemTypesToLocal(itemTypes) {
   if (!itemTypes || itemTypes.length === 0) {
-    console.warn('[local-db] Skipping item types update: empty dataset');
+    clearTableContents('ref_item_types', 'ref_item_types');
     return;
   }
 
