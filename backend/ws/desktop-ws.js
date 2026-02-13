@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import pool from '../db.config.js';
+import { subscribeDbChanged } from '../events/db-change-bus.js';
 
 /**
  * Attaches desktop WebSocket endpoint to an existing HTTP server.
@@ -19,6 +20,21 @@ export function createDesktopWsServer(httpServer) {
       socket.ping();
     }
   }, 30_000);
+
+  const unsubscribeDbChanged = subscribeDbChanged((event) => {
+    if (clients.size === 0) return;
+    const message = JSON.stringify({
+      type: 'db-changed',
+      reason: event?.reason || 'db-write',
+      ts: event?.ts || Date.now(),
+    });
+    for (const socket of clients) {
+      if (socket.readyState === socket.OPEN) {
+        socket.send(message);
+      }
+    }
+    console.log('[ws] Broadcasted db-changed event to desktop clients');
+  });
 
   wsServer.on('connection', (socket, request) => {
     socket.isAlive = true;
@@ -116,6 +132,7 @@ export function createDesktopWsServer(httpServer) {
 
   httpServer.on('close', () => {
     clearInterval(heartbeatInterval);
+    unsubscribeDbChanged();
     for (const socket of clients) {
       socket.terminate();
     }

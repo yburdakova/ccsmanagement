@@ -45,6 +45,7 @@ const {
   connectDesktopWs,
   disconnectDesktopWs,
   isDesktopWsConnected,
+  setDesktopWsMessageListener,
   setDesktopWsStatusListener
 } = require('./ws/desktop-ws-client');
 
@@ -157,6 +158,14 @@ app.whenReady().then(async () => {
   });
 
   if (profile === 'backend') {
+    setDesktopWsMessageListener((event) => {
+      if (event?.type !== 'db-changed') return;
+      console.log('[main] WS db-changed event received, refreshing local cache');
+      syncAfterBackendReconnect().catch((err) => {
+        console.error('[main] WS db-changed refresh failed:', err.message);
+      });
+    });
+
     setDesktopWsStatusListener(({ connected }) => {
       publishConnectionState();
       const nextConnected = Boolean(connected);

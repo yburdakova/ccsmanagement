@@ -8,6 +8,7 @@ let connected = false;
 let statusListener = null;
 let reconnectDelayMs = 1000;
 let stableConnectionTimer = null;
+let messageListener = null;
 
 const MIN_RECONNECT_MS = 1000;
 const MAX_RECONNECT_MS = 30000;
@@ -105,6 +106,9 @@ function connectDesktopWs(userId) {
     try {
       const payload = JSON.parse(text);
       if (payload?.type === 'pong') return;
+      if (typeof messageListener === 'function') {
+        messageListener(payload);
+      }
     } catch {}
   });
 
@@ -140,6 +144,9 @@ module.exports = {
   connectDesktopWs,
   disconnectDesktopWs,
   isDesktopWsConnected: () => connected,
+  setDesktopWsMessageListener: (listener) => {
+    messageListener = typeof listener === 'function' ? listener : null;
+  },
   setDesktopWsStatusListener: (listener) => {
     statusListener = listener;
   },
