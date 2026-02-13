@@ -3,6 +3,8 @@ const dotenv = require('dotenv');
 const crypto = require('crypto');
 const { app, screen, BrowserWindow, ipcMain, dialog } = require('electron'); 
 const { Menu } = require('electron');
+const { showUserMessage, reportException, installMainConsoleBridge } = require('./utils/desktop-error-handler');
+installMainConsoleBridge();
 
 const readPackagedEnvProfile = () => {
   try {
@@ -80,7 +82,7 @@ async function syncAfterBackendReconnect() {
       mainWindow.webContents.send('backend-data-refreshed', { at: new Date().toISOString() });
     }
   } catch (err) {
-    console.error('[main] Reconnect sync failed:', err.message);
+    await reportException('Reconnect synchronization', err, { level: 'warning' });
   } finally {
     reconnectSyncInProgress = false;
   }
@@ -107,9 +109,6 @@ function createWindow(screenWidth) {
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   Menu.setApplicationMenu(null);
-  if (!app.isPackaged) {
-    win.webContents.openDevTools();
-  }
   mainWindow = win;
   win.webContents.on('did-finish-load', () => {
     publishConnectionState();
@@ -141,7 +140,7 @@ app.whenReady().then(async () => {
   if (app.isPackaged) {
     const { initializeLocalDb } = require('./api/db-local');
     initializeLocalDb().catch((err) => {
-      console.error('[main] Failed to initialize local DB:', err.message);
+      reportException('Startup local DB initialization', err, { level: 'error' }).catch(() => {});
       try {
         dialog.showMessageBoxSync({
           type: 'error',
@@ -162,7 +161,7 @@ app.whenReady().then(async () => {
       if (event?.type !== 'db-changed') return;
       console.log('[main] WS db-changed event received, refreshing local cache');
       syncAfterBackendReconnect().catch((err) => {
-        console.error('[main] WS db-changed refresh failed:', err.message);
+        reportException('WS db-changed refresh', err, { level: 'warning' });
       });
     });
 
@@ -171,7 +170,7 @@ app.whenReady().then(async () => {
       const nextConnected = Boolean(connected);
       if (nextConnected && !lastWsConnected) {
         syncAfterBackendReconnect().catch((err) => {
-          console.error('[main] Reconnect sync scheduling failed:', err.message);
+          reportException('Reconnect sync scheduling', err, { level: 'warning' });
         });
       }
       lastWsConnected = nextConnected;
@@ -192,8 +191,17 @@ ipcMain.handle('init-local-db', async () => {
     await initializeLocalDb();
     return { success: true };
   } catch (err) {
-    console.error('[main] init-local-db error:', err.message);
+    await reportException('Local DB initialization', err, { level: 'error' });
     return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('show-user-message', async (_event, payload) => {
+  try {
+    return await showUserMessage(payload || {});
+  } catch (err) {
+    console.error('[main] show-user-message failed:', err.message);
+    return { shown: false, error: err.message };
   }
 });
 
@@ -206,7 +214,7 @@ ipcMain.handle('get-users', async () => {
     console.log('Fetched and saved users locally:', users.length);
     return users;
   } catch (error) {
-    console.error('DB Error:', error);
+    await reportException('Fetching users', error, { level: 'warning' });
     return [];
   }
 });
@@ -220,7 +228,7 @@ ipcMain.handle('get-all-projects', async () => {
     console.log('Fetched and saved projects locally:', projects.length);
     return projects;
   } catch (error) {
-    console.error('Error fetching projects:', error);
+    await reportException('Fetching projects', error, { level: 'warning' });
     return await getAllProjectsLocal();
   }
 });
@@ -234,7 +242,7 @@ ipcMain.handle('get-all-project-users', async () => {
     console.log('Fetched and saved project_users locally:', projectUsers.length);
     return projectUsers;
   } catch (error) {
-    console.error('Error fetching project_users:', error);
+    await reportException('Fetching project users', error, { level: 'warning' });
     return await getAllProjectUsersLocal();
   }
 });
@@ -248,7 +256,7 @@ ipcMain.handle('get-ref-project-roles', async () => {
     console.log('Fetched and saved project roles locally:', roles.length);
     return roles;
   } catch (error) {
-    console.error('Error fetching project roles:', error);
+    await reportException('Fetching project roles', error, { level: 'warning' });
     return await getAllProjectRolesLocal();
   }
 });
@@ -262,7 +270,7 @@ ipcMain.handle('get-all-tasks', async () => {
     console.log('Fetched and saved tasks locally:', tasks.length);
     return tasks;
   } catch (error) {
-    console.error('Error fetching tasks:', error);
+    await reportException('Fetching tasks', error, { level: 'warning' });
     return await getAllTasksLocal();
   }
 });
@@ -276,7 +284,7 @@ ipcMain.handle('get-all-project-tasks', async () => {
     console.log('Fetched and saved project_tasks locally:', projectTasks.length);
     return projectTasks;
   } catch (error) {
-    console.error('Error fetching project_tasks:', error);
+    await reportException('Fetching project tasks', error, { level: 'warning' });
     return await getAllProjectTasksLocal();
   }
 });
@@ -290,7 +298,7 @@ ipcMain.handle('get-all-project-task-roles', async () => {
     console.log('Fetched and saved project_task_roles locally:', projectTaskRoles.length);
     return projectTaskRoles;
   } catch (error) {
-    console.error('Error fetching project_task_roles:', error);
+    await reportException('Fetching project task roles', error, { level: 'warning' });
     return await getAllProjectTaskRolesLocal();
   }
 });
@@ -308,7 +316,7 @@ ipcMain.handle('get-all-customers', async () => {
     }
     return await getAllCustomersLocal();
   } catch (error) {
-    console.error('Error fetching customers:', error);
+    await reportException('Fetching customers', error, { level: 'warning' });
     return await getAllCustomersLocal();
   }
 });
@@ -325,7 +333,7 @@ ipcMain.handle('get-project-task-data', async (event, { projectId, taskId }) => 
     }
     return await getLocalProjectTaskDataByTask(projectId, taskId);
   } catch (error) {
-    console.error('Error fetching project task data:', error);
+    await reportException('Fetching project task data', error, { level: 'warning' });
     return await getLocalProjectTaskDataByTask(projectId, taskId);
   }
 });
@@ -335,7 +343,7 @@ ipcMain.handle('save-task-data', async (event, payload) => {
   try {
     return await saveTaskDataValueLocal(payload);
   } catch (error) {
-    console.error('Error saving task data:', error);
+    await reportException('Saving task data', error, { level: 'warning' });
     return { success: false, error: error.message };
   }
 });
@@ -360,7 +368,7 @@ ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
     console.log(`[main] Fetched local tasks for user=${userId}, project=${projectId}:`, tasks.length);
     return tasks;
   } catch (error) {
-    console.error('Error fetching available tasks:', error);
+    await reportException('Fetching available tasks', error, { level: 'warning' });
     return await getAvailableTasksForUser(userId, projectId);
   }
 });
@@ -378,7 +386,7 @@ ipcMain.handle('get-item-types', async () => {
     }
     return await getAllItemTypesLocal();
   } catch (error) {
-    console.error('Error fetching item types:', error);
+    await reportException('Fetching item types', error, { level: 'warning' });
     return await getAllItemTypesLocal();
   }
 });
@@ -404,7 +412,7 @@ ipcMain.handle('login-with-code', async (event, code) => {
       } catch (remoteErr) {
         // Backend may be unreachable even when generic connectivity check says online.
         // Fall back to local cached login instead of hard-failing.
-        console.warn('[main] Remote login failed, trying local cache:', remoteErr.message);
+        await reportException('Remote login fallback', remoteErr, { level: 'warning' });
         const localUser = await loginByAuthCodeLocal(code);
         if (!localUser?.id) {
           return { error: offlinePolicyError };
@@ -421,7 +429,7 @@ ipcMain.handle('login-with-code', async (event, code) => {
       return user;
     }
   } catch (error) {
-    console.error('Login failed:', error);
+    await reportException('Login', error, { level: 'error' });
     return { error: 'Login failed. Please try again.' };
   }
 });
@@ -448,7 +456,7 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
         const res = await dataApi.startUnallocatedActivityGlobal({ uuid, user_id: userId, activity_id: safeActivityId });
         console.log('[main] start-unallocated: after server', res);
         if (!res.success) {
-          console.warn('[main] start-unallocated: remote start returned error, keeping local start:', res.error);
+          await reportException('Start unallocated (remote)', new Error(String(res.error || 'Unknown remote error')), { level: 'warning' });
           await enqueueSyncPayload({
             type: 'start',
             uuid,
@@ -458,7 +466,7 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
           });
         }
       } catch (remoteErr) {
-        console.warn('[main] start-unallocated: remote start failed, keeping local start:', remoteErr.message);
+        await reportException('Start unallocated (remote fallback)', remoteErr, { level: 'warning' });
         await enqueueSyncPayload({
           type: 'start',
           uuid,
@@ -471,7 +479,7 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
 
     return { success: true, uuid };
   } catch (error) {
-    console.error('[main] start-unallocated error:', error.message);
+    await reportException('Start unallocated', error, { level: 'error' });
     return { success: false, error: error.message };
   }
 });
@@ -499,7 +507,7 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
           timestamp: new Date().toISOString()
         });
         if (!res.success) {
-          console.warn('[main] start-task-activity: remote start returned error, keeping local start:', res.error);
+          await reportException('Start task activity (remote)', new Error(String(res.error || 'Unknown remote error')), { level: 'warning' });
           await enqueueSyncPayload({
             type: 'start-task',
             uuid,
@@ -511,7 +519,7 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
           });
         }
       } catch (remoteErr) {
-        console.warn('[main] start-task-activity: remote start failed, keeping local start:', remoteErr.message);
+        await reportException('Start task activity (remote fallback)', remoteErr, { level: 'warning' });
         await enqueueSyncPayload({
           type: 'start-task',
           uuid,
@@ -526,7 +534,7 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
 
     return { success: true, uuid };
   } catch (error) {
-    console.error('[main] start-task-activity error:', error.message);
+    await reportException('Start task activity', error, { level: 'error' });
     return { success: false, error: error.message };
   }
 });
@@ -570,16 +578,16 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
         });
 
         if (!result.success) {
-          console.warn('[main] complete-activity: remote complete returned error, relying on queued local data:', result.error);
+          await reportException('Complete activity (remote)', new Error(String(result.error || 'Unknown remote error')), { level: 'warning' });
         }
       } catch (remoteErr) {
-        console.warn('[main] complete-activity: remote complete failed, relying on queued local data:', remoteErr.message);
+        await reportException('Complete activity (remote fallback)', remoteErr, { level: 'warning' });
       }
     }
 
     return { success: true };
   } catch (error) {
-    console.error('[main] complete-activity error:', error.message);
+    await reportException('Complete activity', error, { level: 'error' });
     return { success: false, error: error.message };
   }
 });
@@ -607,7 +615,7 @@ ipcMain.handle('logout', async (event) => {
 
     return { success: true };
   } catch (err) {
-    console.error('[main] Logout auto-complete failed:', err.message);
+    await reportException('Logout auto-complete', err, { level: 'warning' });
     return { success: false, error: err.message };
   }
 });
@@ -633,7 +641,7 @@ ipcMain.handle('get-project-items', async (event, { projectId, projectTypeId }) 
       return await getProjectItemsLocal(projectId, projectTypeId);
     }
   } catch (error) {
-    console.error('Error fetching project items:', error);
+    await reportException('Fetching project items', error, { level: 'warning' });
     return await getProjectItemsLocal(projectId, projectTypeId);
   }
 });
@@ -646,7 +654,7 @@ ipcMain.handle('get-item-tracking-tasks', async (event, { projectId }) => {
     if (!online) return [];
     return await dataApi.getItemTrackingTasksByProject(projectId);
   } catch (error) {
-    console.error('Error fetching item tracking tasks:', error);
+    await reportException('Fetching item tracking tasks', error, { level: 'warning' });
     return [];
   }
 });
@@ -659,7 +667,7 @@ ipcMain.handle('get-item-status-rule', async (event, { projectId, taskId, applyA
     if (!online) return null;
     return await dataApi.getItemStatusRuleByTask(projectId, taskId, applyAfterFinish);
   } catch (error) {
-    console.error('Error fetching item status rule:', error);
+    await reportException('Fetching item status rule', error, { level: 'warning' });
     return null;
   }
 });
@@ -674,7 +682,7 @@ ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
     }
     return await dataApi.updateItemStatusGlobal(itemId, statusId);
   } catch (error) {
-    console.error('Error updating item status:', error);
+    await reportException('Updating item status', error, { level: 'warning' });
     return { success: false, error: error.message };
   }
 });
@@ -687,7 +695,7 @@ ipcMain.handle('get-unfinished-tasks', async (event, { userId }) => {
     if (!online) return [];
     return await dataApi.getUnfinishedTasksByUser(userId);
   } catch (error) {
-    console.error('Error fetching unfinished tasks:', error);
+    await reportException('Fetching unfinished tasks', error, { level: 'warning' });
     return [];
   }
 });
@@ -700,7 +708,7 @@ ipcMain.handle('get-assignments', async (event, { userId }) => {
     if (!online) return [];
     return await dataApi.getAssignmentsByUser(userId);
   } catch (error) {
-    console.error('Error fetching assignments:', error);
+    await reportException('Fetching assignments', error, { level: 'warning' });
     return [];
   }
 });
@@ -716,7 +724,7 @@ ipcMain.handle('mark-unfinished-finished', async (event, { recordId, uuid }) => 
     }
     return await dataApi.markUnfinishedTaskFinished(recordId);
   } catch (error) {
-    console.error('Error updating unfinished task:', error);
+    await reportException('Updating unfinished task', error, { level: 'warning' });
     return { success: false, error: error.message };
   }
 });
@@ -729,7 +737,7 @@ ipcMain.handle('mark-assignment-accepted', async (event, { assignmentId }) => {
     if (!online) return { success: false, error: 'Offline mode' };
     return await dataApi.markAssignmentAccepted(assignmentId);
   } catch (error) {
-    console.error('Error updating assignment:', error);
+    await reportException('Updating assignment', error, { level: 'warning' });
     return { success: false, error: error.message };
   }
 });
@@ -755,12 +763,20 @@ app.on('will-quit', async (event) => {
       console.log(`[main] Sync on quit finished: ${syncResult.synced} record(s) synced`);
     }
   } catch (err) {
-    console.error('[main] Failed to auto-complete on quit:', err.message);
+    await reportException('Auto-complete on quit', err, { level: 'warning' });
   } finally {
     // ⚡ небольшая задержка, чтобы дать SQLite очистить соединение
     setTimeout(() => {
       process.exit(0); // жёсткий выход без лишних коллизий
     }, 200);
   }
+});
+
+process.on('uncaughtException', (error) => {
+  reportException('Uncaught Exception', error, { level: 'error' }).catch(() => {});
+});
+
+process.on('unhandledRejection', (reason) => {
+  reportException('Unhandled Rejection', reason, { level: 'error' }).catch(() => {});
 });
 

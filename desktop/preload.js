@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('start-task-activity', { userId, projectId, taskId, itemId }),
   completeActiveActivity: (payload) => ipcRenderer.invoke('complete-activity', payload),
   syncQueue: () => ipcRenderer.invoke('sync-queue'),
+  showUserMessage: (payload) => ipcRenderer.invoke('show-user-message', payload),
   logout: (payload) => ipcRenderer.invoke('logout', payload),
   getBackendConnectionStatus: () => ipcRenderer.invoke('get-backend-connection-status'),
   onBackendConnectionStatus: (callback) => {

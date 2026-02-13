@@ -23,7 +23,11 @@ window.network = {
       if (result.success) {
         console.log(`[network] Synced ${result.synced} records`);
       } else {
-        console.warn('[network] Sync error:', result.error);
+        if (window.desktopError?.warn) {
+          await window.desktopError.warn('Network sync', result.error || 'Unknown sync error');
+        } else {
+          alert(`Network sync: ${String(result.error || 'Unknown sync error')}`);
+        }
       }
 
       const refreshed = await window.electronAPI.initLocalDb();

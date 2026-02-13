@@ -556,7 +556,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           pendingUnfinishedTask.id
         );
         if (!markResult?.success) {
-          console.warn('[renderer] Failed to mark unfinished task finished:', markResult?.error);
+          window.desktopError?.warn?.('Mark unfinished task finished', markResult?.error || 'Unknown error');
         }
       }
       pendingUnfinishedTask = null;
@@ -592,7 +592,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           pendingAssignment.id
         );
         if (!acceptResult?.success) {
-          console.warn('[renderer] Failed to accept assignment:', acceptResult?.error);
+          window.desktopError?.warn?.('Accept assignment', acceptResult?.error || 'Unknown error');
         }
         pendingAssignment = null;
         pendingAssignmentSelection = null;
@@ -626,7 +626,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentTaskStatusRule.statusId
       );
       if (!statusResult?.success) {
-        console.warn('[renderer] Failed to update item status on start:', statusResult?.error);
+        window.desktopError?.warn?.('Update item status on start', statusResult?.error || 'Unknown error');
       } else {
         await refreshItemOptions(currentTaskItemId);
       }
@@ -892,7 +892,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
     } catch (err) {
-      console.warn('[renderer] Failed to load task data for finish modal:', err);
+      window.desktopError?.warn?.('Load task data for finish modal', err);
     }
 
     const dataRows = rows && rows.length ? rows : currentTaskDataRows;
@@ -953,7 +953,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         finishStatusRule.statusId
       );
       if (!statusResult?.success) {
-        console.warn('[renderer] Failed to update item status on finish:', statusResult?.error);
+        window.desktopError?.warn?.('Update item status on finish', statusResult?.error || 'Unknown error');
       } else {
         await refreshItemOptions(currentTaskItemId);
       }
@@ -1243,7 +1243,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // ++
       return raw ? JSON.parse(raw) : null;
     } catch (err) {
-      console.warn('[renderer] Failed to read work timer state:', err);
+      window.desktopError?.warn?.('Read work timer state', err);
       return null;
     }
   }
@@ -1264,7 +1264,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       localStorage.setItem(getWorkTimerStateKey(currentUser.id), JSON.stringify(payload));
       // ++
     } catch (err) {
-      console.warn('[renderer] Failed to persist work timer state:', err);
+      window.desktopError?.warn?.('Persist work timer state', err);
     }
   }
 
@@ -1310,7 +1310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const raw = localStorage.getItem(savedProjectKey);
       return raw ? JSON.parse(raw) : null;
     } catch (err) {
-      console.warn('[renderer] Failed to parse saved project:', err);
+      window.desktopError?.warn?.('Parse saved project', err);
       return null;
     }
   }
@@ -1416,7 +1416,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     } catch (err) {
-      console.warn('[renderer] Failed to refresh projects:', err);
+      window.desktopError?.warn?.('Refresh project data', err);
     }
   }
 
@@ -1459,7 +1459,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const tasks = await window.electronAPI.getUnfinishedTasks(currentUser.id);
       return Array.isArray(tasks) ? tasks : [];
     } catch (err) {
-      console.warn('[renderer] Failed to load unfinished tasks:', err);
+      window.desktopError?.warn?.('Load unfinished tasks', err);
       return [];
     }
   }
@@ -1470,7 +1470,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const assignments = await window.electronAPI.getAssignments(currentUser.id);
       return Array.isArray(assignments) ? assignments : [];
     } catch (err) {
-      console.warn('[renderer] Failed to load assignments:', err);
+      window.desktopError?.warn?.('Load assignments', err);
       return [];
     }
   }
@@ -1913,7 +1913,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderTaskDataOverlay(rows || []);
       }
     } catch (err) {
-      console.warn('[renderer] Failed to load task data overlay:', err);
+      window.desktopError?.warn?.('Load task data overlay', err);
       renderTaskDataOverlay(currentTaskDataRows || []);
     }
   }
@@ -1944,7 +1944,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       taskDataSection.style.display = 'none';
       taskDataList.innerHTML = '';
     } catch (err) {
-      console.warn('[renderer] Failed to load task data:', err);
+      window.desktopError?.warn?.('Load task data', err);
       taskDataSection.style.display = 'none';
       taskDataList.innerHTML = '';
       currentTaskDataRows = [];

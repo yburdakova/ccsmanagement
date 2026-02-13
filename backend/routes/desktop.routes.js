@@ -14,6 +14,30 @@ const normalizeValueType = (valueType = '') =>
 const isMissingTableError = (error) =>
   error?.code === 'ER_NO_SUCH_TABLE' || error?.code === 'ER_BAD_TABLE_ERROR';
 
+const OPTIONAL_TABLE_WARN_COOLDOWN_MS = 5 * 60 * 1000;
+const optionalTableWarnAt = new Map();
+
+const warnOptionalTableMissing = (entityName) => {
+  const now = Date.now();
+  const previous = optionalTableWarnAt.get(entityName) || 0;
+  if (now - previous < OPTIONAL_TABLE_WARN_COOLDOWN_MS) return;
+  optionalTableWarnAt.set(entityName, now);
+  console.warn(`[desktop-api] Optional table missing for ${entityName}, returning [].`);
+};
+
+const queryOptionalRows = async (sql, params, entityName) => {
+  try {
+    const [rows] = await pool.query(sql, params || []);
+    return rows;
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      warnOptionalTableMissing(entityName);
+      return [];
+    }
+    throw error;
+  }
+};
+
 const parseRequiredNumber = (raw) => {
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : 0;
@@ -214,12 +238,12 @@ router.get('/bootstrap', async (_req, res) => {
       [projectTasks],
       [projectTaskRoles],
       [customers],
-      [itemTypes],
-      [taskDataDefinitions],
-      [projectTaskData],
-      [refItemStatus],
-      [cfsItems],
-      [imItems],
+      itemTypes,
+      taskDataDefinitions,
+      projectTaskData,
+      refItemStatus,
+      cfsItems,
+      imItems,
     ] = await Promise.all([
       pool.query(`SELECT id, first_name, last_name, login, authcode, system_role, is_active FROM users WHERE is_active = 1`),
       pool.query(`SELECT * FROM projects`),
@@ -234,12 +258,12 @@ router.get('/bootstrap', async (_req, res) => {
       pool.query(`SELECT * FROM project_tasks`),
       pool.query(`SELECT * FROM project_task_roles`),
       pool.query(`SELECT id, name FROM customers ORDER BY name`),
-      pool.query(`SELECT id, name FROM ref_item_types ORDER BY name`),
-      pool.query(`SELECT id, \`key\`, label, value_type FROM task_data_definitions`),
-      pool.query(`SELECT * FROM project_task_data`),
-      pool.query(`SELECT id, label AS name, label FROM ref_item_status`),
-      pool.query(`SELECT id, project_id, label, task_status_id FROM cfs_items`),
-      pool.query(`SELECT id, project_id, label, task_status_id FROM im_items`),
+      queryOptionalRows(`SELECT id, name FROM ref_item_types ORDER BY name`, [], 'ref_item_types'),
+      queryOptionalRows(`SELECT id, \`key\`, label, value_type FROM task_data_definitions`, [], 'task_data_definitions'),
+      queryOptionalRows(`SELECT * FROM project_task_data`, [], 'project_task_data'),
+      queryOptionalRows(`SELECT id, label AS name, label FROM ref_item_status`, [], 'ref_item_status'),
+      queryOptionalRows(`SELECT id, project_id, label, task_status_id FROM cfs_items`, [], 'cfs_items'),
+      queryOptionalRows(`SELECT id, project_id, label, task_status_id FROM im_items`, [], 'im_items'),
     ]);
 
     res.json({
