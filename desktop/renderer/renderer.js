@@ -134,7 +134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const user = await window.electronAPI.loginWithCode(code);
 
-    if (user) {
+    if (user && user.id) {
       currentUser = user;
       errorEl.style.display = 'none';
       document.getElementById('login-screen').style.display = 'none';
@@ -142,6 +142,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('welcome-text').textContent =
         `${user.first_name} ${user.last_name}`;
     } else {
+      const message = user?.error ? String(user.error) : 'Invalid code';
+      errorEl.textContent = message;
       errorEl.style.display = 'block';
     }
   });
@@ -690,6 +692,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     return rows;
+  };
+
+  const applyCollectedTaskDataValues = (container, rows) => {
+    if (!container || !Array.isArray(rows) || rows.length === 0) return;
+    const valuesByDefId = new Map(
+      rows
+        .map((row) => [Number(row.data_def_id), row.value])
+        .filter(([defId]) => Number.isFinite(defId) && defId > 0)
+    );
+    const inputs = container.querySelectorAll('input, textarea, select');
+    inputs.forEach((input) => {
+      const defId = Number(input.getAttribute('data-def-id'));
+      if (!Number.isFinite(defId) || defId <= 0) return;
+      if (!valuesByDefId.has(defId)) return;
+      input.value = String(valuesByDefId.get(defId) ?? '');
+    });
   };
 
   const validateTaskDataValues = (rows, expectedRows, container) => {
@@ -1362,17 +1380,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       const selectedProjectId = projectSelect.value;
-      const [projects, projectUsers, roles, customers] = await Promise.all([
+      const [projects, projectUsers, roles, customers, itemTypes] = await Promise.all([
         window.electronAPI.getAllProjects(),
         window.electronAPI.getAllProjectUsers(),
         window.electronAPI.getAllProjectRoles(),
         window.electronAPI.getAllCustomers(),
+        window.electronAPI.getItemTypes(),
       ]);
 
       allProjects = projects;
       allProjectUsers = projectUsers;
       projectRoles = roles;
       allCustomers = customers;
+      allItemTypes = itemTypes;
+      itemTypesById = new Map(
+        (allItemTypes || []).map((type) => [Number(type.id), String(type.name || '').trim()])
+      );
 
       if (!updateOptions) return;
 
@@ -1395,6 +1418,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
       console.warn('[renderer] Failed to refresh projects:', err);
     }
+  }
+
+  if (window.electronAPI?.onBackendDataRefreshed) {
+    window.electronAPI.onBackendDataRefreshed(async () => {
+      await refreshProjectDataIfOnline({ updateOptions: true });
+      await refreshActiveTaskOverlayAfterReconnect();
+    });
   }
 
   function startTaskTimer() {
@@ -1887,6 +1917,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderTaskDataOverlay(currentTaskDataRows || []);
     }
   }
+
+  async function refreshActiveTaskOverlayAfterReconnect() {
+    if (!currentTaskUuid || !taskOverlayDataList) return;
+    const projectId = Number(projectSelect.value);
+    const taskId = Number(taskSelect.value);
+    if (!projectId || !taskId) return;
+
+    const draftValues = collectTaskDataValues(taskOverlayDataList);
+    await loadTaskDataOverlay(projectId, taskId);
+    applyCollectedTaskDataValues(taskOverlayDataList, draftValues);
+  }
+
   async function updateTaskDataSelection() {
     if (!taskDataSection || !taskDataList) return;
     const projectId = Number(projectSelect.value);

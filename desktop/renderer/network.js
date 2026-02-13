@@ -1,10 +1,24 @@
 window.network = {
+  backendConnection: null,
+  unsubscribeBackendConnection: null,
+  wasOnline: null,
+  reconnectRefreshInFlight: false,
+
   isOnline() {
+    if (this.backendConnection?.mode === 'ws') {
+      return Boolean(this.backendConnection.connected);
+    }
     return navigator.onLine;
   },
 
   async syncQueueIfOnline() {
-    if (this.isOnline()) {
+    if (this.backendConnection?.mode === 'ws') {
+      // In backend mode sync/refresh is handled by main process on WS reconnect.
+      return;
+    }
+    if (!this.isOnline() || this.reconnectRefreshInFlight) return;
+    this.reconnectRefreshInFlight = true;
+    try {
       const result = await window.electronAPI.syncQueue();
       if (result.success) {
         console.log(`[network] Synced ${result.synced} records`);
@@ -16,13 +30,16 @@ window.network = {
       if (refreshed.success) {
         console.log('[network] Local DB refreshed after reconnect');
       }
+    } finally {
+      this.reconnectRefreshInFlight = false;
     }
 
   },
 
   updateConnectionIndicator() {
     const container = document.getElementById('connection-status');
-    const online = navigator.onLine;
+    if (!container) return;
+    const online = this.isOnline();
 
     const onlineSVG = `
       <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="green">
@@ -38,13 +55,41 @@ window.network = {
 
     container.innerHTML = online ? onlineSVG : offlineSVG;
 
-    if (online) {
+    if (online && this.wasOnline === false) {
       this.syncQueueIfOnline();
     }
+    this.wasOnline = online;
   },
 
   startConnectionMonitoring() {
+    if (window.electronAPI?.onBackendConnectionStatus) {
+      this.unsubscribeBackendConnection = window.electronAPI.onBackendConnectionStatus((status) => {
+        this.backendConnection = status || null;
+        this.updateConnectionIndicator();
+      });
+    }
+
+    if (window.electronAPI?.getBackendConnectionStatus) {
+      window.electronAPI
+        .getBackendConnectionStatus()
+        .then((status) => {
+          this.backendConnection = status || null;
+          this.updateConnectionIndicator();
+        })
+        .catch(() => {
+          this.updateConnectionIndicator();
+        });
+    } else {
+      this.updateConnectionIndicator();
+    }
+
     this.updateConnectionIndicator();
+
+    if (window.electronAPI?.onBackendDataRefreshed) {
+      window.electronAPI.onBackendDataRefreshed(() => {
+        this.wasOnline = true;
+      });
+    }
 
     window.addEventListener('online', () => this.updateConnectionIndicator());
     window.addEventListener('offline', () => this.updateConnectionIndicator());

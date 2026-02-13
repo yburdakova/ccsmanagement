@@ -117,8 +117,26 @@ db.serialize(() => {
       login TEXT,
       authcode TEXT,
       system_role INTEGER,
-      is_active INTEGER
+      is_active INTEGER,
+      last_successful_login_at TEXT
     )`);
+
+  db.all(`PRAGMA table_info(local_users)`, (err, rows) => {
+    if (err) {
+      console.error('[local-db] Failed to inspect local_users:', err.message);
+      return;
+    }
+    const hasLastLogin = rows.some((row) => row.name === 'last_successful_login_at');
+    if (!hasLastLogin) {
+      db.run(`ALTER TABLE local_users ADD COLUMN last_successful_login_at TEXT`, (alterErr) => {
+        if (alterErr) {
+          console.error('[local-db] Failed to add last_successful_login_at:', alterErr.message);
+        } else {
+          console.log('[local-db] Added last_successful_login_at to local_users');
+        }
+      });
+    }
+  });
 
   db.run(`
     CREATE TABLE IF NOT EXISTS customers (
@@ -151,6 +169,12 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY,
       name TEXT,
       label TEXT
+    )`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS ref_item_types (
+      id INTEGER PRIMARY KEY,
+      name TEXT
     )`);
 
   db.run(`
@@ -306,33 +330,60 @@ async function initializeLocalDb() {
     console.log('[init] Online mode: syncing from global DB');
 
     try {
-      const users = await dataApi.getAllUsers();
-      const projects = await dataApi.getAllProjects();
-      const projectUsers = await dataApi.getAllProjectUsers();
-      const roles = await dataApi.getAllProjectRoles();
-      const tasks = await dataApi.getAllTasks();
-      const customers = await dataApi.getAllCustomers();
-      const projectTasks = await dataApi.getAllProjectTasks();
-      const projectTaskRoles = await dataApi.getAllProjectTaskRoles();
-      const taskDataDefinitions = await dataApi.getAllTaskDataDefinitions();
-      const projectTaskData = await dataApi.getAllProjectTaskData();
-      const refItemStatus = await dataApi.getAllRefItemStatus();
-      const cfsItems = await dataApi.getAllCfsItems();
-      const imItems = await dataApi.getAllImItems();
+      const settled = await Promise.allSettled([
+        dataApi.getAllUsers(),
+        dataApi.getAllProjects(),
+        dataApi.getAllProjectUsers(),
+        dataApi.getAllProjectRoles(),
+        dataApi.getAllTasks(),
+        dataApi.getAllCustomers(),
+        dataApi.getAllItemTypes(),
+        dataApi.getAllProjectTasks(),
+        dataApi.getAllProjectTaskRoles(),
+        dataApi.getAllTaskDataDefinitions(),
+        dataApi.getAllProjectTaskData(),
+        dataApi.getAllRefItemStatus(),
+        dataApi.getAllCfsItems(),
+        dataApi.getAllImItems(),
+      ]);
 
-      saveRefItemStatusToLocal(refItemStatus);
-      saveCfsItemsToLocal(cfsItems);
-      saveImItemsToLocal(imItems);
-      saveUsersToLocal(users);
-      saveProjectsToLocal(projects);
-      saveProjectUsersToLocal(projectUsers);
-      saveRefProjectRolesToLocal(roles);
-      saveTasksToLocal(tasks);
-      saveCustomersToLocal(customers);
-      saveProjectTasksToLocal(projectTasks);
-      saveProjectTaskRolesToLocal(projectTaskRoles);
-      saveTaskDataDefinitionsToLocal(taskDataDefinitions);
-      saveProjectTaskDataToLocal(projectTaskData);
+      const [
+        usersRes,
+        projectsRes,
+        projectUsersRes,
+        rolesRes,
+        tasksRes,
+        customersRes,
+        itemTypesRes,
+        projectTasksRes,
+        projectTaskRolesRes,
+        taskDataDefinitionsRes,
+        projectTaskDataRes,
+        refItemStatusRes,
+        cfsItemsRes,
+        imItemsRes,
+      ] = settled;
+
+      const readOrEmpty = (result, name) => {
+        if (result.status === 'fulfilled') return result.value || [];
+        console.warn(`[init] Failed to fetch ${name}:`, result.reason?.message || result.reason);
+        return [];
+      };
+
+      saveRefItemStatusToLocal(readOrEmpty(refItemStatusRes, 'ref_item_status'));
+      saveCfsItemsToLocal(readOrEmpty(cfsItemsRes, 'cfs_items'));
+      saveImItemsToLocal(readOrEmpty(imItemsRes, 'im_items'));
+      saveUsersToLocal(readOrEmpty(usersRes, 'users'));
+      saveProjectsToLocal(readOrEmpty(projectsRes, 'projects'));
+      saveProjectUsersToLocal(readOrEmpty(projectUsersRes, 'project_users'));
+      saveRefProjectRolesToLocal(readOrEmpty(rolesRes, 'ref_project_roles'));
+      saveTasksToLocal(readOrEmpty(tasksRes, 'tasks'));
+      saveCustomersToLocal(readOrEmpty(customersRes, 'customers'));
+      saveItemTypesToLocal(readOrEmpty(itemTypesRes, 'ref_item_types'));
+      saveProjectTasksToLocal(readOrEmpty(projectTasksRes, 'project_tasks'));
+      saveProjectTaskRolesToLocal(readOrEmpty(projectTaskRolesRes, 'project_task_roles'));
+      saveTaskDataDefinitionsToLocal(readOrEmpty(taskDataDefinitionsRes, 'task_data_definitions'));
+      saveProjectTaskDataToLocal(readOrEmpty(projectTaskDataRes, 'project_task_data'));
 
       console.log('[init] Local DB refreshed from global DB');
       const syncResult = await syncQueue();
@@ -348,20 +399,30 @@ async function initializeLocalDb() {
 function loginByAuthCodeLocal(code) {
   const { db } = module.exports;
   return new Promise((resolve, reject) => {
-    db.get(
-      `SELECT id, first_name, last_name, login 
-       FROM local_users 
-       WHERE authcode = ? AND is_active = 1 
-       LIMIT 1`,
-      [code],
-      (err, row) => {
-        if (err) {
-          console.error('[local-db] Login query failed:', err.message);
-          return reject(err);
-        }
-        resolve(row || null);
-      }
-    );
+    ensureLocalUsersLastLoginColumn()
+      .then(() => {
+        db.get(
+          `SELECT id, first_name, last_name, login 
+           FROM local_users 
+           WHERE authcode = ? 
+             AND is_active = 1
+             AND last_successful_login_at IS NOT NULL
+             AND datetime(last_successful_login_at) >= datetime('now', '-7 days')
+           LIMIT 1`,
+          [code],
+          (err, row) => {
+            if (err) {
+              console.error('[local-db] Login query failed:', err.message);
+              return reject(err);
+            }
+            resolve(row || null);
+          }
+        );
+      })
+      .catch((err) => {
+        console.error('[local-db] Failed to ensure login cache schema:', err.message);
+        reject(err);
+      });
   });
 }
 
@@ -1656,6 +1717,251 @@ function getProjectTaskDataByTask(projectId, taskId) {
   });
 }
 
+function saveItemTypesToLocal(itemTypes) {
+  if (!itemTypes || itemTypes.length === 0) {
+    console.warn('[local-db] Skipping item types update: empty dataset');
+    return;
+  }
+
+  db.serialize(() => {
+    console.log('[local-db] Updating item types...');
+
+    const stmt = db.prepare(`
+      INSERT INTO ref_item_types (id, name)
+      VALUES (?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name
+    `);
+
+    itemTypes.forEach((itemType) => {
+      stmt.run(itemType.id, itemType.name, (err) => {
+        if (err) console.error(`[local-db] Failed to insert item type ${itemType.id}:`, err.message);
+      });
+    });
+
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('[local-db] Failed to finalize UPSERT item types:', err.message);
+        return;
+      }
+      const ids = itemTypes.map((itemType) => itemType.id);
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        db.run(
+          `DELETE FROM ref_item_types WHERE id NOT IN (${placeholders})`,
+          ids,
+          (deleteErr) => {
+            if (deleteErr) {
+              console.error('[local-db] Failed to delete obsolete item types:', deleteErr.message);
+            }
+          }
+        );
+      }
+    });
+  });
+}
+
+function getAllProjectsLocal() {
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT * FROM projects ORDER BY name`, (err, rows) => {
+      if (err) {
+        console.error('[local-db] Failed to fetch projects:', err.message);
+        return reject(err);
+      }
+      resolve(rows || []);
+    });
+  });
+}
+
+function getAllProjectUsersLocal() {
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT * FROM project_users`, (err, rows) => {
+      if (err) {
+        console.error('[local-db] Failed to fetch project_users:', err.message);
+        return reject(err);
+      }
+      resolve(rows || []);
+    });
+  });
+}
+
+function getAllProjectRolesLocal() {
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT * FROM ref_project_roles ORDER BY id`, (err, rows) => {
+      if (err) {
+        console.error('[local-db] Failed to fetch ref_project_roles:', err.message);
+        return reject(err);
+      }
+      resolve(rows || []);
+    });
+  });
+}
+
+function getAllTasksLocal() {
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT * FROM tasks ORDER BY id`, (err, rows) => {
+      if (err) {
+        console.error('[local-db] Failed to fetch tasks:', err.message);
+        return reject(err);
+      }
+      resolve(rows || []);
+    });
+  });
+}
+
+function getAllProjectTasksLocal() {
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT * FROM project_tasks ORDER BY id`, (err, rows) => {
+      if (err) {
+        console.error('[local-db] Failed to fetch project_tasks:', err.message);
+        return reject(err);
+      }
+      resolve(rows || []);
+    });
+  });
+}
+
+function getAllProjectTaskRolesLocal() {
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT * FROM project_task_roles ORDER BY id`, (err, rows) => {
+      if (err) {
+        console.error('[local-db] Failed to fetch project_task_roles:', err.message);
+        return reject(err);
+      }
+      resolve(rows || []);
+    });
+  });
+}
+
+function getAllItemTypesLocal() {
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT id, name FROM ref_item_types ORDER BY name`, (err, rows) => {
+      if (err) {
+        console.error('[local-db] Failed to fetch item types:', err.message);
+        return reject(err);
+      }
+      resolve(rows || []);
+    });
+  });
+}
+
+function getProjectItemsLocal(projectId, projectTypeId) {
+  return new Promise((resolve, reject) => {
+    const projectIdNum = Number(projectId);
+    const typeIdNum = Number(projectTypeId);
+
+    if (!Number.isFinite(projectIdNum) || projectIdNum <= 0) {
+      return resolve([]);
+    }
+
+    const readByTable = (tableName) => {
+      db.all(
+        `SELECT id, label AS name FROM ${tableName} WHERE project_id = ? ORDER BY id`,
+        [projectIdNum],
+        (fallbackErr, fallbackRows) => {
+          if (fallbackErr) {
+            console.error(`[local-db] Failed to fetch ${tableName}:`, fallbackErr.message);
+            return reject(fallbackErr);
+          }
+          resolve(fallbackRows || []);
+        }
+      );
+    };
+
+    db.all(
+      `
+        SELECT i.id, i.label AS name, s.label AS status_label
+        FROM cfs_items i
+        LEFT JOIN ref_item_status s ON s.id = i.task_status_id
+        WHERE i.project_id = ?
+        ORDER BY i.id
+      `,
+      [projectIdNum],
+      (err, rows) => {
+        if (err) {
+          console.error('[local-db] Failed to fetch local project items:', err.message);
+          return reject(err);
+        }
+        if ((rows || []).length > 0) {
+          return resolve(rows);
+        }
+        if (typeIdNum === 1) return readByTable('cfs_items');
+        if (typeIdNum === 2) return readByTable('im_items');
+        resolve([]);
+      }
+    );
+  });
+}
+
+function cacheSuccessfulLoginLocal(user, authcode) {
+  const { db } = module.exports;
+  const userId = Number(user?.id);
+  const safeCode = String(authcode || '').trim();
+  if (!Number.isFinite(userId) || userId <= 0 || !safeCode) {
+    return Promise.resolve({ success: false, error: 'Invalid user or authcode' });
+  }
+
+  const ts = formatMySQLDatetime(new Date());
+  return new Promise((resolve, reject) => {
+    ensureLocalUsersLastLoginColumn()
+      .then(() => {
+        db.run(
+          `
+            INSERT INTO local_users (
+              id, first_name, last_name, login, authcode, system_role, is_active, last_successful_login_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              first_name = excluded.first_name,
+              last_name = excluded.last_name,
+              login = excluded.login,
+              authcode = excluded.authcode,
+              system_role = COALESCE(excluded.system_role, local_users.system_role),
+              is_active = 1,
+              last_successful_login_at = excluded.last_successful_login_at
+          `,
+          [
+            userId,
+            String(user?.first_name || ''),
+            String(user?.last_name || ''),
+            String(user?.login || ''),
+            safeCode,
+            user?.system_role ?? null,
+            1,
+            ts,
+          ],
+          (err) => {
+            if (err) {
+              console.error('[local-db] Failed to cache successful login:', err.message);
+              return reject(err);
+            }
+            resolve({ success: true });
+          }
+        );
+      })
+      .catch((err) => {
+        console.error('[local-db] Failed to ensure login cache schema:', err.message);
+        reject(err);
+      });
+  });
+}
+
+function ensureLocalUsersLastLoginColumn() {
+  return new Promise((resolve, reject) => {
+    db.all(`PRAGMA table_info(local_users)`, (err, rows) => {
+      if (err) return reject(err);
+      const hasColumn = rows.some((row) => row.name === 'last_successful_login_at');
+      if (hasColumn) return resolve(true);
+      db.run(`ALTER TABLE local_users ADD COLUMN last_successful_login_at TEXT`, (alterErr) => {
+        if (alterErr && !String(alterErr.message || '').toLowerCase().includes('duplicate column name')) {
+          return reject(alterErr);
+        }
+        resolve(true);
+      });
+    });
+  });
+}
+
 function saveTaskDataValueLocal({ projectId, taskId, dataDefId, valueType, value }) {
   const column = getTaskDataColumn(valueType);
   if (!column) {
@@ -1786,6 +2092,22 @@ function saveTaskDataValueLocal({ projectId, taskId, dataDefId, valueType, value
             );
           }
         );
+      }
+    );
+  });
+}
+
+function enqueueSyncPayload(payload) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO sync_queue (payload) VALUES (?)`,
+      [JSON.stringify(payload)],
+      (err) => {
+        if (err) {
+          console.error('[local-db] Failed to enqueue payload:', err.message);
+          return reject(err);
+        }
+        resolve({ success: true });
       }
     );
   });
@@ -2065,6 +2387,7 @@ function completeActiveActivityLocal({ uuid, is_completed_project_task, timestam
 module.exports = {
   db,
   loginByAuthCodeLocal,
+  cacheSuccessfulLoginLocal,
   saveUsersToLocal,
   saveProjectsToLocal,
   saveProjectUsersToLocal,
@@ -2073,6 +2396,7 @@ module.exports = {
   saveProjectTasksToLocal,
   saveProjectTaskRolesToLocal,
   saveCustomersToLocal,
+  saveItemTypesToLocal,
   saveTaskDataDefinitionsToLocal,
   saveProjectTaskDataToLocal,
   replaceProjectTaskDataForTask,
@@ -2082,8 +2406,17 @@ module.exports = {
   saveCfsItemsToLocal,
   saveImItemsToLocal,
   getAvailableTasksForUser,
+  getAllProjectsLocal,
+  getAllProjectUsersLocal,
+  getAllProjectRolesLocal,
+  getAllTasksLocal,
+  getAllProjectTasksLocal,
+  getAllProjectTaskRolesLocal,
   getAllCustomersLocal,
+  getAllItemTypesLocal,
+  getProjectItemsLocal,
   saveTaskDataValueLocal,
+  enqueueSyncPayload,
   getProjectTaskDataByTask,
   syncQueue,
   completeActiveActivityLocal,

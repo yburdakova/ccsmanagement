@@ -18,6 +18,23 @@ function checkHostPort(host, port, timeoutMs = 2000) {
 }
 
 async function isOnline() {
+  const appEnv = String(process.env.APP_ENV || '').trim().toLowerCase();
+
+  if (appEnv === 'backend') {
+    const baseUrl = String(process.env.BACKEND_BASE_URL || '').trim();
+    if (!baseUrl) return false;
+    try {
+      const url = new URL(baseUrl);
+      const host = url.hostname;
+      const port =
+        Number(url.port) ||
+        (url.protocol === 'https:' ? 443 : 80);
+      return await checkHostPort(host, port);
+    } catch {
+      return false;
+    }
+  }
+
   const host = process.env.DB_HOST;
   const port = Number(process.env.DB_PORT) || 3306;
 

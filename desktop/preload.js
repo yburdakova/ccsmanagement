@@ -37,5 +37,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   completeActiveActivity: (payload) => ipcRenderer.invoke('complete-activity', payload),
   syncQueue: () => ipcRenderer.invoke('sync-queue'),
   logout: (payload) => ipcRenderer.invoke('logout', payload),
+  getBackendConnectionStatus: () => ipcRenderer.invoke('get-backend-connection-status'),
+  onBackendConnectionStatus: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('backend-connection-status', listener);
+    return () => ipcRenderer.removeListener('backend-connection-status', listener);
+  },
+  onBackendDataRefreshed: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('backend-data-refreshed', listener);
+    return () => ipcRenderer.removeListener('backend-data-refreshed', listener);
+  },
 
 });

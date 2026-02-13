@@ -39,11 +39,51 @@ dotenv.config({
 console.log(`[env] APP_ENV=${profile} DB_HOST=${process.env.DB_HOST}`);
 
 const { isOnline } = require('./utils/network-status');
-const { initializeLocalDb } = require('./api/db-local');
+const { initializeLocalDb, syncQueue } = require('./api/db-local');
 const dataApi = require('./api/data-provider');
-const { connectDesktopWs, disconnectDesktopWs } = require('./ws/desktop-ws-client');
+const {
+  connectDesktopWs,
+  disconnectDesktopWs,
+  isDesktopWsConnected,
+  setDesktopWsStatusListener
+} = require('./ws/desktop-ws-client');
 
 let mainWindow = null;
+let lastWsConnected = false;
+let reconnectSyncInProgress = false;
+
+function getConnectionState() {
+  if (profile === 'backend') {
+    return { mode: 'ws', connected: isDesktopWsConnected() };
+  }
+  return { mode: 'network', connected: null };
+}
+
+function publishConnectionState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('backend-connection-status', getConnectionState());
+}
+
+async function syncAfterBackendReconnect() {
+  if (reconnectSyncInProgress) return;
+  reconnectSyncInProgress = true;
+  try {
+    if (typeof dataApi.clearBootstrapCache === 'function') {
+      dataApi.clearBootstrapCache();
+    }
+    const queueResult = await syncQueue();
+    console.log(`[main] Reconnect syncQueue: ${queueResult.synced || 0} record(s) synced`);
+    await initializeLocalDb();
+    console.log('[main] Reconnect initializeLocalDb completed');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('backend-data-refreshed', { at: new Date().toISOString() });
+    }
+  } catch (err) {
+    console.error('[main] Reconnect sync failed:', err.message);
+  } finally {
+    reconnectSyncInProgress = false;
+  }
+}
 
 function createWindow(screenWidth) {
   let isQuitting = false;
@@ -70,6 +110,9 @@ function createWindow(screenWidth) {
     win.webContents.openDevTools();
   }
   mainWindow = win;
+  win.webContents.on('did-finish-load', () => {
+    publishConnectionState();
+  });
 
   win.on('close', (event) => {
     if (isQuitting) return;
@@ -112,6 +155,19 @@ app.whenReady().then(async () => {
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+
+  if (profile === 'backend') {
+    setDesktopWsStatusListener(({ connected }) => {
+      publishConnectionState();
+      const nextConnected = Boolean(connected);
+      if (nextConnected && !lastWsConnected) {
+        syncAfterBackendReconnect().catch((err) => {
+          console.error('[main] Reconnect sync scheduling failed:', err.message);
+        });
+      }
+      lastWsConnected = nextConnected;
+    });
+  }
 });
 
 app.on('window-all-closed', function () {
@@ -121,6 +177,9 @@ app.on('window-all-closed', function () {
 ipcMain.handle('init-local-db', async () => {
   const { initializeLocalDb } = require('./api/db-local');
   try {
+    if (typeof dataApi.clearBootstrapCache === 'function') {
+      dataApi.clearBootstrapCache();
+    }
     await initializeLocalDb();
     return { success: true };
   } catch (err) {
@@ -144,7 +203,7 @@ ipcMain.handle('get-users', async () => {
 });
 
 ipcMain.handle('get-all-projects', async () => {
-  const { saveProjectsToLocal } = require('./api/db-local');
+  const { saveProjectsToLocal, getAllProjectsLocal } = require('./api/db-local');
 
   try {
     const projects = await dataApi.getAllProjects();
@@ -153,12 +212,12 @@ ipcMain.handle('get-all-projects', async () => {
     return projects;
   } catch (error) {
     console.error('Error fetching projects:', error);
-    return [];
+    return await getAllProjectsLocal();
   }
 });
 
 ipcMain.handle('get-all-project-users', async () => {
-  const { saveProjectUsersToLocal } = require('./api/db-local');
+  const { saveProjectUsersToLocal, getAllProjectUsersLocal } = require('./api/db-local');
 
   try {
     const projectUsers = await dataApi.getAllProjectUsers();
@@ -167,12 +226,12 @@ ipcMain.handle('get-all-project-users', async () => {
     return projectUsers;
   } catch (error) {
     console.error('Error fetching project_users:', error);
-    return [];
+    return await getAllProjectUsersLocal();
   }
 });
 
 ipcMain.handle('get-ref-project-roles', async () => {
-  const { saveRefProjectRolesToLocal } = require('./api/db-local');
+  const { saveRefProjectRolesToLocal, getAllProjectRolesLocal } = require('./api/db-local');
 
   try {
     const roles = await dataApi.getAllProjectRoles();
@@ -181,12 +240,12 @@ ipcMain.handle('get-ref-project-roles', async () => {
     return roles;
   } catch (error) {
     console.error('Error fetching project roles:', error);
-    return [];
+    return await getAllProjectRolesLocal();
   }
 });
 
 ipcMain.handle('get-all-tasks', async () => {
-  const { saveTasksToLocal } = require('./api/db-local');
+  const { saveTasksToLocal, getAllTasksLocal } = require('./api/db-local');
 
   try {
     const tasks = await dataApi.getAllTasks();
@@ -195,12 +254,12 @@ ipcMain.handle('get-all-tasks', async () => {
     return tasks;
   } catch (error) {
     console.error('Error fetching tasks:', error);
-    return [];
+    return await getAllTasksLocal();
   }
 });
 
 ipcMain.handle('get-all-project-tasks', async () => {
-  const { saveProjectTasksToLocal } = require('./api/db-local');
+  const { saveProjectTasksToLocal, getAllProjectTasksLocal } = require('./api/db-local');
 
   try {
     const projectTasks = await dataApi.getAllProjectTasks();
@@ -209,12 +268,12 @@ ipcMain.handle('get-all-project-tasks', async () => {
     return projectTasks;
   } catch (error) {
     console.error('Error fetching project_tasks:', error);
-    return [];
+    return await getAllProjectTasksLocal();
   }
 });
 
 ipcMain.handle('get-all-project-task-roles', async () => {
-  const { saveProjectTaskRolesToLocal } = require('./api/db-local');
+  const { saveProjectTaskRolesToLocal, getAllProjectTaskRolesLocal } = require('./api/db-local');
 
   try {
     const projectTaskRoles = await dataApi.getAllProjectTaskRoles();
@@ -223,7 +282,7 @@ ipcMain.handle('get-all-project-task-roles', async () => {
     return projectTaskRoles;
   } catch (error) {
     console.error('Error fetching project_task_roles:', error);
-    return [];
+    return await getAllProjectTaskRolesLocal();
   }
 });
 
@@ -241,7 +300,7 @@ ipcMain.handle('get-all-customers', async () => {
     return await getAllCustomersLocal();
   } catch (error) {
     console.error('Error fetching customers:', error);
-    return [];
+    return await getAllCustomersLocal();
   }
 });
 
@@ -258,7 +317,7 @@ ipcMain.handle('get-project-task-data', async (event, { projectId, taskId }) => 
     return await getLocalProjectTaskDataByTask(projectId, taskId);
   } catch (error) {
     console.error('Error fetching project task data:', error);
-    return [];
+    return await getLocalProjectTaskDataByTask(projectId, taskId);
   }
 });
 
@@ -270,6 +329,10 @@ ipcMain.handle('save-task-data', async (event, payload) => {
     console.error('Error saving task data:', error);
     return { success: false, error: error.message };
   }
+});
+
+ipcMain.handle('get-backend-connection-status', async () => {
+  return getConnectionState();
 });
 
 ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
@@ -289,49 +352,74 @@ ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
     return tasks;
   } catch (error) {
     console.error('Error fetching available tasks:', error);
-    return [];
+    return await getAvailableTasksForUser(userId, projectId);
   }
 });
 
 ipcMain.handle('get-item-types', async () => {
+  const { saveItemTypesToLocal, getAllItemTypesLocal } = require('./api/db-local');
   const { isOnline } = require('./utils/network-status');
 
   try {
     const online = await isOnline();
-    if (!online) return [];
-    return await dataApi.getAllItemTypes();
+    if (online) {
+      const itemTypes = await dataApi.getAllItemTypes();
+      saveItemTypesToLocal(itemTypes);
+      return itemTypes;
+    }
+    return await getAllItemTypesLocal();
   } catch (error) {
     console.error('Error fetching item types:', error);
-    return [];
+    return await getAllItemTypesLocal();
   }
 });
 
 ipcMain.handle('login-with-code', async (event, code) => {
-  const { loginByAuthCodeLocal } = require('./api/db-local');
+  const { loginByAuthCodeLocal, cacheSuccessfulLoginLocal } = require('./api/db-local');
   const { isOnline } = require('./utils/network-status');
+  const offlinePolicyError =
+    'Offline login unavailable. This user must login online at least once on this device, and last online login must be within 7 days.';
 
   const online = await isOnline();
 
   try {
     if (online) {
-      const user = await dataApi.loginByAuthCode(code);
-      if (profile === 'backend' && user?.id) {
-        connectDesktopWs(user.id);
+      try {
+        const user = await dataApi.loginByAuthCode(code);
+        if (!user?.id) {
+          return { error: 'Invalid code.' };
+        }
+        await cacheSuccessfulLoginLocal(user, code);
+        if (profile === 'backend' && user?.id) connectDesktopWs(user.id);
+        return user;
+      } catch (remoteErr) {
+        // Backend may be unreachable even when generic connectivity check says online.
+        // Fall back to local cached login instead of hard-failing.
+        console.warn('[main] Remote login failed, trying local cache:', remoteErr.message);
+        const localUser = await loginByAuthCodeLocal(code);
+        if (!localUser?.id) {
+          return { error: offlinePolicyError };
+        }
+        if (profile === 'backend' && localUser?.id) connectDesktopWs(localUser.id);
+        return localUser;
       }
-      return user || null;
     } else {
       const user = await loginByAuthCodeLocal(code);
-      return user || null;
+      if (!user?.id) {
+        return { error: offlinePolicyError };
+      }
+      if (profile === 'backend' && user?.id) connectDesktopWs(user.id);
+      return user;
     }
   } catch (error) {
     console.error('Login failed:', error);
-    return null;
+    return { error: 'Login failed. Please try again.' };
   }
 });
 
 
 ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
-  const { startUnallocatedActivityLocal: startLocal } = require('./api/db-local');
+  const { startUnallocatedActivityLocal: startLocal, enqueueSyncPayload } = require('./api/db-local');
 
   const safeActivityId = Number(activityId) || 4;
   const isConnected = await isOnline();
@@ -347,9 +435,29 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
 
     if (isConnected) {
       console.log('[main] start-unallocated: before server');
-      const res = await dataApi.startUnallocatedActivityGlobal({ uuid, user_id: userId, activity_id: safeActivityId });
-      console.log('[main] start-unallocated: after server', res);
-      if (!res.success) throw new Error(res.error);
+      try {
+        const res = await dataApi.startUnallocatedActivityGlobal({ uuid, user_id: userId, activity_id: safeActivityId });
+        console.log('[main] start-unallocated: after server', res);
+        if (!res.success) {
+          console.warn('[main] start-unallocated: remote start returned error, keeping local start:', res.error);
+          await enqueueSyncPayload({
+            type: 'start',
+            uuid,
+            user_id: userId,
+            activity_id: safeActivityId,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (remoteErr) {
+        console.warn('[main] start-unallocated: remote start failed, keeping local start:', remoteErr.message);
+        await enqueueSyncPayload({
+          type: 'start',
+          uuid,
+          user_id: userId,
+          activity_id: safeActivityId,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
 
     return { success: true, uuid };
@@ -360,7 +468,7 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
 });
 
 ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId, itemId }) => {
-  const { startTaskActivityLocal: startLocal } = require('./api/db-local');
+  const { startTaskActivityLocal: startLocal, enqueueSyncPayload } = require('./api/db-local');
   const isConnected = await isOnline();
 
   try {
@@ -372,15 +480,39 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
     const { uuid } = await startLocal(userId, projectId, taskId, itemId);
 
     if (isConnected) {
-      const res = await dataApi.startTaskActivityGlobal({
-        uuid,
-        user_id: userId,
-        project_id: projectId,
-        task_id: taskId,
-        item_id: itemId ?? null,
-        timestamp: new Date().toISOString()
-      });
-      if (!res.success) throw new Error(res.error);
+      try {
+        const res = await dataApi.startTaskActivityGlobal({
+          uuid,
+          user_id: userId,
+          project_id: projectId,
+          task_id: taskId,
+          item_id: itemId ?? null,
+          timestamp: new Date().toISOString()
+        });
+        if (!res.success) {
+          console.warn('[main] start-task-activity: remote start returned error, keeping local start:', res.error);
+          await enqueueSyncPayload({
+            type: 'start-task',
+            uuid,
+            user_id: userId,
+            project_id: projectId,
+            task_id: taskId,
+            item_id: itemId ?? null,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (remoteErr) {
+        console.warn('[main] start-task-activity: remote start failed, keeping local start:', remoteErr.message);
+        await enqueueSyncPayload({
+          type: 'start-task',
+          uuid,
+          user_id: userId,
+          project_id: projectId,
+          task_id: taskId,
+          item_id: itemId ?? null,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
 
     return { success: true, uuid };
@@ -418,16 +550,22 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
     }
 
     if (isConnected) {
-      const result = await dataApi.completeActiveActivityGlobal({
-        uuid: localResult.uuid,
-        user_id: userId,
-        is_completed_project_task: isTaskCompleted,
-        timestamp: localResult.endTime.toISOString(),
-        note,
-        taskData
-      });
+      try {
+        const result = await dataApi.completeActiveActivityGlobal({
+          uuid: localResult.uuid,
+          user_id: userId,
+          is_completed_project_task: isTaskCompleted,
+          timestamp: localResult.endTime.toISOString(),
+          note,
+          taskData
+        });
 
-      if (!result.success) throw new Error(result.error);
+        if (!result.success) {
+          console.warn('[main] complete-activity: remote complete returned error, relying on queued local data:', result.error);
+        }
+      } catch (remoteErr) {
+        console.warn('[main] complete-activity: remote complete failed, relying on queued local data:', remoteErr.message);
+      }
     }
 
     return { success: true };
@@ -466,21 +604,28 @@ ipcMain.handle('logout', async (event) => {
 });
 
 ipcMain.handle('get-project-items', async (event, { projectId, projectTypeId }) => {
+  const { getProjectItemsLocal, saveCfsItemsToLocal, saveImItemsToLocal } = require('./api/db-local');
   try {
     const items = await dataApi.getItemsByProject(projectId);
     if (items.length) {
+      if (Number(projectTypeId) === 1) saveCfsItemsToLocal(items.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: null })));
+      if (Number(projectTypeId) === 2) saveImItemsToLocal(items.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: null })));
       return items;
     }
     if (projectTypeId === 1) {
-      return await dataApi.getCfsItemsByProject(projectId);
+      const cfsItems = await dataApi.getCfsItemsByProject(projectId);
+      saveCfsItemsToLocal(cfsItems.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: row.task_status_id ?? null })));
+      return cfsItems;
     } else if (projectTypeId === 2) {
-      return await dataApi.getImItemsByProject(projectId);
+      const imItems = await dataApi.getImItemsByProject(projectId);
+      saveImItemsToLocal(imItems.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: row.task_status_id ?? null })));
+      return imItems;
     } else {
-      return [];
+      return await getProjectItemsLocal(projectId, projectTypeId);
     }
   } catch (error) {
     console.error('Error fetching project items:', error);
-    return [];
+    return await getProjectItemsLocal(projectId, projectTypeId);
   }
 });
 
