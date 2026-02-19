@@ -1,5 +1,6 @@
 import express from 'express';
 import pool from '../db.config.js';
+import { hashPassword } from '../auth/password.js';
 
 const router = express.Router();
 
@@ -91,6 +92,8 @@ router.post('/', async (req, res) => {
   }
 
   try {
+    const passwordHash = await hashPassword(payload.password);
+
     const [existing] = await pool.query(
       `
         SELECT id
@@ -115,7 +118,7 @@ router.post('/', async (req, res) => {
         payload.last_name,
         payload.email,
         payload.login,
-        payload.password,
+        passwordHash,
         payload.authcode,
         systemRoleId,
         payload.is_active,
@@ -176,6 +179,8 @@ router.put('/:id', async (req, res) => {
   }
 
   try {
+    const passwordHash = await hashPassword(payload.password);
+
     const [existing] = await pool.query(
       `
         SELECT id
@@ -209,7 +214,7 @@ router.put('/:id', async (req, res) => {
         payload.last_name,
         payload.email,
         payload.login,
-        payload.password,
+        passwordHash,
         payload.authcode,
         systemRoleId,
         payload.is_active,
