@@ -4,6 +4,7 @@ import './LoginPage.css';
 import CustomInput from '../../components/CustomInput/CustomInput';
 import Logo from '../../assets/CCSLogo.png';
 import { apiRequest } from '../../services/apiClient';
+import { setLoginSession } from '../../services/authSession';
 import type { LoginResponse } from '../../types/login.types';
 
 const LoginPage = () => {
@@ -30,7 +31,7 @@ const LoginPage = () => {
         body: { username, password },
       });
 
-      localStorage.setItem('user', JSON.stringify(user));
+      setLoginSession(user);
       navigate(user.role === 2 ? '/production-sheet' : '/dashboard');
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Login failed';
