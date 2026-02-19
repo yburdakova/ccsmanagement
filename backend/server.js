@@ -21,14 +21,26 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 const dbname = process.env.DB_NAME;
+const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const PROCESS_START_AT = new Date().toISOString();
 const SHUTDOWN_GRACE_MS = Number(process.env.SHUTDOWN_GRACE_MS || 15000);
 const SHUTDOWN_FORCE_MS = Number(process.env.SHUTDOWN_FORCE_MS || 30000);
+const USE_HELMET = TRUE_VALUES.has(String(process.env.USE_HELMET ?? '').trim().toLowerCase());
 
 let shuttingDown = false;
 let shutdownStartedAt = null;
 
 app.use(cors());
+if (USE_HELMET) {
+  try {
+    const helmetModule = await import('helmet');
+    app.use(helmetModule.default());
+    console.log('[security] Helmet enabled (USE_HELMET=true).');
+  } catch (error) {
+    console.error('[security] Failed to enable helmet:', error?.message || error);
+    process.exit(1);
+  }
+}
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
