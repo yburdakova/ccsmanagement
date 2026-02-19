@@ -89,7 +89,7 @@ const UsersPage = () => {
       last_name: user.last_name ?? '',
       email: user.email ?? '',
       login: user.login ?? '',
-      password: user.password ?? '',
+      password: '',
       authcode: user.authcode ?? '',
       system_role: String(user.system_role ?? ''),
       is_active: Number(user.is_active) === 1,
@@ -141,9 +141,9 @@ const UsersPage = () => {
       !payload.last_name ||
       !payload.email ||
       !payload.login ||
-      !payload.password ||
       !payload.authcode ||
-      payload.system_role === ''
+      payload.system_role === '' ||
+      (!isEditing && !payload.password)
     ) {
       setFormError('All fields are required.');
       return;
@@ -294,8 +294,10 @@ const UsersPage = () => {
           <label>
             Password
             <input
-              type="text"
+              type="password"
               value={formValue.password}
+              placeholder={isEditing ? '********' : ''}
+              autoComplete="new-password"
               onChange={(e) =>
                 setFormValue((prev) => ({ ...prev, password: e.target.value }))
               }

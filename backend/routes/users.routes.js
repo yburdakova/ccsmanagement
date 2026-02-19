@@ -21,6 +21,7 @@ router.get('/', async (req, res) => {
                last_name,
                email,
                login,
+               authcode,
                system_role,
                is_active,
                is_ccs
@@ -166,7 +167,6 @@ router.put('/:id', async (req, res) => {
     !payload.last_name ||
     !payload.email ||
     !payload.login ||
-    !payload.password ||
     !payload.authcode ||
     payload.system_role == null
   ) {
@@ -179,8 +179,6 @@ router.put('/:id', async (req, res) => {
   }
 
   try {
-    const passwordHash = await hashPassword(payload.password);
-
     const [existing] = await pool.query(
       `
         SELECT id
@@ -195,32 +193,42 @@ router.put('/:id', async (req, res) => {
       return res.status(409).json({ error: 'User with same login/email/authcode exists' });
     }
 
+    const updateFields = [
+      'first_name = ?',
+      'last_name = ?',
+      'email = ?',
+      'login = ?',
+      'authcode = ?',
+      'system_role = ?',
+      'is_active = ?',
+      'is_ccs = ?'
+    ];
+    const updateValues = [
+      payload.first_name,
+      payload.last_name,
+      payload.email,
+      payload.login,
+      payload.authcode,
+      systemRoleId,
+      payload.is_active,
+      payload.is_ccs,
+    ];
+
+    if (payload.password) {
+      const passwordHash = await hashPassword(payload.password);
+      updateFields.splice(4, 0, 'password = ?');
+      updateValues.splice(4, 0, passwordHash);
+    }
+
+    updateValues.push(id);
+
     const [result] = await pool.query(
       `
         UPDATE users
-        SET first_name = ?,
-            last_name = ?,
-            email = ?,
-            login = ?,
-            password = ?,
-            authcode = ?,
-            system_role = ?,
-            is_active = ?,
-            is_ccs = ?
+        SET ${updateFields.join(', ')}
         WHERE id = ?
       `,
-      [
-        payload.first_name,
-        payload.last_name,
-        payload.email,
-        payload.login,
-        passwordHash,
-        payload.authcode,
-        systemRoleId,
-        payload.is_active,
-        payload.is_ccs,
-        id,
-      ]
+      updateValues
     );
 
     if (result.affectedRows === 0) {
