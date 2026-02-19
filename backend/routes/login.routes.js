@@ -40,6 +40,8 @@ router.post('/', async (req, res) => {
       login: user.login ?? username ?? '',
     });
 
+    console.log(`[auth] Login success: userId=${id}, login=${user.login ?? username ?? ''}, role=${role}`);
+
     return res.json({
       id,
       first_name: firstName,

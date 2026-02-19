@@ -400,6 +400,10 @@ ipcMain.handle('login-with-code', async (event, code) => {
   const online = await isOnline();
 
   try {
+    if (typeof dataApi.clearAccessToken === 'function') {
+      dataApi.clearAccessToken();
+    }
+
     if (online) {
       try {
         const user = await dataApi.loginByAuthCode(code);
@@ -413,6 +417,9 @@ ipcMain.handle('login-with-code', async (event, code) => {
         // Backend may be unreachable even when generic connectivity check says online.
         // Fall back to local cached login instead of hard-failing.
         await reportException('Remote login fallback', remoteErr, { level: 'warning' });
+        if (typeof dataApi.clearAccessToken === 'function') {
+          dataApi.clearAccessToken();
+        }
         const localUser = await loginByAuthCodeLocal(code);
         if (!localUser?.id) {
           return { error: offlinePolicyError };
@@ -421,6 +428,9 @@ ipcMain.handle('login-with-code', async (event, code) => {
         return localUser;
       }
     } else {
+      if (typeof dataApi.clearAccessToken === 'function') {
+        dataApi.clearAccessToken();
+      }
       const user = await loginByAuthCodeLocal(code);
       if (!user?.id) {
         return { error: offlinePolicyError };
@@ -596,6 +606,12 @@ ipcMain.handle('logout', async (event) => {
   const { completeActiveActivityLocal: completeLocal, syncQueue } = require('./api/db-local');
 
   try {
+    if (typeof dataApi.clearAccessToken === 'function') {
+      dataApi.clearAccessToken();
+    }
+    if (typeof dataApi.clearBootstrapCache === 'function') {
+      dataApi.clearBootstrapCache();
+    }
     if (profile === 'backend') {
       disconnectDesktopWs();
     }

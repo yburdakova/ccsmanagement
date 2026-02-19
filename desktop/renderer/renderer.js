@@ -78,11 +78,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('beforeunload', () => {
     persistWorkTimerState();
   });
-  let allProjects = await window.electronAPI.getAllProjects();
-  let allProjectUsers = await window.electronAPI.getAllProjectUsers();
-  let projectRoles = await window.electronAPI.getAllProjectRoles();
-  let allItemTypes = await window.electronAPI.getItemTypes();
-  let allCustomers = await window.electronAPI.getAllCustomers();
+  let allProjects = [];
+  let allProjectUsers = [];
+  let projectRoles = [];
+  let allItemTypes = [];
+  let allCustomers = [];
 
   let currentUser = null;
   let currentSessionUuid = null;
@@ -115,6 +115,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   let pendingAssignmentSelection = null;
   let assignmentsTotal = 0;
 
+  async function loadReferenceDataForCurrentUser() {
+    if (!currentUser) return;
+    try {
+      const [projects, projectUsers, roles, customers, itemTypes] = await Promise.all([
+        window.electronAPI.getAllProjects(),
+        window.electronAPI.getAllProjectUsers(),
+        window.electronAPI.getAllProjectRoles(),
+        window.electronAPI.getAllCustomers(),
+        window.electronAPI.getItemTypes(),
+      ]);
+
+      allProjects = Array.isArray(projects) ? projects : [];
+      allProjectUsers = Array.isArray(projectUsers) ? projectUsers : [];
+      projectRoles = Array.isArray(roles) ? roles : [];
+      allCustomers = Array.isArray(customers) ? customers : [];
+      allItemTypes = Array.isArray(itemTypes) ? itemTypes : [];
+      itemTypesById = new Map(
+        (allItemTypes || []).map((type) => [Number(type.id), String(type.name || '').trim()])
+      );
+    } catch (err) {
+      window.desktopError?.warn?.('Load reference data', err);
+    }
+  }
+
   // hiding sections initially
   projectSection.style.display = 'none';
   taskSection.style.display = 'none';
@@ -136,6 +160,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (user && user.id) {
       currentUser = user;
+      await loadReferenceDataForCurrentUser();
       errorEl.style.display = 'none';
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('main-screen').style.display = 'flex';

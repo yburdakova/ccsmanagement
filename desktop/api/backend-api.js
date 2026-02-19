@@ -2,15 +2,30 @@ const DEFAULT_BASE_URL = 'http://localhost:4000/api';
 const baseUrl = String(process.env.BACKEND_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
 
 let bootstrapCache = null;
+let accessToken = null;
 
 async function request(path, options = {}) {
   const url = `${baseUrl}${path}`;
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+
+  if (accessToken && !requestHeaders.Authorization) {
+    requestHeaders.Authorization = `Bearer ${accessToken}`;
+  }
+
   const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: requestHeaders,
     ...options,
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      // Keep local auth state aligned with backend auth state.
+      clearAccessToken();
+      clearBootstrapCache();
+    }
     const text = await response.text();
     throw new Error(`[backend-api] ${response.status} ${response.statusText}: ${text}`);
   }
@@ -30,15 +45,31 @@ function clearBootstrapCache() {
   bootstrapCache = null;
 }
 
+function setAccessToken(token) {
+  const normalized = String(token || '').trim();
+  accessToken = normalized || null;
+}
+
+function clearAccessToken() {
+  accessToken = null;
+}
+
 async function getAllUsers() {
   return (await getBootstrap()).users || [];
 }
 
 async function loginByAuthCode(code) {
-  return await request('/desktop/login-authcode', {
+  const user = await request('/desktop/login-authcode', {
     method: 'POST',
     body: JSON.stringify({ code }),
   });
+  if (user?.accessToken) {
+    setAccessToken(user.accessToken);
+    clearBootstrapCache();
+  } else {
+    clearAccessToken();
+  }
+  return user;
 }
 
 async function getAllProjects() {
@@ -188,6 +219,8 @@ async function completeActiveActivityGlobal(payload) {
 
 module.exports = {
   clearBootstrapCache,
+  setAccessToken,
+  clearAccessToken,
   getAllUsers,
   loginByAuthCode,
   getAllProjects,

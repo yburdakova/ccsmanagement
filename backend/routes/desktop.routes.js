@@ -244,6 +244,10 @@ router.post('/login-authcode', async (req, res) => {
       login: user.login,
     });
 
+    console.log(
+      `[auth] Desktop authcode success: userId=${user.id}, login=${user.login}, role=${user.system_role}`
+    );
+
     res.json({
       ...user,
       accessToken,
