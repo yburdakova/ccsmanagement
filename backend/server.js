@@ -12,6 +12,8 @@ import itemsRoutes from './routes/items.routes.js';
 import usersRoutes from './routes/users.routes.js';
 import customersRoutes from './routes/customers.routes.js';
 import desktopRoutes from './routes/desktop.routes.js';
+import { ROLE } from './auth/auth-config.js';
+import { requireAuth, requireRole } from './middleware/auth.middleware.js';
 
 dotenv.config();
 
@@ -23,12 +25,12 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api/login', loginRoutes);
-app.use('/api/projects', projectsRoutes);
-app.use('/api/lookups', lookupsRoutes);
-app.use('/api/time-tracking', timeTrackingRoutes);
-app.use('/api/items', itemsRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/customers', customersRoutes);
+app.use('/api/projects', requireAuth, projectsRoutes);
+app.use('/api/lookups', requireAuth, lookupsRoutes);
+app.use('/api/time-tracking', requireAuth, timeTrackingRoutes);
+app.use('/api/items', requireAuth, itemsRoutes);
+app.use('/api/users', requireAuth, requireRole([ROLE.ADMIN]), usersRoutes);
+app.use('/api/customers', requireAuth, customersRoutes);
 app.use('/api/desktop', desktopRoutes);
 
 

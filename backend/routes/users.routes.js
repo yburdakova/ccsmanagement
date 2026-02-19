@@ -20,8 +20,6 @@ router.get('/', async (req, res) => {
                last_name,
                email,
                login,
-               password,
-               authcode,
                system_role,
                is_active,
                is_ccs
@@ -127,8 +125,13 @@ router.post('/', async (req, res) => {
 
     res.status(201).json({
       id: result.insertId,
-      ...payload,
+      first_name: payload.first_name,
+      last_name: payload.last_name,
+      email: payload.email,
+      login: payload.login,
       system_role: systemRoleId,
+      is_active: payload.is_active,
+      is_ccs: payload.is_ccs,
     });
   } catch (err) {
     console.error('Error creating user:', err);
@@ -219,7 +222,16 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ id, ...payload, system_role: systemRoleId });
+    res.json({
+      id,
+      first_name: payload.first_name,
+      last_name: payload.last_name,
+      email: payload.email,
+      login: payload.login,
+      system_role: systemRoleId,
+      is_active: payload.is_active,
+      is_ccs: payload.is_ccs,
+    });
   } catch (err) {
     console.error('Error updating user:', err);
     res.status(500).json({ error: 'Internal server error' });

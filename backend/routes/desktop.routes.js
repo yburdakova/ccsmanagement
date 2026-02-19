@@ -1,5 +1,8 @@
 import express from 'express';
 import pool from '../db.config.js';
+import { getJwtExpiresIn, ROLE } from '../auth/auth-config.js';
+import { signAccessToken } from '../auth/jwt.js';
+import { requireAuth } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
@@ -41,6 +44,18 @@ const queryOptionalRows = async (sql, params, entityName) => {
 const parseRequiredNumber = (raw) => {
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : 0;
+};
+
+const resolveScopedUserId = (req, rawUserId) => {
+  const requestedUserId = parseRequiredNumber(rawUserId);
+  const authUserId = Number(req.user?.id || 0);
+  const authUserRole = Number(req.user?.role || 0);
+
+  if (authUserRole === ROLE.ADMIN) {
+    return requestedUserId || authUserId;
+  }
+
+  return authUserId;
 };
 
 const getTaskDataColumn = (valueType = '') => {
@@ -217,15 +232,32 @@ router.post('/login-authcode', async (req, res) => {
   if (!code) return res.status(400).json({ error: 'code is required' });
   try {
     const [rows] = await pool.query(
-      `SELECT id, first_name, last_name, login FROM users WHERE authcode = ? AND is_active = 1 LIMIT 1`,
+      `SELECT id, first_name, last_name, login, system_role FROM users WHERE authcode = ? AND is_active = 1 LIMIT 1`,
       [code]
     );
-    res.json(rows[0] || null);
+    const user = rows[0] || null;
+    if (!user) return res.json(null);
+
+    const accessToken = signAccessToken({
+      id: user.id,
+      role: user.system_role,
+      login: user.login,
+    });
+
+    res.json({
+      ...user,
+      accessToken,
+      tokenType: accessToken ? 'Bearer' : null,
+      expiresIn: accessToken ? getJwtExpiresIn() : null,
+    });
   } catch (error) {
     console.error('[desktop-api] login-authcode failed:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Keep login endpoint public and protect everything below.
+router.use(requireAuth);
 
 router.get('/bootstrap', async (_req, res) => {
   try {
@@ -245,7 +277,7 @@ router.get('/bootstrap', async (_req, res) => {
       cfsItems,
       imItems,
     ] = await Promise.all([
-      pool.query(`SELECT id, first_name, last_name, login, authcode, system_role, is_active FROM users WHERE is_active = 1`),
+      pool.query(`SELECT id, first_name, last_name, login, system_role, is_active FROM users WHERE is_active = 1`),
       pool.query(`SELECT * FROM projects`),
       pool.query(`
         SELECT pu.id, pu.project_id, pu.user_id, pu.project_role_id
@@ -357,7 +389,7 @@ router.post('/task-data', async (req, res) => {
 });
 
 router.get('/available-tasks', async (req, res) => {
-  const userId = parseRequiredNumber(req.query.userId);
+  const userId = resolveScopedUserId(req, req.query.userId);
   const projectId = parseRequiredNumber(req.query.projectId);
   if (!userId || !projectId) return res.status(400).json({ error: 'userId and projectId are required' });
   try {
@@ -491,7 +523,7 @@ router.post('/item-status', async (req, res) => {
 // Unfinished + assignments
 // -------------------------
 router.get('/unfinished-tasks', async (req, res) => {
-  const userId = parseRequiredNumber(req.query.userId);
+  const userId = resolveScopedUserId(req, req.query.userId);
   if (!userId) return res.status(400).json({ error: 'userId is required' });
   try {
     const [rows] = await pool.query(
@@ -523,7 +555,7 @@ router.get('/unfinished-tasks', async (req, res) => {
 });
 
 router.get('/assignments', async (req, res) => {
-  const userId = parseRequiredNumber(req.query.userId);
+  const userId = resolveScopedUserId(req, req.query.userId);
   if (!userId) return res.status(400).json({ error: 'userId is required' });
   try {
     const [rows] = await pool.query(
@@ -587,7 +619,7 @@ router.post('/unfinished-finished', async (req, res) => {
 // -------------------------
 router.post('/activities/start-unallocated', async (req, res) => {
   const uuid = String(req.body?.uuid || '').trim();
-  const userId = parseRequiredNumber(req.body?.user_id ?? req.body?.userId);
+  const userId = resolveScopedUserId(req, req.body?.user_id ?? req.body?.userId);
   const activityId = parseRequiredNumber(req.body?.activity_id ?? req.body?.activityId ?? 4);
   const timestamp = req.body?.timestamp ? new Date(req.body.timestamp) : new Date();
   if (!uuid || !userId || !activityId) {
@@ -616,7 +648,7 @@ router.post('/activities/start-unallocated', async (req, res) => {
 
 router.post('/activities/start-task', async (req, res) => {
   const uuid = String(req.body?.uuid || '').trim();
-  const userId = parseRequiredNumber(req.body?.user_id ?? req.body?.userId);
+  const userId = resolveScopedUserId(req, req.body?.user_id ?? req.body?.userId);
   const projectId = parseRequiredNumber(req.body?.project_id ?? req.body?.projectId);
   const taskId = parseRequiredNumber(req.body?.task_id ?? req.body?.taskId);
   const itemIdRaw = req.body?.item_id ?? req.body?.itemId;
@@ -648,7 +680,7 @@ router.post('/activities/start-task', async (req, res) => {
 
 router.post('/activities/complete', async (req, res) => {
   const uuid = String(req.body?.uuid || '').trim();
-  const userId = parseRequiredNumber(req.body?.user_id ?? req.body?.userId);
+  const userId = resolveScopedUserId(req, req.body?.user_id ?? req.body?.userId);
   const isCompletedProjectTask =
     Number(req.body?.is_completed_project_task ?? req.body?.isTaskCompleted ?? 0) === 1 ? 1 : 0;
   const note = req.body?.note == null ? null : String(req.body.note).trim().slice(0, 500);
