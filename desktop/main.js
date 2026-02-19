@@ -411,7 +411,16 @@ ipcMain.handle('login-with-code', async (event, code) => {
           return { error: 'Invalid code.' };
         }
         await cacheSuccessfulLoginLocal(user, code);
-        if (profile === 'backend' && user?.id) connectDesktopWs(user.id);
+        if (profile === 'backend' && user?.id) {
+          const wsToken = typeof dataApi.getAccessToken === 'function'
+            ? dataApi.getAccessToken()
+            : null;
+          if (wsToken) {
+            connectDesktopWs(user.id, wsToken);
+          } else {
+            console.warn('[main] Skipping WS connect: missing access token');
+          }
+        }
         return user;
       } catch (remoteErr) {
         // Backend may be unreachable even when generic connectivity check says online.
@@ -424,7 +433,9 @@ ipcMain.handle('login-with-code', async (event, code) => {
         if (!localUser?.id) {
           return { error: offlinePolicyError };
         }
-        if (profile === 'backend' && localUser?.id) connectDesktopWs(localUser.id);
+        if (profile === 'backend') {
+          disconnectDesktopWs();
+        }
         return localUser;
       }
     } else {
@@ -435,7 +446,9 @@ ipcMain.handle('login-with-code', async (event, code) => {
       if (!user?.id) {
         return { error: offlinePolicyError };
       }
-      if (profile === 'backend' && user?.id) connectDesktopWs(user.id);
+      if (profile === 'backend') {
+        disconnectDesktopWs();
+      }
       return user;
     }
   } catch (error) {

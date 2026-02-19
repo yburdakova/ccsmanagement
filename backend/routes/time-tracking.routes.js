@@ -1,8 +1,28 @@
 import express from 'express';
 import crypto from 'crypto';
 import pool from '../db.config.js';
+import { ROLE } from '../auth/auth-config.js';
 
 const router = express.Router();
+
+const parseRequiredNumber = (raw) => {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+};
+
+const resolveScopedUserId = (req, rawUserId) => {
+  const requestedUserId = parseRequiredNumber(rawUserId);
+  const authUserId = Number(req.user?.id || 0);
+  const authUserRole = Number(req.user?.role || 0);
+
+  if (authUserRole === ROLE.ADMIN) {
+    return requestedUserId || authUserId;
+  }
+
+  return authUserId;
+};
+
+const hasAdminRole = (req) => Number(req.user?.role || 0) === ROLE.ADMIN;
 
 // POST /api/time-tracking/bulk-delete
 // Body: { ids: number[] }
@@ -22,13 +42,22 @@ router.post('/bulk-delete', async (req, res) => {
 
     const [rows] = await conn.query(
       `
-      SELECT uuid
+      SELECT id, uuid, user_id
       FROM users_time_tracking
       WHERE id IN (?)
       FOR UPDATE
       `,
       [parsedIds]
     );
+
+    if (!hasAdminRole(req)) {
+      const authUserId = Number(req.user?.id || 0);
+      const hasForeignRows = rows.some((row) => Number(row.user_id) !== authUserId);
+      if (hasForeignRows) {
+        await conn.rollback();
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
 
     const uuids = rows
       .map((row) => String(row.uuid || '').trim())
@@ -70,9 +99,17 @@ router.delete('/:id', async (req, res) => {
   try {
     await conn.beginTransaction();
     const [rows] = await conn.query(
-      `SELECT uuid FROM users_time_tracking WHERE id = ? FOR UPDATE`,
+      `SELECT uuid, user_id FROM users_time_tracking WHERE id = ? FOR UPDATE`,
       [entryId]
     );
+
+    if (rows.length && !hasAdminRole(req)) {
+      const authUserId = Number(req.user?.id || 0);
+      if (Number(rows[0].user_id) !== authUserId) {
+        await conn.rollback();
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
 
     const uuid = rows.length ? String(rows[0].uuid || '').trim() : '';
     if (uuid) {
@@ -176,6 +213,14 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Entry not found' });
     }
 
+    if (!hasAdminRole(req)) {
+      const authUserId = Number(req.user?.id || 0);
+      if (Number(existing[0].user_id) !== authUserId) {
+        await conn.rollback();
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
     const userId = Number(existing[0].user_id);
     const formatDateTime = (day, time) => `${day} ${time}:00`;
 
@@ -252,7 +297,7 @@ router.put('/:id', async (req, res) => {
 // Returns rows for specific production tasks with pages-per-minute derived from
 // users_time_tracking_data (data_def_id=1 => pages).
 router.get('/metrics', async (req, res) => {
-  const userId = Number(req.query.userId);
+  const userId = resolveScopedUserId(req, req.query.userId);
   const date = req.query.date;
   const dateFrom = req.query.dateFrom;
   const dateTo = req.query.dateTo;
@@ -334,7 +379,7 @@ router.get('/metrics', async (req, res) => {
 
 // GET /api/time-tracking?userId=1&date=YYYY-MM-DD
 router.get('/', async (req, res) => {
-  const userId = Number(req.query.userId);
+  const userId = resolveScopedUserId(req, req.query.userId);
   const date = req.query.date;
   const dateFrom = req.query.dateFrom;
   const dateTo = req.query.dateTo;
@@ -445,7 +490,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const { userId, date, activityId, startTime, endTime, note, itemId } = req.body || {};
 
-  const parsedUserId = Number(userId);
+  const parsedUserId = resolveScopedUserId(req, userId);
   const parsedActivityId = Number(activityId);
   if (!parsedUserId || !date || !startTime || !endTime || !parsedActivityId) {
     return res.status(400).json({ error: 'userId, date, activityId, startTime, and endTime are required' });
@@ -529,6 +574,22 @@ router.put('/:id/note', async (req, res) => {
   }
 
   try {
+    const [rows] = await pool.query(
+      `SELECT user_id FROM users_time_tracking WHERE id = ? LIMIT 1`,
+      [entryId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+
+    if (!hasAdminRole(req)) {
+      const authUserId = Number(req.user?.id || 0);
+      if (Number(rows[0].user_id) !== authUserId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
     await pool.query(
       `UPDATE users_time_tracking SET note = ? WHERE id = ?`,
       [note ?? null, entryId]

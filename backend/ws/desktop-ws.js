@@ -1,6 +1,8 @@
 import { WebSocketServer } from 'ws';
 import pool from '../db.config.js';
 import { subscribeDbChanged } from '../events/db-change-bus.js';
+import { isAuthRequired } from '../auth/auth-config.js';
+import { verifyAccessToken } from '../auth/jwt.js';
 
 /**
  * Attaches desktop WebSocket endpoint to an existing HTTP server.
@@ -40,6 +42,7 @@ export function createDesktopWsServer(httpServer) {
     socket.isAlive = true;
     socket.desktopUserId = null;
     socket.desktopUserName = null;
+    socket.authUserId = Number(request?.authClaims?.sub || 0) || null;
     clients.add(socket);
 
     socket.on('pong', () => {
@@ -63,6 +66,11 @@ export function createDesktopWsServer(httpServer) {
       if (payload?.type === 'identify') {
         const userId = Number(payload?.userId);
         if (Number.isFinite(userId) && userId > 0) {
+          if (isAuthRequired() && socket.authUserId && Number(socket.authUserId) !== userId) {
+            socket.send(JSON.stringify({ type: 'identified', ok: false, error: 'Forbidden', ts: Date.now() }));
+            socket.close(4403, 'Forbidden');
+            return;
+          }
           socket.desktopUserId = userId;
           let userName = `User #${userId}`;
           try {
@@ -123,6 +131,30 @@ export function createDesktopWsServer(httpServer) {
     if (pathname !== '/ws/desktop') {
       socket.destroy();
       return;
+    }
+
+    if (isAuthRequired()) {
+      const header = String(request.headers?.authorization || '').trim();
+      const [scheme, token] = header.split(/\s+/, 2);
+      if (!/^bearer$/i.test(scheme || '') || !token) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      try {
+        const claims = verifyAccessToken(token);
+        if (!claims?.sub) {
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        request.authClaims = claims;
+      } catch {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
     }
 
     wsServer.handleUpgrade(request, socket, head, (ws) => {

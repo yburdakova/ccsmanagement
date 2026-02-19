@@ -54,6 +54,10 @@ function clearAccessToken() {
   accessToken = null;
 }
 
+function getAccessToken() {
+  return accessToken;
+}
+
 async function getAllUsers() {
   return (await getBootstrap()).users || [];
 }
@@ -221,6 +225,7 @@ module.exports = {
   clearBootstrapCache,
   setAccessToken,
   clearAccessToken,
+  getAccessToken,
   getAllUsers,
   loginByAuthCode,
   getAllProjects,

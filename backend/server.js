@@ -25,12 +25,12 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api/login', loginRoutes);
-app.use('/api/projects', requireAuth, projectsRoutes);
+app.use('/api/projects', requireAuth, requireRole([ROLE.ADMIN, ROLE.EMPLOYEE]), projectsRoutes);
 app.use('/api/lookups', requireAuth, lookupsRoutes);
-app.use('/api/time-tracking', requireAuth, timeTrackingRoutes);
-app.use('/api/items', requireAuth, itemsRoutes);
+app.use('/api/time-tracking', requireAuth, requireRole([ROLE.ADMIN, ROLE.EMPLOYEE]), timeTrackingRoutes);
+app.use('/api/items', requireAuth, requireRole([ROLE.ADMIN, ROLE.EMPLOYEE]), itemsRoutes);
 app.use('/api/users', requireAuth, requireRole([ROLE.ADMIN]), usersRoutes);
-app.use('/api/customers', requireAuth, customersRoutes);
+app.use('/api/customers', requireAuth, requireRole([ROLE.ADMIN, ROLE.EMPLOYEE]), customersRoutes);
 app.use('/api/desktop', desktopRoutes);
 
 

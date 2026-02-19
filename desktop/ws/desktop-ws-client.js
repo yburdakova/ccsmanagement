@@ -9,6 +9,7 @@ let statusListener = null;
 let reconnectDelayMs = 1000;
 let stableConnectionTimer = null;
 let messageListener = null;
+let currentAccessToken = null;
 
 const MIN_RECONNECT_MS = 1000;
 const MAX_RECONNECT_MS = 30000;
@@ -69,12 +70,12 @@ function scheduleReconnect() {
   const delay = withJitter(reconnectDelayMs);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    connectDesktopWs(currentUserId);
+    connectDesktopWs(currentUserId, currentAccessToken);
   }, delay);
   advanceReconnectDelay();
 }
 
-function connectDesktopWs(userId) {
+function connectDesktopWs(userId, accessToken) {
   const endpoint = toWsEndpoint();
   if (!endpoint) {
     console.warn('[desktop-ws] BACKEND_BASE_URL is not configured. Skipping WS connection.');
@@ -86,9 +87,16 @@ function connectDesktopWs(userId) {
 
   disconnectDesktopWs(false);
   currentUserId = userId;
+  currentAccessToken = String(accessToken || '').trim() || null;
   shouldReconnect = true;
+  const headers = {};
+  if (currentAccessToken) {
+    headers.Authorization = `Bearer ${currentAccessToken}`;
+  }
 
-  socket = new WebSocket(endpoint);
+  socket = Object.keys(headers).length
+    ? new WebSocket(endpoint, { headers })
+    : new WebSocket(endpoint);
 
   socket.on('open', () => {
     clearReconnect();
@@ -112,11 +120,17 @@ function connectDesktopWs(userId) {
     } catch {}
   });
 
-  socket.on('close', () => {
-    console.warn('[desktop-ws] Connection closed');
+  socket.on('close', (code, reasonBuffer) => {
+    const reason = Buffer.isBuffer(reasonBuffer) ? reasonBuffer.toString('utf8') : String(reasonBuffer || '');
+    console.warn(`[desktop-ws] Connection closed (code=${code}, reason=${reason})`);
     emitStatus(false);
     clearStableTimer();
     socket = null;
+    if (code === 4401 || code === 4403) {
+      // Auth-related closure should not reconnect in a loop.
+      shouldReconnect = false;
+      return;
+    }
     scheduleReconnect();
   });
 
@@ -137,6 +151,7 @@ function disconnectDesktopWs(resetUser = true) {
     socket = null;
   }
   if (resetUser) currentUserId = null;
+  currentAccessToken = null;
   reconnectDelayMs = MIN_RECONNECT_MS;
 }
 
