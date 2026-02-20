@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { NavLink } from 'react-router-dom';
 import Logo from '../../assets/Logo.png';
+import { debugLog } from '../../utils/logger';
 import './MainLayout.css';
 
 const MainLayout = () => {
@@ -51,7 +52,7 @@ const MainLayout = () => {
   };
 
   const logout = () => {
-    console.log("MainLayout: Logout is working");
+    debugLog('MainLayout: Logout is working');
     localStorage.clear();
     navigate('/');
   }
