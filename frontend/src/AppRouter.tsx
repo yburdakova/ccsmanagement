@@ -11,6 +11,7 @@ import InventoryItemsPage from './pages/InventoryItemsPage/InventoryItemsPage';
 import MetricsPage from './pages/MetricsPage/MetricsPage';
 import ProductionSheetsPage from './pages/ProductionSheetsPage/ProductionSheetsPage';
 import AdminMetricsPage from './pages/AdminMetricsPage/AdminMetricsPage';
+import RequireAuth from './components/RequireAuth/RequireAuth';
 
 
 const AppRouter = () => {
@@ -19,7 +20,13 @@ const AppRouter = () => {
       <Routes>
         <Route path="/" element={<LoginPage />} />
 
-        <Route element={<MainLayout />}>
+        <Route
+          element={(
+            <RequireAuth>
+              <MainLayout />
+            </RequireAuth>
+          )}
+        >
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/production-sheet" element={<ProductionSheetPage />} />
           <Route path="/metrics" element={<MetricsPage />} />
