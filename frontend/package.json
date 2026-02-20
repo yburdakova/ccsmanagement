@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:local": "vite",
+    "dev:remote": "vite --mode remote",
     "build": "tsc -b && vite build",
+    "build:local": "tsc -b && vite build --mode development",
+    "build:remote": "tsc -b && vite build --mode remote",
     "lint": "eslint .",
     "preview": "vite preview"
   },
