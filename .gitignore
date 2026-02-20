@@ -38,4 +38,11 @@ coverage/
 
 install/
 *.md
+!backend/backend_doc.md
+!backend/deploy_backend.md
+!backend/backend_doc.md
+!backend/deploy_backend.md
 *.txt
+!backend/backend_doc.md
+!backend/deploy_backend.md
+
