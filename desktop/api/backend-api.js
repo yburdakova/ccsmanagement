@@ -1,11 +1,32 @@
 const DEFAULT_BASE_URL = 'http://localhost:4000/api';
-const baseUrl = String(process.env.BACKEND_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+
+function resolveBaseUrls(rawValue) {
+  const fallback = DEFAULT_BASE_URL.replace(/\/+$/, '');
+  const value = String(rawValue || '').trim();
+  if (!value) return [fallback];
+
+  try {
+    const parsed = new URL(value);
+    const normalizedPath = String(parsed.pathname || '').replace(/\/+$/, '');
+    parsed.pathname = normalizedPath && normalizedPath !== '/' ? normalizedPath : '';
+    parsed.search = '';
+    parsed.hash = '';
+
+    const primary = parsed.toString().replace(/\/+$/, '');
+    if (normalizedPath && normalizedPath !== '/') return [primary];
+    return [primary, `${primary}/api`];
+  } catch {
+    return [fallback];
+  }
+}
+
+const baseUrls = resolveBaseUrls(process.env.BACKEND_BASE_URL);
+let preferredBaseUrl = baseUrls[0];
 
 let bootstrapCache = null;
 let accessToken = null;
 
 async function request(path, options = {}) {
-  const url = `${baseUrl}${path}`;
   const requestHeaders = {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
@@ -15,23 +36,38 @@ async function request(path, options = {}) {
     requestHeaders.Authorization = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch(url, {
-    headers: requestHeaders,
-    ...options,
-  });
+  const candidates = [preferredBaseUrl, ...baseUrls.filter((url) => url !== preferredBaseUrl)];
+  let lastError = null;
 
-  if (!response.ok) {
+  for (let i = 0; i < candidates.length; i += 1) {
+    const baseUrl = candidates[i];
+    const url = `${baseUrl}${path}`;
+    const isLastCandidate = i === candidates.length - 1;
+    const response = await fetch(url, {
+      headers: requestHeaders,
+      ...options,
+    });
+
+    if (response.ok) {
+      preferredBaseUrl = baseUrl;
+      if (response.status === 204) return null;
+      return await response.json();
+    }
+
     if (response.status === 401) {
       // Keep local auth state aligned with backend auth state.
       clearAccessToken();
       clearBootstrapCache();
     }
+
     const text = await response.text();
-    throw new Error(`[backend-api] ${response.status} ${response.statusText}: ${text}`);
+    lastError = new Error(`[backend-api] ${response.status} ${response.statusText} (${url}): ${text}`);
+    if (!(response.status === 404 && !isLastCandidate)) {
+      throw lastError;
+    }
   }
 
-  if (response.status === 204) return null;
-  return await response.json();
+  throw lastError || new Error('[backend-api] Request failed');
 }
 
 async function getBootstrap() {
