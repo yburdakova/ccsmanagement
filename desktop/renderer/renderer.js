@@ -573,27 +573,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    if (pendingUnfinishedTask) {
-      if (pendingUnfinishedTask.isUuid) {
-        await window.electronAPI.markUnfinishedFinished(null, pendingUnfinishedTask.id);
-      } else {
-        const markResult = await window.electronAPI.markUnfinishedFinished(
-          pendingUnfinishedTask.id
-        );
-        if (!markResult?.success) {
-          window.desktopError?.warn?.('Mark unfinished task finished', markResult?.error || 'Unknown error');
-        }
-      }
-      pendingUnfinishedTask = null;
-      pendingTaskSelection = null;
-      if (startTaskButton) startTaskButton.textContent = 'START';
-      await refreshUnfinishedTasksCount();
-      if (unfinishedList && unfinishedList.style.display !== 'none') {
-        const tasks = await loadUnfinishedTasks();
-        renderUnfinishedTasks(tasks);
-      }
-      await refreshAssignmentsListIfOpen();
-    }
+    // Save pending task reference before attempting start — we only mark it done
+    // AFTER the new task starts successfully to avoid data loss on failure.
+    const taskToMark = pendingUnfinishedTask;
+    const taskToMarkSelection = pendingTaskSelection;
+    pendingUnfinishedTask = null;
+    pendingTaskSelection = null;
+    if (startTaskButton) startTaskButton.textContent = 'START';
 
     const result = await window.electronAPI.startTaskActivity(
       currentUser.id,
@@ -603,8 +589,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
 
     if (!result.success) {
+      // Restore pending state — the old unfinished task is still open
+      pendingUnfinishedTask = taskToMark;
+      pendingTaskSelection = taskToMarkSelection;
+      if (startTaskButton) startTaskButton.textContent = taskToMark ? 'CONTINUE' : 'START';
       alert('Task start failed: ' + result.error);
       return;
+    }
+
+    // New task started successfully — now safely mark the old task as done
+    if (taskToMark) {
+      if (taskToMark.isUuid) {
+        await window.electronAPI.markUnfinishedFinished(null, taskToMark.id);
+      } else {
+        const markResult = await window.electronAPI.markUnfinishedFinished(taskToMark.id);
+        if (!markResult?.success) {
+          window.desktopError?.warn?.('Mark unfinished task finished', markResult?.error || 'Unknown error');
+        }
+      }
+      await refreshUnfinishedTasksCount();
+      if (unfinishedList && unfinishedList.style.display !== 'none') {
+        const tasks = await loadUnfinishedTasks();
+        renderUnfinishedTasks(tasks);
+      }
+      await refreshAssignmentsListIfOpen();
     }
 
     if (pendingAssignment && pendingAssignmentSelection) {

@@ -2182,6 +2182,8 @@ async function syncQueue() {
               valueType: payload.value_type,
               value: payload.value
             });
+          } else if (type === 'item-status') {
+            result = await dataApi.updateItemStatusGlobal(payload.item_id, payload.status_id);
           } else {
             console.warn('[syncQueue] Unknown payload type:', type);
             continue;

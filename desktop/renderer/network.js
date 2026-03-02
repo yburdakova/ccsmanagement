@@ -5,7 +5,7 @@ window.network = {
   reconnectRefreshInFlight: false,
 
   isOnline() {
-    if (this.backendConnection?.mode === 'ws') {
+    if (this.backendConnection?.connected != null) {
       return Boolean(this.backendConnection.connected);
     }
     return navigator.onLine;

@@ -55,16 +55,18 @@ let mainWindow = null;
 let lastWsConnected = false;
 let reconnectSyncInProgress = false;
 
-function getConnectionState() {
+async function getConnectionState() {
   if (profile === 'backend') {
     return { mode: 'ws', connected: isDesktopWsConnected() };
   }
-  return { mode: 'network', connected: null };
+  const online = await isOnline();
+  return { mode: 'network', connected: online };
 }
 
-function publishConnectionState() {
+async function publishConnectionState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send('backend-connection-status', getConnectionState());
+  const state = await getConnectionState();
+  mainWindow.webContents.send('backend-connection-status', state);
 }
 
 async function syncAfterBackendReconnect() {
@@ -111,7 +113,9 @@ function createWindow(screenWidth) {
   Menu.setApplicationMenu(null);
   mainWindow = win;
   win.webContents.on('did-finish-load', () => {
-    publishConnectionState();
+    publishConnectionState().catch((err) => {
+      console.warn('[main] Failed to publish initial connection state:', err.message);
+    });
   });
 
   win.on('close', (event) => {
@@ -156,6 +160,14 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 
+  if (profile !== 'backend') {
+    setInterval(() => {
+      publishConnectionState().catch((err) => {
+        console.warn('[main] Failed to publish periodic connection state:', err.message);
+      });
+    }, 30000);
+  }
+
   if (profile === 'backend') {
     setDesktopWsMessageListener((event) => {
       if (event?.type !== 'db-changed') return;
@@ -166,7 +178,9 @@ app.whenReady().then(async () => {
     });
 
     setDesktopWsStatusListener(({ connected }) => {
-      publishConnectionState();
+      publishConnectionState().catch((err) => {
+        console.warn('[main] Failed to publish WS connection state:', err.message);
+      });
       const nextConnected = Boolean(connected);
       if (nextConnected && !lastWsConnected) {
         syncAfterBackendReconnect().catch((err) => {
@@ -702,12 +716,18 @@ ipcMain.handle('get-item-status-rule', async (event, { projectId, taskId, applyA
 });
 
 ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
-  const { isOnline } = require('./utils/network-status');
+  const { enqueueSyncPayload } = require('./api/db-local');
 
   try {
     const online = await isOnline();
     if (!online) {
-      return { success: false, error: 'Offline mode' };
+      await enqueueSyncPayload({
+        type: 'item-status',
+        item_id: itemId,
+        status_id: statusId,
+        timestamp: new Date().toISOString()
+      });
+      return { success: true, queued: true };
     }
     return await dataApi.updateItemStatusGlobal(itemId, statusId);
   } catch (error) {
