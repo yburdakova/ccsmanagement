@@ -349,6 +349,18 @@ ipcMain.handle('get-project-task-data', async (event, { projectId, taskId }) => 
   }
 });
 
+ipcMain.handle('get-tracking-data', async (event, { uuid }) => {
+  const { isOnline } = require('./utils/network-status');
+  try {
+    const online = await isOnline();
+    if (!online) return [];
+    return await dataApi.getTrackingDataByUuid(uuid);
+  } catch (error) {
+    console.warn('[main] Fetching tracking data failed:', error.message);
+    return [];
+  }
+});
+
 ipcMain.handle('save-task-data', async (event, payload) => {
   const { saveTaskDataValueLocal } = require('./api/db-local');
   try {

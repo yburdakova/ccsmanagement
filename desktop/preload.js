@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAllCustomers: () => ipcRenderer.invoke('get-all-customers'),
   getProjectTaskData: (projectId, taskId) =>
     ipcRenderer.invoke('get-project-task-data', { projectId, taskId }),
+  getTrackingData: (uuid) => ipcRenderer.invoke('get-tracking-data', { uuid }),
   saveTaskData: (payload) => ipcRenderer.invoke('save-task-data', payload),
   getAvailableTasks: (userId, projectId) => ipcRenderer.invoke('get-available-tasks', { userId, projectId }),
   getProjectItems: (projectId, projectTypeId) => ipcRenderer.invoke('get-project-items', { projectId, projectTypeId }),

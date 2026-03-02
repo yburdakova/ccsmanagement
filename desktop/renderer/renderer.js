@@ -320,12 +320,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
+      const clockOutTaskData = currentTaskUuid && taskOverlayDataList
+        ? collectTaskDataValues(taskOverlayDataList)
+        : [];
       let result;
       try {
         result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
           uuid: activeUuid,
           userId: currentUser.id,
-          isTaskCompleted: false
+          isTaskCompleted: false,
+          taskData: clockOutTaskData
         }));
       } catch {
         alert('Clock-out failed. Please try again.');
@@ -407,12 +411,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         itemId: String(itemSelect?.value || ''),
       };
       if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
+      const pauseTaskData = taskOverlayDataList ? collectTaskDataValues(taskOverlayDataList) : [];
       let result;
       try {
         result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
           uuid: currentTaskUuid,
           userId: currentUser.id,
-          isTaskCompleted: false
+          isTaskCompleted: false,
+          taskData: pauseTaskData
         }));
       } catch {
         alert('Task stop failed. Please try again.');
@@ -712,6 +718,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       1
     );
     await loadTaskDataOverlay(projectId, taskId);
+
+    const taskToMarkUuid = taskToMark?.uuid || (taskToMark?.isUuid ? taskToMark.id : null);
+    if (taskToMarkUuid && taskOverlayDataList) {
+      try {
+        const savedData = await window.electronAPI.getTrackingData(taskToMarkUuid);
+        if (Array.isArray(savedData) && savedData.length > 0) {
+          const formatted = savedData
+            .filter((row) => row.dataDefId)
+            .map((row) => ({ data_def_id: Number(row.dataDefId), value: extractTrackingValue(row) }))
+            .filter((row) => row.value !== '');
+          if (formatted.length > 0) {
+            applyCollectedTaskDataValues(taskOverlayDataList, formatted);
+          }
+        }
+      } catch (err) {
+        console.warn('[renderer] Restore tracking data failed:', err?.message || err);
+      }
+    }
+
     if (
       currentTaskItemId &&
       currentTaskStatusRule &&
@@ -804,6 +829,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!valuesByDefId.has(defId)) return;
       input.value = String(valuesByDefId.get(defId) ?? '');
     });
+  };
+
+  const extractTrackingValue = (row) => {
+    const t = String(row.valueType || '').toLowerCase();
+    if (t === 'customer_id') return String(row.value_int ?? '');
+    if (t === 'int' || t === 'integer') return String(row.value_int ?? '');
+    if (t === 'decimal') return String(row.value_decimal ?? '');
+    if (t === 'varchar') return String(row.value_varchar ?? '');
+    if (t === 'text') return String(row.value_text ?? '');
+    if (t === 'bool' || t === 'boolean') return row.value_bool != null ? (row.value_bool ? '1' : '0') : '';
+    if (t === 'date') return String(row.value_date ?? '');
+    if (t === 'datetime') return (row.value_datetime || '').replace(' ', 'T').slice(0, 16);
+    if (t === 'json') return String(row.value_json ?? '');
+    return '';
   };
 
   const validateTaskDataValues = (rows, expectedRows, container) => {
@@ -1015,12 +1054,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const finalizeTask = async (applyStatus, note, dataContainer) => {
     let taskData = null;
-    if (applyStatus && dataContainer) {
+    if (dataContainer) {
       taskData = collectTaskDataValues(dataContainer);
-      const validation = validateTaskDataValues(taskData, currentTaskDataRows, dataContainer);
-      if (!validation.ok) {
-        alert(validation.message);
-        return false;
+      if (applyStatus) {
+        const validation = validateTaskDataValues(taskData, currentTaskDataRows, dataContainer);
+        if (!validation.ok) {
+          alert(validation.message);
+          return false;
+        }
       }
     }
     let result;
@@ -1123,7 +1164,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    await finalizeTask(applyStatus, note, null);
+    await finalizeTask(false, note, taskOverlayDataList);
   };
 
   finishTaskButton?.addEventListener('click', () => handleFinishTask(true));

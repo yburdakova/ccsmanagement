@@ -175,6 +175,10 @@ async function saveTaskDataValueGlobal({ projectId, taskId, dataDefId, valueType
   });
 }
 
+async function getTrackingDataByUuid(uuid) {
+  return await request(`/desktop/tracking-data?uuid=${encodeURIComponent(uuid)}`);
+}
+
 async function getAvailableTasksForUser(userId, projectId) {
   return await request(`/desktop/available-tasks?userId=${userId}&projectId=${projectId}`);
 }
@@ -279,6 +283,7 @@ module.exports = {
   getAllImItems,
   getProjectTaskDataByTask,
   saveTaskDataValueGlobal,
+  getTrackingDataByUuid,
   getAvailableTasksForUser,
   getItemsByProject,
   getCfsItemsByProject,

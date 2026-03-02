@@ -601,6 +601,36 @@ router.post('/assignment-accepted', async (req, res) => {
   }
 });
 
+router.get('/tracking-data', async (req, res) => {
+  const uuid = String(req.query.uuid || '').trim();
+  if (!uuid) return res.status(400).json({ error: 'uuid is required' });
+  try {
+    const [rows] = await pool.query(
+      `
+        SELECT uttd.data_def_id AS dataDefId,
+               tdd.value_type AS valueType,
+               uttd.value_int,
+               uttd.value_decimal,
+               uttd.value_varchar,
+               uttd.value_text,
+               uttd.value_bool,
+               uttd.value_date,
+               uttd.value_datetime,
+               uttd.value_json
+        FROM users_time_tracking_data uttd
+        JOIN task_data_definitions tdd ON tdd.id = uttd.data_def_id
+        WHERE uttd.tracking_uuid = ?
+      `,
+      [uuid]
+    );
+    res.json(rows);
+  } catch (error) {
+    if (isMissingTableError(error)) return res.json([]);
+    console.error('[desktop-api] tracking-data failed:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/unfinished-finished', async (req, res) => {
   const recordId = parseRequiredNumber(req.body?.recordId || 0);
   const uuid = String(req.body?.uuid || '').trim();
