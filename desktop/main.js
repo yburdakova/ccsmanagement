@@ -173,9 +173,7 @@ app.whenReady().then(async () => {
     setDesktopWsMessageListener((event) => {
       if (event?.type !== 'db-changed') return;
       console.log('[main] WS db-changed event received, refreshing local cache');
-      syncAfterBackendReconnect().catch((err) => {
-        console.warn('[main] WS db-changed refresh failed:', err.message);
-      });
+      syncAfterBackendReconnect();
     });
 
     setDesktopWsStatusListener(({ connected }) => {
@@ -184,9 +182,7 @@ app.whenReady().then(async () => {
       });
       const nextConnected = Boolean(connected);
       if (nextConnected && !lastWsConnected) {
-        syncAfterBackendReconnect().catch((err) => {
-          console.warn('[main] Reconnect sync scheduling failed:', err.message);
-        });
+        syncAfterBackendReconnect();
       }
       lastWsConnected = nextConnected;
     });
