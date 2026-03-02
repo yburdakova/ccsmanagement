@@ -135,7 +135,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         (allItemTypes || []).map((type) => [Number(type.id), String(type.name || '').trim()])
       );
     } catch (err) {
-      window.desktopError?.warn?.('Load reference data', err);
+      console.warn('[renderer] Load reference data failed:', err?.message || err);
     }
   }
 
@@ -304,7 +304,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       if (!result.success) {
-        alert('Clock-out failed: ' + result.error);
+        alert('Clock-out failed. Please try again.');
         return;
       }
 
@@ -385,7 +385,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       if (!result.success) {
-        alert('Task stop failed: ' + result.error);
+        alert('Task stop failed. Please try again.');
         return;
       }
 
@@ -404,7 +404,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       if (!result.success) {
-        alert('Failed to stop current activity: ' + result.error);
+        alert('Failed to stop current activity. Please try again.');
         return;
       }
       currentSessionUuid = null;
@@ -412,7 +412,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const activityResult = await window.electronAPI.startUnallocated(currentUser.id, activityId);
     if (!activityResult.success) {
-      alert(`Failed to start ${label.toLowerCase()}: ` + activityResult.error);
+      alert(`Failed to start ${label.toLowerCase()}. Please try again.`);
       return;
     }
 
@@ -542,7 +542,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       if (!unallocatedResult.success) {
-        alert('Failed to stop unallocated time: ' + unallocatedResult.error);
+        alert('Failed to stop unallocated time. Please try again.');
         return;
       }
       currentSessionUuid = null;
@@ -593,7 +593,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       pendingUnfinishedTask = taskToMark;
       pendingTaskSelection = taskToMarkSelection;
       if (startTaskButton) startTaskButton.textContent = taskToMark ? 'CONTINUE' : 'START';
-      alert('Task start failed: ' + result.error);
+      alert('Task start failed. Please try again.');
       return;
     }
 
@@ -604,7 +604,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         const markResult = await window.electronAPI.markUnfinishedFinished(taskToMark.id);
         if (!markResult?.success) {
-          window.desktopError?.warn?.('Mark unfinished task finished', markResult?.error || 'Unknown error');
+          console.warn('[renderer] Mark unfinished task finished failed:', markResult?.error || 'Unknown error');
         }
       }
       await refreshUnfinishedTasksCount();
@@ -625,7 +625,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           pendingAssignment.id
         );
         if (!acceptResult?.success) {
-          window.desktopError?.warn?.('Accept assignment', acceptResult?.error || 'Unknown error');
+          console.warn('[renderer] Accept assignment failed:', acceptResult?.error || 'Unknown error');
         }
         pendingAssignment = null;
         pendingAssignmentSelection = null;
@@ -659,7 +659,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentTaskStatusRule.statusId
       );
       if (!statusResult?.success) {
-        window.desktopError?.warn?.('Update item status on start', statusResult?.error || 'Unknown error');
+        console.warn('[renderer] Update item status on start failed:', statusResult?.error || 'Unknown error');
       } else {
         await refreshItemOptions(currentTaskItemId);
       }
@@ -925,7 +925,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
     } catch (err) {
-      window.desktopError?.warn?.('Load task data for finish modal', err);
+      console.warn('[renderer] Load task data for finish modal failed:', err?.message || err);
     }
 
     const dataRows = rows && rows.length ? rows : currentTaskDataRows;
@@ -969,7 +969,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     if (!result.success) {
-      alert('Task finish failed: ' + result.error);
+      alert('Task finish failed. Please try again.');
       return false;
     }
 
@@ -986,7 +986,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         finishStatusRule.statusId
       );
       if (!statusResult?.success) {
-        window.desktopError?.warn?.('Update item status on finish', statusResult?.error || 'Unknown error');
+        console.warn('[renderer] Update item status on finish failed:', statusResult?.error || 'Unknown error');
       } else {
         await refreshItemOptions(currentTaskItemId);
       }
@@ -1015,7 +1015,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const unallocatedResult = await window.electronAPI.startUnallocated(currentUser.id);
     if (!unallocatedResult.success) {
-      alert('Failed to start unallocated time: ' + unallocatedResult.error);
+      alert('Failed to start unallocated time. Please try again.');
       return false;
     }
     currentSessionUuid = unallocatedResult.uuid;
@@ -1066,7 +1066,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       if (!result.success) {
-        alert('Failed to finish break: ' + result.error);
+        alert('Failed to finish break. Please try again.');
         return;
       }
       currentSessionUuid = null;
@@ -1237,12 +1237,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const result = await window.electronAPI.startUnallocated(userId);
       if (!result.success) {
-        alert('Clock-in failed: ' + result.error);
+        alert('Clock-in failed. Please try again.');
         return null;
       }
       return result.uuid;
     } catch (err) {
-      alert('Clock-in failed: ' + (err?.message || String(err)));
+      alert('Clock-in failed. Please try again.');
       return null;
     }
   }
@@ -1276,7 +1276,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // ++
       return raw ? JSON.parse(raw) : null;
     } catch (err) {
-      window.desktopError?.warn?.('Read work timer state', err);
+      console.warn('[renderer] Read work timer state failed:', err?.message || err);
       return null;
     }
   }
@@ -1297,7 +1297,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       localStorage.setItem(getWorkTimerStateKey(currentUser.id), JSON.stringify(payload));
       // ++
     } catch (err) {
-      window.desktopError?.warn?.('Persist work timer state', err);
+      console.warn('[renderer] Persist work timer state failed:', err?.message || err);
     }
   }
 
@@ -1343,7 +1343,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const raw = localStorage.getItem(savedProjectKey);
       return raw ? JSON.parse(raw) : null;
     } catch (err) {
-      window.desktopError?.warn?.('Parse saved project', err);
+      console.warn('[renderer] Parse saved project failed:', err?.message || err);
       return null;
     }
   }
@@ -1402,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!currentUser) return;
     const result = await window.electronAPI.startUnallocated(currentUser.id, 4);
     if (!result.success) {
-      alert('Failed to start unallocated time: ' + result.error);
+      alert('Failed to start unallocated time. Please try again.');
       return;
     }
     currentSessionUuid = result.uuid;
@@ -1449,7 +1449,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     } catch (err) {
-      window.desktopError?.warn?.('Refresh project data', err);
+      console.warn('[renderer] Refresh project data failed:', err?.message || err);
     }
   }
 
@@ -1492,7 +1492,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const tasks = await window.electronAPI.getUnfinishedTasks(currentUser.id);
       return Array.isArray(tasks) ? tasks : [];
     } catch (err) {
-      window.desktopError?.warn?.('Load unfinished tasks', err);
+      console.warn('[renderer] Load unfinished tasks failed:', err?.message || err);
       return [];
     }
   }
@@ -1503,7 +1503,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const assignments = await window.electronAPI.getAssignments(currentUser.id);
       return Array.isArray(assignments) ? assignments : [];
     } catch (err) {
-      window.desktopError?.warn?.('Load assignments', err);
+      console.warn('[renderer] Load assignments failed:', err?.message || err);
       return [];
     }
   }
@@ -1946,7 +1946,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderTaskDataOverlay(rows || []);
       }
     } catch (err) {
-      window.desktopError?.warn?.('Load task data overlay', err);
+      console.warn('[renderer] Load task data overlay failed:', err?.message || err);
       renderTaskDataOverlay(currentTaskDataRows || []);
     }
   }
@@ -1977,7 +1977,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       taskDataSection.style.display = 'none';
       taskDataList.innerHTML = '';
     } catch (err) {
-      window.desktopError?.warn?.('Load task data', err);
+      console.warn('[renderer] Load task data failed:', err?.message || err);
       taskDataSection.style.display = 'none';
       taskDataList.innerHTML = '';
       currentTaskDataRows = [];

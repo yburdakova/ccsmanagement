@@ -1635,7 +1635,7 @@ function replaceProjectTaskDataForTask(projectId, taskId, taskData) {
               }
 
               const stmt = db.prepare(`
-                INSERT INTO project_task_data (
+                INSERT OR REPLACE INTO project_task_data (
                   id, project_task_id, data_def_id,
                   is_required,
                   value_int, value_decimal, value_varchar, value_text, value_bool,

@@ -92,35 +92,7 @@ async function reportException(context, error, options = {}) {
   });
 }
 
-function installMainConsoleBridge() {
-  const bridge = (level, args) => {
-    try {
-      const text = args.map((part) => String(part)).join(' ');
-      if (!text.trim()) return;
-      if (text.includes('[error-handler]') || text.includes('show-user-message failed')) return;
-      showUserMessage({
-        level,
-        title: level === 'error' ? 'Desktop Error' : 'Desktop Warning',
-        message: text.slice(0, 300),
-        detail: text,
-        dedupeKey: `${level}:console:${text}`,
-      }).catch(() => {});
-    } catch {}
-  };
-
-  console.error = (...args) => {
-    rawConsoleError(...args);
-    bridge('error', args);
-  };
-
-  console.warn = (...args) => {
-    rawConsoleWarn(...args);
-    bridge('warning', args);
-  };
-}
-
 module.exports = {
   showUserMessage,
   reportException,
-  installMainConsoleBridge,
 };

@@ -59,30 +59,6 @@
     },
   };
 
-  const bridgeConsole = (level, args) => {
-    try {
-      const text = args.map((part) => String(part)).join(' ');
-      if (!text.trim()) return;
-      if (text.includes('[renderer-error]')) return;
-      notify(
-        level,
-        level === 'error' ? 'Desktop Error' : 'Desktop Warning',
-        text.slice(0, 300),
-        text
-      );
-    } catch {}
-  };
-
-  console.error = (...args) => {
-    rawConsoleError(...args);
-    bridgeConsole('error', args);
-  };
-
-  console.warn = (...args) => {
-    rawConsoleWarn(...args);
-    bridgeConsole('warning', args);
-  };
-
   window.addEventListener('error', (event) => {
     const err = event?.error || new Error(String(event?.message || 'Unknown renderer error'));
     window.desktopError.error('Unhandled renderer error', err);
