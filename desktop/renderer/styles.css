@@ -334,6 +334,18 @@ button.icon-btn{
   font-size: 14px;
 }
 
+.item-sync-indicator {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  color: #8a5a00;
+  background: #fff3cd;
+  border: 1px solid #f0d791;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
 .task-overlay {
   position: absolute;
   inset: 0;

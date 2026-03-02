@@ -112,6 +112,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.log('Connected to local SQLite database.');
   }
 });
+let syncInProgress = false;
 
 db.serialize(() => {
   db.run(`
@@ -2090,21 +2091,21 @@ function saveTaskDataValueLocal({ projectId, taskId, dataDefId, valueType, value
                 (err3) => {
                   if (err3) {
                     console.error('[local-db] Failed to queue task data update:', err3.message);
-                  } else {
-                    console.log('[local-db] Queued task data update');
-                    const { isOnline } = require('../utils/network-status');
-                    isOnline().then((online) => {
-                      if (online) {
-                        const { syncQueue } = require('./db-local');
-                        syncQueue().catch((err) => {
-                          console.error('[local-db] Failed to sync queue after task data update:', err.message);
-                        });
-                      }
-                    });
+                    return reject(err3);
                   }
+                  console.log('[local-db] Queued task data update');
+                  resolve(result);
+                  const { isOnline } = require('../utils/network-status');
+                  isOnline().then((online) => {
+                    if (online) {
+                      const { syncQueue } = require('./db-local');
+                      syncQueue().catch((err) => {
+                        console.error('[local-db] Failed to sync queue after task data update:', err.message);
+                      });
+                    }
+                  });
                 }
               );
-              resolve(result);
             };
 
             if (existing) {
@@ -2174,86 +2175,98 @@ function enqueueSyncPayload(payload) {
 async function syncQueue() {
   const dataApi = require('./data-provider');
 
-  return new Promise((resolve, reject) => {
-    db.all(`SELECT * FROM sync_queue`, async (err, rows) => {
-      if (err) {
-        console.error('[syncQueue] Failed to read queue:', err.message);
-        return reject({ success: false, error: err.message });
-      }
-
-      let syncedCount = 0;
-
-      for (const row of rows) {
-        try {
-          const payload = JSON.parse(row.payload);
-          const type = payload.type;
-          let result;
-
-          if (type === 'start') {
-            result = await dataApi.startUnallocatedActivityGlobal(payload);
-          } else if (type === 'start-task') {
-            result = await dataApi.startTaskActivityGlobal(payload);
-          } else if (type === 'complete') {
-            result = await dataApi.completeActiveActivityGlobal({
-              uuid: payload.uuid,
-              user_id: payload.user_id,
-              is_completed_project_task: payload.is_completed_project_task,
-              timestamp: payload.timestamp,
-              note: payload.note,
-              taskData: payload.task_data
-            });
-          } else if (type === 'task-data') {
-            result = await dataApi.saveTaskDataValueGlobal({
-              projectId: payload.project_id,
-              taskId: payload.task_id,
-              dataDefId: payload.data_def_id,
-              valueType: payload.value_type,
-              value: payload.value
-            });
-          } else if (type === 'item-status') {
-            result = await dataApi.updateItemStatusGlobal(payload.item_id, payload.status_id);
-          } else {
-            console.warn('[syncQueue] Unknown payload type:', type);
-            continue;
-          }
-
-          // 👇 считаем успешным, если:
-          if (
-            result.success || 
-            result.duplicate || 
-            result.ignored || 
-            result.error === 'No active activity' || 
-            result.error?.includes('ER_DUP_ENTRY')
-          ) {
-            db.run(
-              `DELETE FROM sync_queue WHERE id = ?`,
-              [row.id],
-              (err2) => {
-                if (err2) {
-                  console.error('[syncQueue] Failed to clear synced record:', err2.message);
-                } else {
-                  console.log(
-                    `[syncQueue] Record synced and cleared: uuid=${payload.uuid}, type=${payload.type}`
-                  );
-                }
-              }
-            );
-            syncedCount++;
-          } else {
-            console.warn(
-              `[syncQueue] Failed to sync record: ${result.error || 'Unknown error'}`
-            );
-          }
-        } catch (err2) {
-          console.error('[syncQueue] Error during sync:', err2.message);
+  if (syncInProgress) return { success: true, synced: 0, failed: 0 };
+  syncInProgress = true;
+  try {
+    const rows = await new Promise((resolve, reject) => {
+      db.all(`SELECT * FROM sync_queue`, (err, queueRows) => {
+        if (err) {
+          console.error('[syncQueue] Failed to read queue:', err.message);
+          return reject({ success: false, error: err.message });
         }
-      }
-
-      resolve({ success: true, synced: syncedCount });
+        resolve(queueRows || []);
+      });
     });
-  });
-}
 
+    let syncedCount = 0;
+    let failedCount = 0;
+
+    for (const row of rows) {
+      try {
+        const payload = JSON.parse(row.payload);
+        const type = payload.type;
+        let result;
+
+        if (type === 'start') {
+          result = await dataApi.startUnallocatedActivityGlobal(payload);
+        } else if (type === 'start-task') {
+          result = await dataApi.startTaskActivityGlobal(payload);
+        } else if (type === 'complete') {
+          result = await dataApi.completeActiveActivityGlobal({
+            uuid: payload.uuid,
+            user_id: payload.user_id,
+            is_completed_project_task: payload.is_completed_project_task,
+            timestamp: payload.timestamp,
+            note: payload.note,
+            taskData: payload.task_data
+          });
+        } else if (type === 'task-data') {
+          result = await dataApi.saveTaskDataValueGlobal({
+            projectId: payload.project_id,
+            taskId: payload.task_id,
+            dataDefId: payload.data_def_id,
+            valueType: payload.value_type,
+            value: payload.value
+          });
+        } else if (type === 'item-status') {
+          result = await dataApi.updateItemStatusGlobal(payload.item_id, payload.status_id);
+        } else {
+          failedCount++;
+          console.warn('[syncQueue] Unknown payload type:', type);
+          continue;
+        }
+
+        if (
+          result.success ||
+          result.duplicate ||
+          result.ignored ||
+          result.error === 'No active activity' ||
+          result.error?.includes('ER_DUP_ENTRY')
+        ) {
+          try {
+            await new Promise((resolve, reject) => {
+              db.run(`DELETE FROM sync_queue WHERE id = ?`, [row.id], (err2) => {
+                if (err2) return reject(err2);
+                resolve(true);
+              });
+            });
+            syncedCount++;
+            console.log(
+              `[syncQueue] Record synced and cleared: uuid=${payload.uuid}, type=${payload.type}`
+            );
+          } catch (deleteErr) {
+            failedCount++;
+            console.warn(
+              `[syncQueue] Synced record but failed to delete queue row id=${row.id}: ${deleteErr.message}`
+            );
+          }
+        } else {
+          failedCount++;
+          console.warn(
+            `[syncQueue] Failed to sync record: ${result.error || 'Unknown error'}`
+          );
+        }
+      } catch (err2) {
+        failedCount++;
+        console.error('[syncQueue] Error during sync:', err2.message);
+      }
+    }
+
+    return { success: true, synced: syncedCount, failed: failedCount };
+  } finally {
+    syncInProgress = false;
+  }
+}
 function startTaskActivityLocal(userId, projectId, taskId, itemId) {
   const startTime = new Date();
   const dateStr = startTime.toISOString().split('T')[0];
@@ -2274,36 +2287,41 @@ function startTaskActivityLocal(userId, projectId, taskId, itemId) {
 
       console.log(`[local-db] Task start recorded (uuid=${uuid}, project=${projectId}, task=${taskId})`);
 
-      const { isOnline } = require('../utils/network-status');
-      isOnline().then((online) => {
-        if (!online) {
-          const payload = {
-            type: 'start-task',
-            uuid,
-            user_id: userId,
-            project_id: projectId,
-            task_id: taskId,
-            item_id: itemId ?? null,
-            timestamp: startTime.toISOString()
-          };
-
-          db.run(
-            `INSERT INTO sync_queue (payload) VALUES (?)`,
-            [JSON.stringify(payload)],
-            (err2) => {
-              if (err2) {
-                console.error('[local-db] Failed to queue task start:', err2.message);
-              } else {
+      (async () => {
+        try {
+          const { isOnline } = require('../utils/network-status');
+          const online = await isOnline();
+          if (!online) {
+            const payload = {
+              type: 'start-task',
+              uuid,
+              user_id: userId,
+              project_id: projectId,
+              task_id: taskId,
+              item_id: itemId ?? null,
+              timestamp: startTime.toISOString()
+            };
+            db.run(
+              `INSERT INTO sync_queue (payload) VALUES (?)`,
+              [JSON.stringify(payload)],
+              (err2) => {
+                if (err2) {
+                  console.error('[local-db] Failed to queue task start:', err2.message);
+                  return reject(err2);
+                }
                 console.log('[local-db] Offline mode: queued task start');
+                resolve({ uuid });
               }
-            }
-          );
-        } else {
+            );
+            return;
+          }
           console.log('[local-db] Online mode: skipping sync_queue for task start');
+          resolve({ uuid });
+        } catch (err2) {
+          console.warn('[local-db] Task start online check failed, continuing with local record:', err2.message);
+          resolve({ uuid });
         }
-      });
-
-      resolve({ uuid });
+      })();
     });
   });
 }
@@ -2324,11 +2342,12 @@ function startUnallocatedActivityLocal(userId, activityId, uuid) {
       if (err) {
         console.error('[local-db] Clock-in failed:', err.message);
         return reject(err);
-      } else {
-        console.log(`[local-db] Clock-in recorded (uuid=${uuid})`);
-
-        const { isOnline } = require('../utils/network-status');
-        isOnline().then((online) => {
+      }
+      console.log(`[local-db] Clock-in recorded (uuid=${uuid})`);
+      (async () => {
+        try {
+          const { isOnline } = require('../utils/network-status');
+          const online = await isOnline();
           if (!online) {
             const payload = {
               type: 'start',
@@ -2337,25 +2356,27 @@ function startUnallocatedActivityLocal(userId, activityId, uuid) {
               activity_id: activityId,
               timestamp: startTime.toISOString()
             };
-
             db.run(
               `INSERT INTO sync_queue (payload) VALUES (?)`,
               [JSON.stringify(payload)],
-              (err) => {
-                if (err) {
-                  console.error('[local-db] Failed to queue clock-in:', err.message);
-                } else {
-                  console.log('[local-db] Offline mode: queued clock-in');
+              (err2) => {
+                if (err2) {
+                  console.error('[local-db] Failed to queue clock-in:', err2.message);
+                  return reject(err2);
                 }
+                console.log('[local-db] Offline mode: queued clock-in');
+                resolve({ uuid });
               }
             );
-          } else {
-            console.log('[local-db] Online mode: skipping sync_queue');
+            return;
           }
-        });
-
-        resolve({ uuid });
-      }
+          console.log('[local-db] Online mode: skipping sync_queue');
+          resolve({ uuid });
+        } catch (err2) {
+          console.warn('[local-db] Clock-in online check failed, continuing with local record:', err2.message);
+          resolve({ uuid });
+        }
+      })();
     });
   });
 }

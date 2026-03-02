@@ -559,6 +559,8 @@ async function getUnfinishedTasksByUser(userId) {
                utt.task_id AS taskId,
                utt.item_id AS itemId,
                utt.project_id AS projectId,
+               utt.start_time AS startedAt,
+               utt.end_time AS stoppedAt,
                p.name AS projectName,
                t.description AS taskName,
                i.label AS itemName

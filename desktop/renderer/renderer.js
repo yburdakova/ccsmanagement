@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const stopTaskButton = document.getElementById('stop-task-button');
   const itemSection = document.getElementById('item-selector-section');
   const itemSelect = document.getElementById('item-select');
+  const itemStatusSyncIndicator = document.getElementById('item-status-sync-indicator');
   const taskDataSection = document.getElementById('task-data-section');
   const taskDataList = document.getElementById('task-data-list');
   const taskOverlay = document.getElementById('task-overlay');
@@ -114,6 +115,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let pendingAssignment = null;
   let pendingAssignmentSelection = null;
   let assignmentsTotal = 0;
+  let loadTaskDataToken = 0;
+  let mutatingIpcRetryBlockedUntil = 0;
+  let hasPendingItemStatusSync = false;
 
   async function loadReferenceDataForCurrentUser() {
     if (!currentUser) return;
@@ -163,6 +167,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       id = setTimeout(() => reject(new Error('Operation timed out')), ms);
     });
     return Promise.race([promise.finally(() => clearTimeout(id)), timeout]);
+  }
+
+  function isIpcTimeoutError(err) {
+    return String(err?.message || '').includes('Operation timed out');
+  }
+
+  async function runMutatingIpcWithTimeout(executor, fallbackMessage) {
+    const now = Date.now();
+    if (mutatingIpcRetryBlockedUntil > now) {
+      const secondsLeft = Math.max(1, Math.ceil((mutatingIpcRetryBlockedUntil - now) / 1000));
+      alert(`Operation is still being confirmed. Please wait ${secondsLeft} second(s) before retrying.`);
+      return null;
+    }
+    try {
+      return await withIpcTimeout(executor());
+    } catch (err) {
+      if (isIpcTimeoutError(err)) {
+        mutatingIpcRetryBlockedUntil = Date.now() + 5000;
+        alert('Operation took too long. Please check your connection before retrying in 5 seconds.');
+      } else {
+        alert(fallbackMessage);
+      }
+      return null;
+    }
   }
 
   // ==================
@@ -215,6 +243,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentTaskDataRows = [];
     pendingAssignment = null;
     pendingAssignmentSelection = null;
+    setItemStatusSyncPending(false);
     stopTimer(true);
     stopTaskTimer(true);
     if (taskOverlay) taskOverlay.style.display = 'none';
@@ -323,21 +352,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       const clockOutTaskData = currentTaskUuid && taskOverlayDataList
         ? collectTaskDataValues(taskOverlayDataList)
         : [];
-      let result;
-      try {
-        result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+      const result = await runMutatingIpcWithTimeout(
+        () => window.electronAPI.completeActiveActivity({
           uuid: activeUuid,
           userId: currentUser.id,
           isTaskCompleted: false,
           taskData: clockOutTaskData
-        }));
-      } catch {
-        alert('Clock-out failed. Please try again.');
-        return;
-      }
-
-      if (!result.success) {
-        alert('Clock-out failed. Please try again.');
+        }),
+        'Clock-out failed. Please try again.'
+      );
+      if (!result?.success) {
         return;
       }
 
@@ -349,9 +373,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentTaskItemId = null;
       currentTaskStatusRule = null;
       currentTaskDataRows = [];
-    currentTaskDataRows = [];
       pendingAssignment = null;
       pendingAssignmentSelection = null;
+      setItemStatusSyncPending(false);
       stopTimer(true);
       stopTaskTimer(true);
       workTimerPausedElapsedMs = null;
@@ -412,21 +436,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
       if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
       const pauseTaskData = taskOverlayDataList ? collectTaskDataValues(taskOverlayDataList) : [];
-      let result;
-      try {
-        result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+      const result = await runMutatingIpcWithTimeout(
+        () => window.electronAPI.completeActiveActivity({
           uuid: currentTaskUuid,
           userId: currentUser.id,
           isTaskCompleted: false,
           taskData: pauseTaskData
-        }));
-      } catch {
-        alert('Task stop failed. Please try again.');
-        return;
-      }
-
-      if (!result.success) {
-        alert('Task stop failed. Please try again.');
+        }),
+        'Task stop failed. Please try again.'
+      );
+      if (!result?.success) {
         return;
       }
 
@@ -438,20 +457,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (currentSessionUuid) {
-      let result;
-      try {
-        result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+      const result = await runMutatingIpcWithTimeout(
+        () => window.electronAPI.completeActiveActivity({
           uuid: currentSessionUuid,
           userId: currentUser.id,
           isTaskCompleted: false
-        }));
-      } catch {
-        alert('Failed to stop current activity. Please try again.');
-        return;
-      }
-
-      if (!result.success) {
-        alert('Failed to stop current activity. Please try again.');
+        }),
+        'Failed to stop current activity. Please try again.'
+      );
+      if (!result?.success) {
         return;
       }
       currentSessionUuid = null;
@@ -588,22 +602,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (currentSessionUuid) {
-      let unallocatedResult;
-      try {
-        unallocatedResult = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+      const unallocatedResult = await runMutatingIpcWithTimeout(
+        () => window.electronAPI.completeActiveActivity({
           uuid: currentSessionUuid,
           userId: currentUser.id,
           isTaskCompleted: false
-        }));
-      } catch {
-        alert('Failed to stop unallocated time. Please try again.');
-        return;
-      }
-
-      if (!unallocatedResult.success) {
-        alert('Failed to stop unallocated time. Please try again.');
-        return;
-      }
+        }),
+        'Failed to stop unallocated time. Please try again.'
+      );
+      if (!unallocatedResult?.success) return;
       currentSessionUuid = null;
     }
 
@@ -640,29 +647,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     pendingTaskSelection = null;
     if (startTaskButton) startTaskButton.textContent = 'START';
 
-    let result;
-    try {
-      result = await withIpcTimeout(window.electronAPI.startTaskActivity(
+    const result = await runMutatingIpcWithTimeout(
+      () => window.electronAPI.startTaskActivity(
         currentUser.id,
         Number(projectSelect.value),
         Number(taskSelect.value),
         selectedItemId
-      ));
-    } catch {
-      // Restore pending state — the old unfinished task is still open
-      pendingUnfinishedTask = taskToMark;
-      pendingTaskSelection = taskToMarkSelection;
-      if (startTaskButton) startTaskButton.textContent = taskToMark ? 'CONTINUE' : 'START';
-      alert('Task start failed. Please try again.');
-      return;
-    }
+      ),
+      'Task start failed. Please try again.'
+    );
 
-    if (!result.success) {
-      // Restore pending state — the old unfinished task is still open
+    if (!result?.success) {
+      // Restore pending state - the old unfinished task is still open
       pendingUnfinishedTask = taskToMark;
       pendingTaskSelection = taskToMarkSelection;
       if (startTaskButton) startTaskButton.textContent = taskToMark ? 'CONTINUE' : 'START';
-      alert('Task start failed. Please try again.');
       return;
     }
 
@@ -717,30 +716,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       taskId,
       1
     );
-    await loadTaskDataOverlay(projectId, taskId);
-
     const taskToMarkUuid = taskToMark?.uuid || (taskToMark?.isUuid ? taskToMark.id : null);
-    if (taskToMarkUuid && taskOverlayDataList) {
+    let savedTrackingRows = null;
+    if (taskToMarkUuid) {
       try {
-        const savedData = await window.electronAPI.getTrackingData(taskToMarkUuid);
-        if (Array.isArray(savedData) && savedData.length > 0) {
-          const formatted = savedData
-            .filter((row) => row.dataDefId)
-            .map((row) => ({ data_def_id: Number(row.dataDefId), value: extractTrackingValue(row) }))
-            .filter((row) => row.value !== '');
-          if (formatted.length > 0) {
-            applyCollectedTaskDataValues(taskOverlayDataList, formatted);
-          }
-        }
+        const data = await window.electronAPI.getTrackingData(taskToMarkUuid);
+        if (Array.isArray(data) && data.length > 0) savedTrackingRows = data;
       } catch (err) {
-        console.warn('[renderer] Restore tracking data failed:', err?.message || err);
+        console.warn('[renderer] Pre-fetch tracking data failed:', err?.message || err);
       }
     }
+    await loadTaskDataOverlay(projectId, taskId, savedTrackingRows);
 
     if (
       currentTaskItemId &&
       currentTaskStatusRule &&
-      currentTaskStatusRule.statusId
+      currentTaskStatusRule.statusId != null
     ) {
       const statusResult = await window.electronAPI.updateItemStatus(
         currentTaskItemId,
@@ -748,7 +739,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       );
       if (!statusResult?.success) {
         console.warn('[renderer] Update item status on start failed:', statusResult?.error || 'Unknown error');
+      } else if (statusResult.queued) {
+        setItemStatusSyncPending(true);
       } else {
+        setItemStatusSyncPending(false);
         await refreshItemOptions(currentTaskItemId);
       }
     }
@@ -829,20 +823,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!valuesByDefId.has(defId)) return;
       input.value = String(valuesByDefId.get(defId) ?? '');
     });
-  };
-
-  const extractTrackingValue = (row) => {
-    const t = String(row.valueType || '').toLowerCase();
-    if (t === 'customer_id') return String(row.value_int ?? '');
-    if (t === 'int' || t === 'integer') return String(row.value_int ?? '');
-    if (t === 'decimal') return String(row.value_decimal ?? '');
-    if (t === 'varchar') return String(row.value_varchar ?? '');
-    if (t === 'text') return String(row.value_text ?? '');
-    if (t === 'bool' || t === 'boolean') return row.value_bool != null ? (row.value_bool ? '1' : '0') : '';
-    if (t === 'date') return String(row.value_date ?? '');
-    if (t === 'datetime') return (row.value_datetime || '').replace(' ', 'T').slice(0, 16);
-    if (t === 'json') return String(row.value_json ?? '');
-    return '';
   };
 
   const validateTaskDataValues = (rows, expectedRows, container) => {
@@ -1028,6 +1008,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
     } catch (err) {
       console.warn('[renderer] Load task data for finish modal failed:', err?.message || err);
+      alert('Could not load task data. Please check your connection and try again.');
+      return false;
     }
 
     const dataRows = rows && rows.length ? rows : currentTaskDataRows;
@@ -1064,22 +1046,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     }
-    let result;
-    try {
-      result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+    const result = await runMutatingIpcWithTimeout(
+      () => window.electronAPI.completeActiveActivity({
         uuid: currentTaskUuid,
         userId: currentUser.id,
         isTaskCompleted: applyStatus,
         note,
         taskData
-      }));
-    } catch {
-      alert('Task finish failed. Please try again.');
-      return false;
-    }
+      }),
+      'Task finish failed. Please try again.'
+    );
 
-    if (!result.success) {
-      alert('Task finish failed. Please try again.');
+    if (!result?.success) {
       return false;
     }
 
@@ -1089,7 +1067,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       applyStatus &&
       currentTaskItemId &&
       finishStatusRule &&
-      finishStatusRule.statusId
+      finishStatusRule.statusId != null
     ) {
       const statusResult = await window.electronAPI.updateItemStatus(
         currentTaskItemId,
@@ -1097,7 +1075,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       );
       if (!statusResult?.success) {
         console.warn('[renderer] Update item status on finish failed:', statusResult?.error || 'Unknown error');
+      } else if (statusResult.queued) {
+        setItemStatusSyncPending(true);
       } else {
+        setItemStatusSyncPending(false);
         await refreshItemOptions(currentTaskItemId);
       }
     }
@@ -1114,7 +1095,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearNoteInput(taskOverlayNote);
     if (taskOverlayData) taskOverlayData.style.display = 'none';
     if (taskOverlayDataList) taskOverlayDataList.innerHTML = '';
-    currentTaskDataRows = [];
     if (taskOverlayItem) {
       taskOverlayItem.textContent = '';
       taskOverlayItem.style.display = 'none';
@@ -1153,6 +1133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (taskOverlayData) taskOverlayData.style.display = 'none';
       if (taskOverlayDataList) taskOverlayDataList.innerHTML = '';
       currentTaskDataRows = [];
+      setItemStatusSyncPending(false);
       stopTaskTimer(true);
       updateStartButton();
       return;
@@ -1174,21 +1155,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   finishActivityButton?.addEventListener('click', async () => {
     if (currentUser && currentSessionUuid) {
       const note = getNoteValue(activityOverlayNote);
-      let result;
-      try {
-        result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+      const result = await runMutatingIpcWithTimeout(
+        () => window.electronAPI.completeActiveActivity({
           uuid: currentSessionUuid,
           userId: currentUser.id,
           isTaskCompleted: false,
           note
-        }));
-      } catch {
-        alert('Failed to finish break. Please try again.');
-        return;
-      }
+        }),
+        'Failed to finish break. Please try again.'
+      );
 
-      if (!result.success) {
-        alert('Failed to finish break. Please try again.');
+      if (!result?.success) {
         return;
       }
       currentSessionUuid = null;
@@ -1472,11 +1449,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function setSavedProject(project) {
     const payload = { projectId: project.project_id, roleId: project.role_id };
-    localStorage.setItem(savedProjectKey, JSON.stringify(payload));
+    try {
+      localStorage.setItem(savedProjectKey, JSON.stringify(payload));
+    } catch (err) {
+      console.warn('[renderer] Save project bookmark failed:', err?.message || err);
+    }
   }
 
   function clearSavedProject() {
-    localStorage.removeItem(savedProjectKey);
+    try {
+      localStorage.removeItem(savedProjectKey);
+    } catch (err) {
+      console.warn('[renderer] Clear project bookmark failed:', err?.message || err);
+    }
   }
 
   function updateBookmarkButtons(hasSaved) {
@@ -1501,6 +1486,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function clearNoteInput(input) {
     if (input) input.value = '';
+  }
+
+  function setItemStatusSyncPending(isPending) {
+    hasPendingItemStatusSync = !!isPending;
+    if (!itemStatusSyncIndicator) return;
+    itemStatusSyncIndicator.style.display = hasPendingItemStatusSync ? 'inline-flex' : 'none';
   }
 
   function resetProjectSelectionUi() {
@@ -1722,11 +1713,52 @@ document.addEventListener('DOMContentLoaded', async () => {
       const detail = document.createElement('div');
       detail.className = 'notes-item__task';
       const itemLabel = task.itemName ? ` - ${task.itemName}` : '';
-      detail.textContent = `${task.taskName || 'Unknown task'}${itemLabel}`;
+      const compactWindow = getUnfinishedTaskCompactTimeWindow(task);
+      const timeLabel = compactWindow ? ` · ${compactWindow}` : '';
+      detail.textContent = `${task.taskName || 'Unknown task'}${itemLabel}${timeLabel}`;
       item.appendChild(project);
       item.appendChild(detail);
       unfinishedList.appendChild(item);
     });
+  }
+
+  function parseTaskTimestamp(value) {
+    if (!value) return null;
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function formatTaskTimeCompact(value) {
+    const date = parseTaskTimestamp(value);
+    if (!date) return '';
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function formatTaskDateCompact(value) {
+    const date = parseTaskTimestamp(value);
+    if (!date) return '';
+    return date.toLocaleDateString([], { month: '2-digit', day: '2-digit' });
+  }
+
+  function getUnfinishedTaskCompactTimeWindow(task) {
+    const startedAt = task?.startedAt ?? task?.startTime ?? task?.start_time ?? null;
+    const stoppedAt = task?.stoppedAt ?? task?.endTime ?? task?.end_time ?? null;
+    const startedDate = formatTaskDateCompact(startedAt);
+    const stoppedDate = formatTaskDateCompact(stoppedAt);
+    const started = formatTaskTimeCompact(startedAt);
+    const stopped = formatTaskTimeCompact(stoppedAt);
+    if (started && stopped) {
+      if (startedDate && stoppedDate && startedDate !== stoppedDate) {
+        return `${startedDate} ${started}-${stoppedDate} ${stopped}`;
+      }
+      if (startedDate) return `${startedDate} ${started}-${stopped}`;
+      return `${started}-${stopped}`;
+    }
+    if (started) return startedDate ? `${startedDate} ${started}-...` : `${started}-...`;
+    return '';
   }
 
   function renderAssignments(assignments) {
@@ -2075,18 +2107,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => focusTaskDataInput(), 0);
   }
 
-  async function loadTaskDataOverlay(projectId, taskId) {
+  function mergeTrackingValues(templateRows, trackingRows) {
+    if (!trackingRows || trackingRows.length === 0) return templateRows;
+    const byDefId = new Map(trackingRows.map((r) => [Number(r.dataDefId), r]));
+    return templateRows.map((row) => {
+      const tr = byDefId.get(Number(row.dataDefId));
+      if (!tr) return row;
+      const t = String(tr.valueType || '').toLowerCase();
+      const merged = { ...row };
+      if (t === 'customer_id') merged.value_customer_id = tr.value_int;
+      else if (t === 'int' || t === 'integer') merged.value_int = tr.value_int;
+      else if (t === 'decimal') merged.value_decimal = tr.value_decimal;
+      else if (t === 'varchar') merged.value_varchar = tr.value_varchar;
+      else if (t === 'text') merged.value_text = tr.value_text;
+      else if (t === 'bool' || t === 'boolean') merged.value_bool = tr.value_bool;
+      else if (t === 'date') merged.value_date = tr.value_date;
+      else if (t === 'datetime') merged.value_datetime = tr.value_datetime;
+      else if (t === 'json') merged.value_json = tr.value_json;
+      return merged;
+    });
+  }
+
+  async function loadTaskDataOverlay(projectId, taskId, savedTrackingRows) {
     if (!taskOverlayData || !taskOverlayDataList) return;
+    const token = ++loadTaskDataToken;
     try {
       const rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
-      if (!rows || rows.length === 0) {
-        renderTaskDataOverlay(currentTaskDataRows || []);
-      } else {
-        renderTaskDataOverlay(rows || []);
-      }
+      if (token !== loadTaskDataToken) return;
+      const base = rows && rows.length ? rows : (currentTaskDataRows || []);
+      renderTaskDataOverlay(mergeTrackingValues(base, savedTrackingRows));
     } catch (err) {
+      if (token !== loadTaskDataToken) return;
       console.warn('[renderer] Load task data overlay failed:', err?.message || err);
-      renderTaskDataOverlay(currentTaskDataRows || []);
+      renderTaskDataOverlay(mergeTrackingValues(currentTaskDataRows || [], savedTrackingRows));
     }
   }
 
@@ -2124,5 +2177,3 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
 });
-
-

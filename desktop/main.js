@@ -54,6 +54,7 @@ let mainWindow = null;
 let lastWsConnected = false;
 let syncLock = Promise.resolve();
 let syncQueued = false;
+const taskStartInFlight = new Set();
 
 async function getConnectionState() {
   if (profile === 'backend') {
@@ -166,7 +167,7 @@ app.whenReady().then(async () => {
       publishConnectionState().catch((err) => {
         console.warn('[main] Failed to publish periodic connection state:', err.message);
       });
-    }, 30000);
+    }, 10000);
   }
 
   if (profile === 'backend') {
@@ -532,9 +533,14 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
 
 ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId, itemId }) => {
   const { startTaskActivityLocal: startLocal, enqueueSyncPayload } = require('./api/db-local');
-  const isConnected = await isOnline();
+  const lockKey = String(userId ?? '');
+  if (taskStartInFlight.has(lockKey)) {
+    return { success: false, error: 'Already starting' };
+  }
+  taskStartInFlight.add(lockKey);
 
   try {
+    const isConnected = await isOnline();
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -582,6 +588,8 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
   } catch (error) {
     console.error('[main] Start task activity local failed:', error.message);
     return { success: false, error: error.message };
+  } finally {
+    taskStartInFlight.delete(lockKey);
   }
 });
 
