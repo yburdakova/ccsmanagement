@@ -8,10 +8,12 @@ let connected = false;
 let statusListener = null;
 let reconnectDelayMs = 1000;
 let stableConnectionTimer = null;
+let pingIntervalId = null;
 let messageListener = null;
 let currentAccessToken = null;
 
 const MIN_RECONNECT_MS = 1000;
+const PING_INTERVAL_MS = 30000;
 const MAX_RECONNECT_MS = 30000;
 const STABLE_RESET_MS = 60000;
 const JITTER_RATIO = 0.2;
@@ -51,6 +53,13 @@ function clearStableTimer() {
   if (stableConnectionTimer) {
     clearTimeout(stableConnectionTimer);
     stableConnectionTimer = null;
+  }
+}
+
+function clearPingInterval() {
+  if (pingIntervalId) {
+    clearInterval(pingIntervalId);
+    pingIntervalId = null;
   }
 }
 
@@ -107,6 +116,13 @@ function connectDesktopWs(userId, accessToken) {
     }, STABLE_RESET_MS);
     socket.send(JSON.stringify({ type: 'identify', userId }));
     console.log(`[desktop-ws] Connected to ${endpoint} as user=${userId}`);
+    // Start keepalive pings so stale TCP connections are detected promptly.
+    clearPingInterval();
+    pingIntervalId = setInterval(() => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        try { socket.send(JSON.stringify({ type: 'ping' })); } catch {}
+      }
+    }, PING_INTERVAL_MS);
   });
 
   socket.on('message', (raw) => {
@@ -123,6 +139,7 @@ function connectDesktopWs(userId, accessToken) {
   socket.on('close', (code, reasonBuffer) => {
     const reason = Buffer.isBuffer(reasonBuffer) ? reasonBuffer.toString('utf8') : String(reasonBuffer || '');
     console.warn(`[desktop-ws] Connection closed (code=${code}, reason=${reason})`);
+    clearPingInterval();
     emitStatus(false);
     clearStableTimer();
     socket = null;
@@ -143,6 +160,7 @@ function disconnectDesktopWs(resetUser = true) {
   shouldReconnect = false;
   clearReconnect();
   clearStableTimer();
+  clearPingInterval();
   emitStatus(false);
   if (socket) {
     try {

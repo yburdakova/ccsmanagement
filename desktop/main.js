@@ -52,7 +52,8 @@ const {
 
 let mainWindow = null;
 let lastWsConnected = false;
-let reconnectSyncInProgress = false;
+let syncLock = Promise.resolve();
+let syncQueued = false;
 
 async function getConnectionState() {
   if (profile === 'backend') {
@@ -68,25 +69,26 @@ async function publishConnectionState() {
   mainWindow.webContents.send('backend-connection-status', state);
 }
 
-async function syncAfterBackendReconnect() {
-  if (reconnectSyncInProgress) return;
-  reconnectSyncInProgress = true;
-  try {
-    if (typeof dataApi.clearBootstrapCache === 'function') {
-      dataApi.clearBootstrapCache();
+function syncAfterBackendReconnect() {
+  if (syncQueued) return;  // one already queued — coalesce
+  syncQueued = true;
+  syncLock = syncLock.catch(() => {}).then(async () => {
+    syncQueued = false;
+    try {
+      if (typeof dataApi.clearBootstrapCache === 'function') {
+        dataApi.clearBootstrapCache();
+      }
+      const queueResult = await syncQueue();
+      console.log(`[main] Reconnect syncQueue: ${queueResult.synced || 0} record(s) synced`);
+      await initializeLocalDb();
+      console.log('[main] Reconnect initializeLocalDb completed');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('backend-data-refreshed', { at: new Date().toISOString() });
+      }
+    } catch (err) {
+      console.warn('[main] Reconnect synchronization failed:', err.message);
     }
-    const queueResult = await syncQueue();
-    console.log(`[main] Reconnect syncQueue: ${queueResult.synced || 0} record(s) synced`);
-    await initializeLocalDb();
-    console.log('[main] Reconnect initializeLocalDb completed');
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('backend-data-refreshed', { at: new Date().toISOString() });
-    }
-  } catch (err) {
-    console.warn('[main] Reconnect synchronization failed:', err.message);
-  } finally {
-    reconnectSyncInProgress = false;
-  }
+  });
 }
 
 function createWindow(screenWidth) {

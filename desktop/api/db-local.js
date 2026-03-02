@@ -76,13 +76,18 @@ const getDbDir = () => {
   try {
     const { app } = require('electron');
     if (app?.isPackaged) {
-      // Strict requirement: keep the DB alongside the packaged executable.
-      // electron-builder portable apps run from a temp dir; use PORTABLE_EXECUTABLE_DIR when available.
+      // Portable builds: PORTABLE_EXECUTABLE_DIR is set by the portable launcher
+      // to the directory where the .exe lives — always use it when available.
       const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
       if (portableDir && typeof portableDir === 'string') {
         return path.join(portableDir, 'db');
       }
-      return path.join(path.dirname(process.execPath), 'db');
+      // Fallback: app.getPath('userData') is always persistent and writable
+      // (%APPDATA%\<appName> on Windows). Avoids using process.execPath which
+      // points to a temp directory in packaged Electron portable builds.
+      const userDataPath = app.getPath('userData');
+      console.warn('[local-db] PORTABLE_EXECUTABLE_DIR not set; storing DB in userData:', userDataPath);
+      return path.join(userDataPath, 'db');
     }
   } catch {}
   return path.join(__dirname, '../db');
@@ -1620,18 +1625,28 @@ function replaceProjectTaskDataForTask(projectId, taskId, taskData) {
         if (!row) return resolve({ success: true, skipped: true });
 
         const projectTaskId = row.id;
-        db.serialize(() => {
+        // Wrap DELETE + INSERT in a transaction so partial failures don't leave
+        // the table in an inconsistent state (some rows deleted, some not inserted).
+        db.run('BEGIN IMMEDIATE', (txErr) => {
+          if (txErr) {
+            console.error('[local-db] Failed to begin transaction for replaceProjectTaskData:', txErr.message);
+            return reject(txErr);
+          }
+
           db.run(
             `DELETE FROM project_task_data WHERE project_task_id = ?`,
             [projectTaskId],
             (err2) => {
               if (err2) {
                 console.error('[local-db] Failed to clear project_task_data:', err2.message);
-                return reject(err2);
+                return db.run('ROLLBACK', () => reject(err2));
               }
 
               if (!taskData || taskData.length === 0) {
-                return resolve({ success: true, cleared: true });
+                return db.run('COMMIT', (commitErr) => {
+                  if (commitErr) return db.run('ROLLBACK', () => reject(commitErr));
+                  resolve({ success: true, cleared: true });
+                });
               }
 
               const stmt = db.prepare(`
@@ -1645,6 +1660,7 @@ function replaceProjectTaskDataForTask(projectId, taskId, taskData) {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               `);
 
+              let hasStmtError = false;
               taskData.forEach((rowData) => {
                 stmt.run(
                   rowData.id,
@@ -1663,13 +1679,25 @@ function replaceProjectTaskDataForTask(projectId, taskId, taskData) {
                   rowData.created_at ?? null,
                   rowData.updated_at ?? null,
                   (err3) => {
-                    if (err3) console.error('[local-db] Failed to insert project_task_data:', err3.message);
+                    if (err3) {
+                      console.error('[local-db] Failed to insert project_task_data:', err3.message);
+                      hasStmtError = true;
+                    }
                   }
                 );
               });
 
-              stmt.finalize();
-              resolve({ success: true, replaced: true });
+              stmt.finalize((finalizeErr) => {
+                if (hasStmtError || finalizeErr) {
+                  return db.run('ROLLBACK', () =>
+                    reject(finalizeErr || new Error('Failed to insert task data rows'))
+                  );
+                }
+                db.run('COMMIT', (commitErr) => {
+                  if (commitErr) return db.run('ROLLBACK', () => reject(commitErr));
+                  resolve({ success: true, replaced: true });
+                });
+              });
             }
           );
         });
@@ -2373,44 +2401,58 @@ function completeActiveActivityLocal({ uuid, is_completed_project_task, timestam
       const isFinished =
         row.activity_id !== 2 ? 1 : is_completed_project_task ? 1 : 0;
 
-      db.run(
-        `UPDATE users_time_tracking
-         SET end_time = ?, duration = ?, is_finished = ?, note = ?
-         WHERE uuid = ?`,
-        [endStr, durationMin, isFinished, safeNote, row.uuid],
-        (err2) => {
-          if (err2) {
-            console.error('[local-db] Failed to complete activity:', err2.message);
-            return reject(err2);
-          }
+      // всегда кладём в очередь, независимо от онлайна
+      const payload = {
+        type: 'complete',
+        uuid: row.uuid,
+        user_id: row.user_id,
+        is_completed_project_task,
+        timestamp: endTime.toISOString(),
+        note: safeNote,
+        task_data: Array.isArray(taskData) ? taskData : null
+      };
 
-          // всегда кладём в очередь, независимо от онлайна
-          const payload = {
-            type: 'complete',
-            uuid: row.uuid,
-            user_id: row.user_id,
-            is_completed_project_task,
-            timestamp: endTime.toISOString(),
-            note: safeNote,
-            task_data: Array.isArray(taskData) ? taskData : null
-          };
-
-          db.run(
-            `INSERT INTO sync_queue (payload) VALUES (?)`,
-            [JSON.stringify(payload)],
-            (err3) => {
-              if (err3) {
-                console.error('[local-db] Failed to queue clock-out:', err3.message);
-                return reject(err3);
-              } else {
-                console.log('[local-db] Queued clock-out (uuid=' + row.uuid + ')');
-                // ✅ теперь resolve только после успешной вставки в очередь
-                return resolve({ success: true, uuid: row.uuid, endTime, userId: row.user_id });
-              }
-            }
-          );
+      // Wrap UPDATE + INSERT into sync_queue in a transaction so both
+      // succeed or both are rolled back — preventing a completed-but-unsynced state.
+      db.run('BEGIN IMMEDIATE', (txErr) => {
+        if (txErr) {
+          console.error('[local-db] Failed to begin transaction:', txErr.message);
+          return reject(txErr);
         }
-      );
+
+        db.run(
+          `UPDATE users_time_tracking
+           SET end_time = ?, duration = ?, is_finished = ?, note = ?
+           WHERE uuid = ?`,
+          [endStr, durationMin, isFinished, safeNote, row.uuid],
+          (err2) => {
+            if (err2) {
+              console.error('[local-db] Failed to complete activity:', err2.message);
+              return db.run('ROLLBACK', () => reject(err2));
+            }
+
+            db.run(
+              `INSERT INTO sync_queue (payload) VALUES (?)`,
+              [JSON.stringify(payload)],
+              (err3) => {
+                if (err3) {
+                  console.error('[local-db] Failed to queue clock-out:', err3.message);
+                  return db.run('ROLLBACK', () => reject(err3));
+                }
+
+                db.run('COMMIT', (err4) => {
+                  if (err4) {
+                    console.error('[local-db] Failed to commit activity completion:', err4.message);
+                    return db.run('ROLLBACK', () => reject(err4));
+                  }
+                  console.log('[local-db] Queued clock-out (uuid=' + row.uuid + ')');
+                  resolve({ success: true, uuid: row.uuid, endTime, userId: row.user_id });
+                });
+              }
+            );
+          }
+        );
+      });
     });
   });
 }

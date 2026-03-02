@@ -117,26 +117,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadReferenceDataForCurrentUser() {
     if (!currentUser) return;
-    try {
-      const [projects, projectUsers, roles, customers, itemTypes] = await Promise.all([
+    const [projectsRes, projectUsersRes, rolesRes, customersRes, itemTypesRes] =
+      await Promise.allSettled([
         window.electronAPI.getAllProjects(),
         window.electronAPI.getAllProjectUsers(),
         window.electronAPI.getAllProjectRoles(),
         window.electronAPI.getAllCustomers(),
         window.electronAPI.getItemTypes(),
       ]);
-
-      allProjects = Array.isArray(projects) ? projects : [];
-      allProjectUsers = Array.isArray(projectUsers) ? projectUsers : [];
-      projectRoles = Array.isArray(roles) ? roles : [];
-      allCustomers = Array.isArray(customers) ? customers : [];
-      allItemTypes = Array.isArray(itemTypes) ? itemTypes : [];
+    if (projectsRes.status === 'fulfilled')
+      allProjects = Array.isArray(projectsRes.value) ? projectsRes.value : [];
+    if (projectUsersRes.status === 'fulfilled')
+      allProjectUsers = Array.isArray(projectUsersRes.value) ? projectUsersRes.value : [];
+    if (rolesRes.status === 'fulfilled')
+      projectRoles = Array.isArray(rolesRes.value) ? rolesRes.value : [];
+    if (customersRes.status === 'fulfilled')
+      allCustomers = Array.isArray(customersRes.value) ? customersRes.value : [];
+    if (itemTypesRes.status === 'fulfilled') {
+      allItemTypes = Array.isArray(itemTypesRes.value) ? itemTypesRes.value : [];
       itemTypesById = new Map(
-        (allItemTypes || []).map((type) => [Number(type.id), String(type.name || '').trim()])
+        allItemTypes.map((type) => [Number(type.id), String(type.name || '').trim()])
       );
-    } catch (err) {
-      console.warn('[renderer] Load reference data failed:', err?.message || err);
     }
+    const rejected = [projectsRes, projectUsersRes, rolesRes, customersRes, itemTypesRes]
+      .filter((r) => r.status === 'rejected');
+    if (rejected.length)
+      console.warn('[renderer] Some reference data failed to load:',
+        rejected.map((r) => r.reason?.message).join(', '));
   }
 
   // hiding sections initially
@@ -149,6 +156,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateBookmarkButtons(!!getSavedProject());
   updateStartButton();
 
+  // IPC timeout guard — prevents indefinite UI freeze if main process hangs.
+  function withIpcTimeout(promise, ms = 15000) {
+    let id;
+    const timeout = new Promise((_, reject) => {
+      id = setTimeout(() => reject(new Error('Operation timed out')), ms);
+    });
+    return Promise.race([promise.finally(() => clearTimeout(id)), timeout]);
+  }
+
   // ==================
   // Login
   // ==================
@@ -156,7 +172,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const code = authInput.value.trim();
     const errorEl = document.getElementById('login-error');
 
-    const user = await window.electronAPI.loginWithCode(code);
+    let user;
+    try {
+      user = await withIpcTimeout(window.electronAPI.loginWithCode(code));
+    } catch (err) {
+      errorEl.textContent = 'Login failed. Please try again.';
+      errorEl.style.display = 'block';
+      return;
+    }
 
     if (user && user.id) {
       currentUser = user;
@@ -297,11 +320,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      const result = await window.electronAPI.completeActiveActivity({
-        uuid: activeUuid,
-        userId: currentUser.id,
-        isTaskCompleted: false
-      });
+      let result;
+      try {
+        result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+          uuid: activeUuid,
+          userId: currentUser.id,
+          isTaskCompleted: false
+        }));
+      } catch {
+        alert('Clock-out failed. Please try again.');
+        return;
+      }
 
       if (!result.success) {
         alert('Clock-out failed. Please try again.');
@@ -378,11 +407,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         itemId: String(itemSelect?.value || ''),
       };
       if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
-      const result = await window.electronAPI.completeActiveActivity({
-        uuid: currentTaskUuid,
-        userId: currentUser.id,
-        isTaskCompleted: false
-      });
+      let result;
+      try {
+        result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+          uuid: currentTaskUuid,
+          userId: currentUser.id,
+          isTaskCompleted: false
+        }));
+      } catch {
+        alert('Task stop failed. Please try again.');
+        return;
+      }
 
       if (!result.success) {
         alert('Task stop failed. Please try again.');
@@ -397,11 +432,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (currentSessionUuid) {
-      const result = await window.electronAPI.completeActiveActivity({
-        uuid: currentSessionUuid,
-        userId: currentUser.id,
-        isTaskCompleted: false
-      });
+      let result;
+      try {
+        result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+          uuid: currentSessionUuid,
+          userId: currentUser.id,
+          isTaskCompleted: false
+        }));
+      } catch {
+        alert('Failed to stop current activity. Please try again.');
+        return;
+      }
 
       if (!result.success) {
         alert('Failed to stop current activity. Please try again.');
@@ -410,7 +451,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentSessionUuid = null;
     }
 
-    const activityResult = await window.electronAPI.startUnallocated(currentUser.id, activityId);
+    let activityResult;
+    try {
+      activityResult = await withIpcTimeout(window.electronAPI.startUnallocated(currentUser.id, activityId));
+    } catch {
+      alert(`Failed to start ${label.toLowerCase()}. Please try again.`);
+      return;
+    }
     if (!activityResult.success) {
       alert(`Failed to start ${label.toLowerCase()}. Please try again.`);
       return;
@@ -535,11 +582,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (currentSessionUuid) {
-      const unallocatedResult = await window.electronAPI.completeActiveActivity({
-        uuid: currentSessionUuid,
-        userId: currentUser.id,
-        isTaskCompleted: false
-      });
+      let unallocatedResult;
+      try {
+        unallocatedResult = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+          uuid: currentSessionUuid,
+          userId: currentUser.id,
+          isTaskCompleted: false
+        }));
+      } catch {
+        alert('Failed to stop unallocated time. Please try again.');
+        return;
+      }
 
       if (!unallocatedResult.success) {
         alert('Failed to stop unallocated time. Please try again.');
@@ -581,12 +634,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     pendingTaskSelection = null;
     if (startTaskButton) startTaskButton.textContent = 'START';
 
-    const result = await window.electronAPI.startTaskActivity(
-      currentUser.id,
-      Number(projectSelect.value),
-      Number(taskSelect.value),
-      selectedItemId
-    );
+    let result;
+    try {
+      result = await withIpcTimeout(window.electronAPI.startTaskActivity(
+        currentUser.id,
+        Number(projectSelect.value),
+        Number(taskSelect.value),
+        selectedItemId
+      ));
+    } catch {
+      // Restore pending state — the old unfinished task is still open
+      pendingUnfinishedTask = taskToMark;
+      pendingTaskSelection = taskToMarkSelection;
+      if (startTaskButton) startTaskButton.textContent = taskToMark ? 'CONTINUE' : 'START';
+      alert('Task start failed. Please try again.');
+      return;
+    }
 
     if (!result.success) {
       // Restore pending state — the old unfinished task is still open
@@ -960,13 +1023,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         return false;
       }
     }
-    const result = await window.electronAPI.completeActiveActivity({
-      uuid: currentTaskUuid,
-      userId: currentUser.id,
-      isTaskCompleted: applyStatus,
-      note,
-      taskData
-    });
+    let result;
+    try {
+      result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+        uuid: currentTaskUuid,
+        userId: currentUser.id,
+        isTaskCompleted: applyStatus,
+        note,
+        taskData
+      }));
+    } catch {
+      alert('Task finish failed. Please try again.');
+      return false;
+    }
 
     if (!result.success) {
       alert('Task finish failed. Please try again.');
@@ -1013,7 +1082,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     stopTaskTimer(true);
     updateStartButton();
 
-    const unallocatedResult = await window.electronAPI.startUnallocated(currentUser.id);
+    let unallocatedResult;
+    try {
+      unallocatedResult = await withIpcTimeout(window.electronAPI.startUnallocated(currentUser.id));
+    } catch {
+      alert('Failed to start unallocated time. Please try again.');
+      return false;
+    }
     if (!unallocatedResult.success) {
       alert('Failed to start unallocated time. Please try again.');
       return false;
@@ -1058,12 +1133,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   finishActivityButton?.addEventListener('click', async () => {
     if (currentUser && currentSessionUuid) {
       const note = getNoteValue(activityOverlayNote);
-      const result = await window.electronAPI.completeActiveActivity({
-        uuid: currentSessionUuid,
-        userId: currentUser.id,
-        isTaskCompleted: false,
-        note
-      });
+      let result;
+      try {
+        result = await withIpcTimeout(window.electronAPI.completeActiveActivity({
+          uuid: currentSessionUuid,
+          userId: currentUser.id,
+          isTaskCompleted: false,
+          note
+        }));
+      } catch {
+        alert('Failed to finish break. Please try again.');
+        return;
+      }
 
       if (!result.success) {
         alert('Failed to finish break. Please try again.');
@@ -1235,7 +1316,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function handleClockIn(userId) {
     //console.log('[clock-in] click');
     try {
-      const result = await window.electronAPI.startUnallocated(userId);
+      const result = await withIpcTimeout(window.electronAPI.startUnallocated(userId));
       if (!result.success) {
         alert('Clock-in failed. Please try again.');
         return null;
@@ -1400,7 +1481,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function startUnallocatedForCurrentUser() {
     if (!currentUser) return;
-    const result = await window.electronAPI.startUnallocated(currentUser.id, 4);
+    let result;
+    try {
+      result = await withIpcTimeout(window.electronAPI.startUnallocated(currentUser.id, 4));
+    } catch {
+      alert('Failed to start unallocated time. Please try again.');
+      return;
+    }
     if (!result.success) {
       alert('Failed to start unallocated time. Please try again.');
       return;
@@ -1413,22 +1500,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       const selectedProjectId = projectSelect.value;
-      const [projects, projectUsers, roles, customers, itemTypes] = await Promise.all([
-        window.electronAPI.getAllProjects(),
-        window.electronAPI.getAllProjectUsers(),
-        window.electronAPI.getAllProjectRoles(),
-        window.electronAPI.getAllCustomers(),
-        window.electronAPI.getItemTypes(),
-      ]);
-
-      allProjects = projects;
-      allProjectUsers = projectUsers;
-      projectRoles = roles;
-      allCustomers = customers;
-      allItemTypes = itemTypes;
-      itemTypesById = new Map(
-        (allItemTypes || []).map((type) => [Number(type.id), String(type.name || '').trim()])
-      );
+      const [projectsRes, projectUsersRes, rolesRes, customersRes, itemTypesRes] =
+        await Promise.allSettled([
+          window.electronAPI.getAllProjects(),
+          window.electronAPI.getAllProjectUsers(),
+          window.electronAPI.getAllProjectRoles(),
+          window.electronAPI.getAllCustomers(),
+          window.electronAPI.getItemTypes(),
+        ]);
+      if (projectsRes.status === 'fulfilled')
+        allProjects = Array.isArray(projectsRes.value) ? projectsRes.value : [];
+      if (projectUsersRes.status === 'fulfilled')
+        allProjectUsers = Array.isArray(projectUsersRes.value) ? projectUsersRes.value : [];
+      if (rolesRes.status === 'fulfilled')
+        projectRoles = Array.isArray(rolesRes.value) ? rolesRes.value : [];
+      if (customersRes.status === 'fulfilled')
+        allCustomers = Array.isArray(customersRes.value) ? customersRes.value : [];
+      if (itemTypesRes.status === 'fulfilled') {
+        allItemTypes = Array.isArray(itemTypesRes.value) ? itemTypesRes.value : [];
+        itemTypesById = new Map(
+          allItemTypes.map((type) => [Number(type.id), String(type.name || '').trim()])
+        );
+      }
+      const rejected = [projectsRes, projectUsersRes, rolesRes, customersRes, itemTypesRes]
+        .filter((r) => r.status === 'rejected');
+      if (rejected.length)
+        console.warn('[renderer] Some reference data failed to refresh:',
+          rejected.map((r) => r.reason?.message).join(', '));
 
       if (!updateOptions) return;
 
