@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const taskOverlayStart = document.getElementById('task-overlay-start');
   const taskOverlayProjectSelect = document.getElementById('task-overlay-project-select');
   const taskOverlayTaskSelect = document.getElementById('task-overlay-task-select');
+  const taskOverlayTaskButtons = document.getElementById('task-overlay-task-buttons');
   const taskOverlayItemSelect = document.getElementById('task-overlay-item-select');
   const taskOverlayContinueButton = document.getElementById('task-overlay-continue-button');
   const taskOverlayCancelButton = document.getElementById('task-overlay-cancel-button');
@@ -69,6 +70,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   //const workTimerStateKey = 'workTimerState';
   const getWorkTimerStateKey = (userId) => `workTimerState:${userId}`;
   const itemInputLabel = document.getElementById('item-input-label');
+  const START_NEW_TASK_LABEL = 'Start NEW TASK';
 
   authInput.focus();
   authInput.addEventListener('keydown', (e) => {
@@ -114,6 +116,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let pendingTaskSelection = null;
   let pendingAssignment = null;
   let pendingAssignmentSelection = null;
+  let pendingSelectionSnapshot = null;
   let assignmentsTotal = 0;
   let loadTaskDataToken = 0;
   let mutatingIpcRetryBlockedUntil = 0;
@@ -527,9 +530,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     taskOverlayContinueButton.disabled = !(hasProject && hasTask);
   };
 
+  const renderTaskOverlayTaskButtons = () => {
+    if (!taskOverlayTaskButtons || !taskOverlayTaskSelect) return;
+
+    const hasProject = !!taskOverlayProjectSelect?.value;
+    const taskOptions = Array.from(taskOverlayTaskSelect.options || [])
+      .filter((option) => option.value && !option.disabled);
+
+    taskOverlayTaskButtons.innerHTML = '';
+
+    if (!hasProject || taskOptions.length === 0 || taskOverlayTaskSelect.disabled) {
+      taskOverlayTaskButtons.style.display = 'none';
+      taskOverlayTaskSelect.style.display = '';
+      return;
+    }
+
+    taskOverlayTaskSelect.style.display = 'none';
+    taskOverlayTaskButtons.style.display = 'grid';
+
+    taskOptions.forEach((option) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'task-overlay__task-button';
+      if (String(taskOverlayTaskSelect.value) === String(option.value)) {
+        button.classList.add('is-active');
+      }
+      button.textContent = option.textContent || 'Task';
+      button.addEventListener('click', () => {
+        taskOverlayTaskSelect.value = String(option.value);
+        taskOverlayTaskSelect.dispatchEvent(new Event('change'));
+      });
+      taskOverlayTaskButtons.appendChild(button);
+    });
+  };
+
   const syncTaskOverlaySelectors = () => {
     cloneSelectOptions(projectSelect, taskOverlayProjectSelect);
     cloneSelectOptions(taskSelect, taskOverlayTaskSelect);
+    renderTaskOverlayTaskButtons();
     cloneSelectOptions(itemSelect, taskOverlayItemSelect);
     if (taskOverlayItemSelect) {
       taskOverlayItemSelect.style.display =
@@ -624,7 +662,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!sameSelection) {
         pendingUnfinishedTask = null;
         pendingTaskSelection = null;
-        if (startTaskButton) startTaskButton.textContent = 'START';
+        if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
       }
     }
 
@@ -645,7 +683,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const taskToMarkSelection = pendingTaskSelection;
     pendingUnfinishedTask = null;
     pendingTaskSelection = null;
-    if (startTaskButton) startTaskButton.textContent = 'START';
+    if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
 
     const result = await runMutatingIpcWithTimeout(
       () => window.electronAPI.startTaskActivity(
@@ -661,9 +699,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Restore pending state - the old unfinished task is still open
       pendingUnfinishedTask = taskToMark;
       pendingTaskSelection = taskToMarkSelection;
-      if (startTaskButton) startTaskButton.textContent = taskToMark ? 'CONTINUE' : 'START';
+      if (startTaskButton) startTaskButton.textContent = taskToMark ? 'CONTINUE' : START_NEW_TASK_LABEL;
       return;
     }
+    pendingSelectionSnapshot = null;
 
     // New task started successfully — now safely mark the old task as done
     if (taskToMark) {
@@ -754,8 +793,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     openTaskStartOverlay();
   });
 
-  taskOverlayCancelButton?.addEventListener('click', () => {
+  taskOverlayCancelButton?.addEventListener('click', async () => {
     if (!currentTaskUuid && taskOverlay) {
+      const hadPendingSelection = !!pendingUnfinishedTask || !!pendingAssignment;
+      pendingUnfinishedTask = null;
+      pendingTaskSelection = null;
+      pendingAssignment = null;
+      pendingAssignmentSelection = null;
+      if (hadPendingSelection) {
+        const snapshot = pendingSelectionSnapshot;
+        pendingSelectionSnapshot = null;
+        if (snapshot) {
+          if (projectSelect) {
+            projectSelect.value = String(snapshot.projectId || '');
+          }
+          await applyProjectSelection(String(snapshot.projectId || ''));
+          if (taskSelect) {
+            taskSelect.value = String(snapshot.taskId || '');
+            userSelectedTask = taskSelect.selectedIndex > 0;
+          }
+          await updateItemSelection();
+          await updateTaskDataSelection();
+          if (itemSelect) {
+            itemSelect.value = String(snapshot.itemId || '');
+          }
+        } else {
+          if (taskSelect) {
+            taskSelect.value = '';
+            userSelectedTask = false;
+          }
+          if (itemSelect) {
+            itemSelect.value = '';
+          }
+          await updateItemSelection();
+          await updateTaskDataSelection();
+        }
+      }
+      updateStartButton();
+      if (taskOverlayStart && taskOverlayStart.style.display !== 'none') {
+        syncTaskOverlaySelectors();
+      }
       taskOverlay.style.display = 'none';
     }
   });
@@ -1196,7 +1273,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!sameSelection) {
         pendingUnfinishedTask = null;
         pendingTaskSelection = null;
-        if (startTaskButton) startTaskButton.textContent = 'START';
+        if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
       }
     }
     if (pendingAssignment && pendingAssignmentSelection) {
@@ -1223,7 +1300,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!sameSelection) {
         pendingUnfinishedTask = null;
         pendingTaskSelection = null;
-        if (startTaskButton) startTaskButton.textContent = 'START';
+        if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
       }
     }
     if (pendingAssignment && pendingAssignmentSelection) {
@@ -1281,7 +1358,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (pendingUnfinishedTask) {
       pendingUnfinishedTask = null;
       pendingTaskSelection = null;
-      if (startTaskButton) startTaskButton.textContent = 'START';
+      if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
     }
     if (pendingAssignment) {
       pendingAssignment = null;
@@ -1475,7 +1552,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isClockedIn =
       !!currentSessionUuid || String(clockinButton?.textContent || '').trim() === 'CLOCK-OUT';
     startTaskButton.disabled = !currentUser || !isClockedIn || !!currentTaskUuid;
-    startTaskButton.textContent = pendingUnfinishedTask ? 'CONTINUE' : 'START';
+    startTaskButton.textContent = pendingUnfinishedTask ? 'CONTINUE' : START_NEW_TASK_LABEL;
   }
 
   function getNoteValue(input) {
@@ -1681,6 +1758,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       const item = document.createElement('div');
       item.className = 'notes-item';
       item.addEventListener('click', async () => {
+        pendingSelectionSnapshot = {
+          projectId: String(projectSelect?.value || ''),
+          taskId: String(taskSelect?.value || ''),
+          itemId: String(itemSelect?.value || ''),
+        };
         pendingUnfinishedTask = task;
         pendingTaskSelection = {
           projectId: String(task.projectId),
@@ -1776,6 +1858,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       const item = document.createElement('div');
       item.className = 'notes-item';
       item.addEventListener('click', async () => {
+        pendingSelectionSnapshot = {
+          projectId: String(projectSelect?.value || ''),
+          taskId: String(taskSelect?.value || ''),
+          itemId: String(itemSelect?.value || ''),
+        };
         pendingUnfinishedTask = null;
         pendingTaskSelection = null;
         if (projectSelect) {
@@ -1792,7 +1879,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (itemSelect && assignment.itemId) {
           itemSelect.value = String(assignment.itemId);
         }
-        if (startTaskButton) startTaskButton.textContent = 'START';
+        if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
         pendingAssignment = assignment;
         pendingAssignmentSelection = {
           projectId: String(assignment.projectId),

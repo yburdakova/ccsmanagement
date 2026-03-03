@@ -326,6 +326,10 @@ button.icon-btn{
   font-weight: 600;
 }
 
+#start-task-button {
+  width: 100%;
+}
+
 #item-select {
   height: 34px;
   border-radius: 6px;
@@ -537,6 +541,33 @@ button.icon-btn{
   font-family: inherit;
   pointer-events: auto;
   -webkit-app-region: no-drag;
+}
+
+.task-overlay__task-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.task-overlay__task-button {
+  border-radius: 8px;
+  border: 1px solid #b7c7db;
+  background: #f2f7fd;
+  color: #1d3557;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.task-overlay__task-button:hover {
+  background: #e5f0fc;
+}
+
+.task-overlay__task-button.is-active {
+  background: #0078d4;
+  border-color: #0078d4;
+  color: #ffffff;
 }
 
 
