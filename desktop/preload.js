@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   completeActiveActivity: (payload) => ipcRenderer.invoke('complete-activity', payload),
   syncQueue: () => ipcRenderer.invoke('sync-queue'),
   showUserMessage: (payload) => ipcRenderer.invoke('show-user-message', payload),
+  confirmAppClose: (approved) => ipcRenderer.invoke('confirm-app-close', { approved: !!approved }),
   logout: (payload) => ipcRenderer.invoke('logout', payload),
   getBackendConnectionStatus: () => ipcRenderer.invoke('get-backend-connection-status'),
   onBackendConnectionStatus: (callback) => {
@@ -51,6 +52,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('backend-data-refreshed', listener);
     return () => ipcRenderer.removeListener('backend-data-refreshed', listener);
+  },
+  onAppCloseRequested: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = () => callback();
+    ipcRenderer.on('app-close-requested', listener);
+    return () => ipcRenderer.removeListener('app-close-requested', listener);
   },
 
 });

@@ -53,8 +53,9 @@ async function showUserMessage({ level = 'error', title, message, detail, dedupe
   dialogQueue = dialogQueue
     .catch(() => {})
     .then(async () => {
+      const win = getActiveWindow();
       try {
-        await dialog.showMessageBox(getActiveWindow(), {
+        await dialog.showMessageBox(win, {
           type,
           title: safeTitle,
           message: safeMessage,
@@ -63,6 +64,9 @@ async function showUserMessage({ level = 'error', title, message, detail, dedupe
       } catch (err) {
         console.error('[error-handler] Failed to show message box:', err.message);
       }
+      // Native dialogs strip webContents focus. Restore it so the renderer
+      // remains interactive without requiring the user to click outside first.
+      if (win && !win.isDestroyed()) win.webContents.focus();
     });
 
   await dialogQueue;

@@ -93,7 +93,6 @@ function syncAfterBackendReconnect() {
 }
 
 function createWindow(screenWidth) {
-  let isQuitting = false;
   const win = new BrowserWindow({
     width: 400,
     height: 900,
@@ -112,6 +111,7 @@ function createWindow(screenWidth) {
   });
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.__allowClose = false;
   Menu.setApplicationMenu(null);
   mainWindow = win;
   win.webContents.on('did-finish-load', () => {
@@ -121,21 +121,27 @@ function createWindow(screenWidth) {
   });
 
   win.on('close', (event) => {
-    if (isQuitting) return;
+    if (win.__allowClose) return;
     event.preventDefault();
-
-    const choice = dialog.showMessageBoxSync(win, {
-      type: 'warning',
-      buttons: ['Cancel', 'Stop Work Time and Close the App'],
-      defaultId: 0,
-      cancelId: 0,
-      title: 'Confirm Exit',
-      message: 'Are you sure you want to close the App? Your work time will be stopped!',
-    });
-
-    if (choice === 1) {
-      isQuitting = true;
-      app.quit();
+    try {
+      if (!win.isDestroyed()) {
+        win.webContents.send('app-close-requested');
+        win.focus();
+      }
+    } catch {
+      // Fallback only when renderer channel cannot be used.
+      const choice = dialog.showMessageBoxSync(win, {
+        type: 'warning',
+        buttons: ['Cancel', 'Stop Work Time and Close the App'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Confirm Exit',
+        message: 'Are you sure you want to close the App? Your work time will be stopped!',
+      });
+      if (choice === 1) {
+        win.__allowClose = true;
+        app.quit();
+      }
     }
   });
 }
@@ -215,6 +221,22 @@ ipcMain.handle('show-user-message', async (_event, payload) => {
     console.error('[main] show-user-message failed:', err.message);
     return { shown: false, error: err.message };
   }
+});
+
+ipcMain.handle('confirm-app-close', async (event, { approved }) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) return { success: false };
+
+  if (!approved) {
+    win.focus();
+    return { success: true, closed: false };
+  }
+
+  BrowserWindow.getAllWindows().forEach((w) => {
+    if (!w.isDestroyed()) w.__allowClose = true;
+  });
+  app.quit();
+  return { success: true, closed: true };
 });
 
 ipcMain.handle('get-users', async () => {
@@ -541,10 +563,9 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
 
   try {
     const isConnected = await isOnline();
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
+    if (mainWindow && mainWindow.isMinimized()) {
+      mainWindow.restore();
       mainWindow.focus();
-      mainWindow.webContents.focus();
     }
     const { uuid } = await startLocal(userId, projectId, taskId, itemId);
 

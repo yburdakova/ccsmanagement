@@ -398,6 +398,12 @@ button.icon-btn{
   gap: 8px;
 }
 
+.exit-confirm__message {
+  font-size: 13px;
+  color: #384249;
+  margin-bottom: 12px;
+}
+
 .task-finish__cancel {
   background: #6c757d;
   color: #ffffff;

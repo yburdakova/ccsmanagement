@@ -18,11 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const taskDataList = document.getElementById('task-data-list');
   const taskOverlay = document.getElementById('task-overlay');
   if (taskOverlay) {
-    taskOverlay.setAttribute('tabindex', '0');
-    taskOverlay.addEventListener('mousedown', () => {
-      window.focus();
-      taskOverlay.focus();
-    });
+    taskOverlay.setAttribute('tabindex', '-1');
   }
   const taskOverlayName = document.getElementById('task-overlay-name');
   const taskOverlayLabel = document.getElementById('task-overlay-label');
@@ -65,12 +61,53 @@ document.addEventListener('DOMContentLoaded', async () => {
   const assignmentsButton = document.getElementById('assignments-btn');
   const assignmentsList = document.getElementById('assignments-list');
   const assignmentsCount = document.getElementById('assignments-count');
+  const exitConfirmOverlay = document.getElementById('exit-confirm-overlay');
+  const exitConfirmCancelButton = document.getElementById('exit-confirm-cancel');
+  const exitConfirmCloseButton = document.getElementById('exit-confirm-close');
   const timerEl = document.querySelector('.timer');
   const savedProjectKey = 'rememberedProject';
   //const workTimerStateKey = 'workTimerState';
   const getWorkTimerStateKey = (userId) => `workTimerState:${userId}`;
   const itemInputLabel = document.getElementById('item-input-label');
   const START_NEW_TASK_LABEL = 'Start NEW TASK';
+
+  // After a native alert() Electron's webContents loses focus. This helper
+  // calls alert() then immediately re-focuses the given element so the renderer
+  // remains interactive without requiring the user to click outside and back in.
+  function restoreRendererFocus(refocusEl) {
+    try {
+      window.focus();
+    } catch {}
+    // Defer element focus until after native dialog / pointer handling settles.
+    setTimeout(() => {
+      if (refocusEl && typeof refocusEl.focus === 'function') {
+        refocusEl.focus();
+      }
+    }, 0);
+  }
+
+  function alertAndRestoreFocus(message, refocusEl) {
+    alert(message);
+    restoreRendererFocus(refocusEl);
+  }
+
+  async function showUserMessageAndRestoreFocus(message, refocusEl) {
+    try {
+      if (window.electronAPI?.showUserMessage) {
+        await window.electronAPI.showUserMessage({
+          level: 'warning',
+          title: 'Validation',
+          message: String(message || 'Validation failed'),
+          dedupeKey: null,
+        });
+      } else {
+        alert(message);
+      }
+    } catch {
+      alert(message);
+    }
+    restoreRendererFocus(refocusEl);
+  }
 
   authInput.focus();
   authInput.addEventListener('keydown', (e) => {
@@ -177,10 +214,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function runMutatingIpcWithTimeout(executor, fallbackMessage) {
+    const activeEl = document.activeElement; // capture before any async steals focus
     const now = Date.now();
     if (mutatingIpcRetryBlockedUntil > now) {
       const secondsLeft = Math.max(1, Math.ceil((mutatingIpcRetryBlockedUntil - now) / 1000));
-      alert(`Operation is still being confirmed. Please wait ${secondsLeft} second(s) before retrying.`);
+      alertAndRestoreFocus(`Operation is still being confirmed. Please wait ${secondsLeft} second(s) before retrying.`, activeEl);
       return null;
     }
     try {
@@ -188,9 +226,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
       if (isIpcTimeoutError(err)) {
         mutatingIpcRetryBlockedUntil = Date.now() + 5000;
-        alert('Operation took too long. Please check your connection before retrying in 5 seconds.');
+        alertAndRestoreFocus('Operation took too long. Please check your connection before retrying in 5 seconds.', activeEl);
       } else {
-        alert(fallbackMessage);
+        alertAndRestoreFocus(fallbackMessage, activeEl);
       }
       return null;
     }
@@ -283,8 +321,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('login-screen').style.display = 'block';
     document.getElementById('main-screen').style.display = 'none';
     authInput.value = '';
-    authInput.blur();
-    setTimeout(() => authInput.focus(), 50);
+    authInput.focus();
 
     if (currentUser?.id) {
       localStorage.removeItem(getWorkTimerStateKey(currentUser.id));
@@ -348,7 +385,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // CLOCK-OUT
       const activeUuid = currentTaskUuid || currentSessionUuid;
       if (!activeUuid) {
-        alert('No active session UUID found!');
+        alertAndRestoreFocus('No active session UUID found!', clockinButton);
         return;
       }
 
@@ -478,11 +515,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       activityResult = await withIpcTimeout(window.electronAPI.startUnallocated(currentUser.id, activityId));
     } catch {
-      alert(`Failed to start ${label.toLowerCase()}. Please try again.`);
+      alertAndRestoreFocus(`Failed to start ${label.toLowerCase()}. Please try again.`, clockinButton);
       return;
     }
     if (!activityResult.success) {
-      alert(`Failed to start ${label.toLowerCase()}. Please try again.`);
+      alertAndRestoreFocus(`Failed to start ${label.toLowerCase()}. Please try again.`, clockinButton);
       return;
     }
 
@@ -601,7 +638,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTaskOverlayMode('prestart');
     syncTaskOverlaySelectors();
     taskOverlay.style.display = 'flex';
-    if (taskOverlay) taskOverlay.focus();
   };
 
   const showInProgressOverlay = (selectedTask, selectedItemId) => {
@@ -622,11 +658,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     taskOverlay.style.display = 'flex';
     if (startTaskButton) startTaskButton.disabled = true;
     startTaskTimer();
-    if (taskOverlay) taskOverlay.focus();
     if (taskOverlayNote) {
       taskOverlayNote.disabled = false;
       taskOverlayNote.readOnly = false;
-      setTimeout(() => taskOverlayNote.focus(), 50);
+      // Do NOT auto-focus here. loadTaskDataOverlay is called immediately after
+      // showInProgressOverlay and renderTaskDataOverlay calls focusTaskDataInput()
+      // which correctly focuses the first data field or falls back to the note.
+      // Scheduling a focus here races with that and would steal focus from data fields.
     }
   };
 
@@ -635,7 +673,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!currentUser) return;
     const selectedTask = taskSelect.options[taskSelect.selectedIndex]?.textContent?.trim() || '';
     if (!selectedTask || taskSelect.value === '' || !projectSelect.value) {
-      alert('Please select project and task.');
+      alertAndRestoreFocus('Please select project and task.', projectSelect.value ? taskSelect : projectSelect);
       return;
     }
 
@@ -886,6 +924,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     return rows;
   };
 
+  taskOverlayDataList?.addEventListener('pointerdown', (event) => {
+    const target = event.target?.closest?.('input, textarea, select');
+    if (!target) return;
+    restoreRendererFocus(target);
+  }, true);
+
   const applyCollectedTaskDataValues = (container, rows) => {
     if (!container || !Array.isArray(rows) || rows.length === 0) return;
     const valuesByDefId = new Map(
@@ -1085,7 +1129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
     } catch (err) {
       console.warn('[renderer] Load task data for finish modal failed:', err?.message || err);
-      alert('Could not load task data. Please check your connection and try again.');
+      alertAndRestoreFocus('Could not load task data. Please check your connection and try again.', taskOverlayNote);
       return false;
     }
 
@@ -1101,7 +1145,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => {
       const input = taskFinishDataList.querySelector('input, textarea, select');
       if (input && typeof input.focus === 'function') input.focus();
-    }, 0);
+    }, 50);
     return true;
   };
 
@@ -1118,7 +1162,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (applyStatus) {
         const validation = validateTaskDataValues(taskData, currentTaskDataRows, dataContainer);
         if (!validation.ok) {
-          alert(validation.message);
+          const emptyRequired = [...dataContainer.querySelectorAll('[data-required="1"]')]
+            .find((el) => String(el.value ?? '').trim() === '');
+          await showUserMessageAndRestoreFocus(validation.message, emptyRequired || taskOverlayNote);
+          if (emptyRequired && typeof emptyRequired.focus === 'function') emptyRequired.focus();
           return false;
         }
       }
@@ -1184,11 +1231,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       unallocatedResult = await withIpcTimeout(window.electronAPI.startUnallocated(currentUser.id));
     } catch {
-      alert('Failed to start unallocated time. Please try again.');
+      alertAndRestoreFocus('Failed to start unallocated time. Please try again.', clockinButton);
       return false;
     }
     if (!unallocatedResult.success) {
-      alert('Failed to start unallocated time. Please try again.');
+      alertAndRestoreFocus('Failed to start unallocated time. Please try again.', clockinButton);
       return false;
     }
     currentSessionUuid = unallocatedResult.uuid;
@@ -1413,12 +1460,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const result = await withIpcTimeout(window.electronAPI.startUnallocated(userId));
       if (!result.success) {
-        alert('Clock-in failed. Please try again.');
+        alertAndRestoreFocus('Clock-in failed. Please try again.', clockinButton);
         return null;
       }
       return result.uuid;
     } catch (err) {
-      alert('Clock-in failed. Please try again.');
+      alertAndRestoreFocus('Clock-in failed. Please try again.', clockinButton);
       return null;
     }
   }
@@ -1565,6 +1612,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (input) input.value = '';
   }
 
+  function showExitConfirmOverlay() {
+    if (!exitConfirmOverlay) return;
+    exitConfirmOverlay.style.display = 'flex';
+    if (exitConfirmCloseButton && typeof exitConfirmCloseButton.focus === 'function') {
+      setTimeout(() => exitConfirmCloseButton.focus(), 0);
+    }
+  }
+
+  function hideExitConfirmOverlay() {
+    if (!exitConfirmOverlay) return;
+    exitConfirmOverlay.style.display = 'none';
+  }
+
   function setItemStatusSyncPending(isPending) {
     hasPendingItemStatusSync = !!isPending;
     if (!itemStatusSyncIndicator) return;
@@ -1594,11 +1654,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       result = await withIpcTimeout(window.electronAPI.startUnallocated(currentUser.id, 4));
     } catch {
-      alert('Failed to start unallocated time. Please try again.');
+      alertAndRestoreFocus('Failed to start unallocated time. Please try again.', clockinButton);
       return;
     }
     if (!result.success) {
-      alert('Failed to start unallocated time. Please try again.');
+      alertAndRestoreFocus('Failed to start unallocated time. Please try again.', clockinButton);
       return;
     }
     currentSessionUuid = result.uuid;
@@ -1666,6 +1726,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       await refreshActiveTaskOverlayAfterReconnect();
     });
   }
+
+  if (window.electronAPI?.onAppCloseRequested) {
+    window.electronAPI.onAppCloseRequested(() => {
+      showExitConfirmOverlay();
+    });
+  }
+
+  exitConfirmCancelButton?.addEventListener('click', async () => {
+    hideExitConfirmOverlay();
+    await window.electronAPI?.confirmAppClose?.(false);
+  });
+
+  exitConfirmCloseButton?.addEventListener('click', async () => {
+    await window.electronAPI?.confirmAppClose?.(true);
+  });
 
   function startTaskTimer() {
     stopTaskTimer();
@@ -2085,7 +2160,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  function renderTaskDataOverlay(rows) {
+  function focusNextTaskDataField(currentInput) {
+    if (!taskOverlayDataList || !currentInput) return;
+    const fields = Array.from(taskOverlayDataList.querySelectorAll('input, textarea, select'))
+      .filter((el) => !el.disabled && !el.readOnly);
+    const currentIndex = fields.indexOf(currentInput);
+    if (currentIndex < 0) return;
+    const next = fields[currentIndex + 1];
+    if (next && typeof next.focus === 'function') {
+      next.focus();
+      if (next.tagName === 'INPUT' && typeof next.select === 'function') {
+        next.select();
+      }
+    }
+  }
+
+  function renderTaskDataOverlay(rows, { skipAutoFocus = false } = {}) {
     if (!taskOverlayData || !taskOverlayDataList) return;
     taskOverlayDataList.innerHTML = '';
     currentTaskDataRows = rows || [];
@@ -2188,10 +2278,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       input.setAttribute('data-value-type', row.valueType);
       input.setAttribute('data-required', isRequired ? '1' : '0');
       input.setAttribute('data-label', row.definitionLabel || 'Value');
+      if (input.tagName === 'SELECT') {
+        input.addEventListener('change', () => {
+          // Native select popups on Windows/Electron can leave the next click
+          // in a stale focus state. Move focus to the next form field explicitly.
+          setTimeout(() => focusNextTaskDataField(input), 0);
+        });
+      }
       wrapper.appendChild(input);
       taskOverlayDataList.appendChild(wrapper);
     });
-    setTimeout(() => focusTaskDataInput(), 0);
+    if (!skipAutoFocus) setTimeout(() => focusTaskDataInput(), 0);
   }
 
   function mergeTrackingValues(templateRows, trackingRows) {
@@ -2215,18 +2312,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  async function loadTaskDataOverlay(projectId, taskId, savedTrackingRows) {
+  async function loadTaskDataOverlay(projectId, taskId, savedTrackingRows, { skipAutoFocus = false } = {}) {
     if (!taskOverlayData || !taskOverlayDataList) return;
     const token = ++loadTaskDataToken;
     try {
       const rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
       if (token !== loadTaskDataToken) return;
       const base = rows && rows.length ? rows : (currentTaskDataRows || []);
-      renderTaskDataOverlay(mergeTrackingValues(base, savedTrackingRows));
+      renderTaskDataOverlay(mergeTrackingValues(base, savedTrackingRows), { skipAutoFocus });
     } catch (err) {
       if (token !== loadTaskDataToken) return;
       console.warn('[renderer] Load task data overlay failed:', err?.message || err);
-      renderTaskDataOverlay(mergeTrackingValues(currentTaskDataRows || [], savedTrackingRows));
+      renderTaskDataOverlay(mergeTrackingValues(currentTaskDataRows || [], savedTrackingRows), { skipAutoFocus });
     }
   }
 
@@ -2237,7 +2334,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!projectId || !taskId) return;
 
     const draftValues = collectTaskDataValues(taskOverlayDataList);
-    await loadTaskDataOverlay(projectId, taskId);
+    // skipAutoFocus: prevent the re-render from stealing focus away from whichever
+    // field the user is currently editing when the backend reconnects.
+    await loadTaskDataOverlay(projectId, taskId, null, { skipAutoFocus: true });
     applyCollectedTaskDataValues(taskOverlayDataList, draftValues);
   }
 
