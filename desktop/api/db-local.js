@@ -2196,7 +2196,7 @@ async function syncQueue() {
   syncInProgress = true;
   try {
     const rows = await new Promise((resolve, reject) => {
-      db.all(`SELECT * FROM sync_queue`, (err, queueRows) => {
+      db.all(`SELECT * FROM sync_queue ORDER BY id ASC`, (err, queueRows) => {
         if (err) {
           console.error('[syncQueue] Failed to read queue:', err.message);
           return reject({ success: false, error: err.message });
@@ -2246,8 +2246,6 @@ async function syncQueue() {
         if (
           result.success ||
           result.duplicate ||
-          result.ignored ||
-          result.error === 'No active activity' ||
           result.error?.includes('ER_DUP_ENTRY')
         ) {
           try {
@@ -2267,6 +2265,16 @@ async function syncQueue() {
               `[syncQueue] Synced record but failed to delete queue row id=${row.id}: ${deleteErr.message}`
             );
           }
+        } else if (
+          type === 'complete' &&
+          (result.ignored || result.error === 'No active activity')
+        ) {
+          // Keep completion in queue: it may depend on a start event that has not
+          // reached backend yet. Ordered processing (id ASC) plus future retries
+          // will reconcile once prerequisite records are accepted upstream.
+          console.warn(
+            `[syncQueue] Deferred completion row id=${row.id}: upstream activity not found yet`
+          );
         } else {
           failedCount++;
           console.warn(
