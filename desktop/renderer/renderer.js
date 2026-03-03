@@ -567,44 +567,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     taskOverlayContinueButton.disabled = !(hasProject && hasTask);
   };
 
+  const updateTaskOverlayTaskName = () => {
+    if (!taskOverlayName || !taskOverlayTaskSelect) return;
+    const selectedTask =
+      taskOverlayTaskSelect.options[taskOverlayTaskSelect.selectedIndex]?.textContent?.trim() || '';
+    taskOverlayName.textContent =
+      taskOverlayTaskSelect.selectedIndex > 0 && selectedTask ? selectedTask : 'Select task';
+  };
+
   const renderTaskOverlayTaskButtons = () => {
-    if (!taskOverlayTaskButtons || !taskOverlayTaskSelect) return;
-
-    const hasProject = !!taskOverlayProjectSelect?.value;
-    const taskOptions = Array.from(taskOverlayTaskSelect.options || [])
-      .filter((option) => option.value && !option.disabled);
-
-    taskOverlayTaskButtons.innerHTML = '';
-
-    if (!hasProject || taskOptions.length === 0 || taskOverlayTaskSelect.disabled) {
+    // Task type selection in pre-start overlay is dropdown-only.
+    if (taskOverlayTaskButtons) {
+      taskOverlayTaskButtons.innerHTML = '';
       taskOverlayTaskButtons.style.display = 'none';
-      taskOverlayTaskSelect.style.display = '';
-      return;
     }
-
-    taskOverlayTaskSelect.style.display = 'none';
-    taskOverlayTaskButtons.style.display = 'grid';
-
-    taskOptions.forEach((option) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'task-overlay__task-button';
-      if (String(taskOverlayTaskSelect.value) === String(option.value)) {
-        button.classList.add('is-active');
-      }
-      button.textContent = option.textContent || 'Task';
-      button.addEventListener('click', () => {
-        taskOverlayTaskSelect.value = String(option.value);
-        taskOverlayTaskSelect.dispatchEvent(new Event('change'));
-      });
-      taskOverlayTaskButtons.appendChild(button);
-    });
+    if (taskOverlayTaskSelect) {
+      taskOverlayTaskSelect.style.display = '';
+    }
   };
 
   const syncTaskOverlaySelectors = () => {
     cloneSelectOptions(projectSelect, taskOverlayProjectSelect);
     cloneSelectOptions(taskSelect, taskOverlayTaskSelect);
     renderTaskOverlayTaskButtons();
+    updateTaskOverlayTaskName();
     cloneSelectOptions(itemSelect, taskOverlayItemSelect);
     if (taskOverlayItemSelect) {
       taskOverlayItemSelect.style.display =
@@ -631,8 +617,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const openTaskStartOverlay = () => {
     if (!taskOverlay) return;
-    const selectedTask = taskSelect.options[taskSelect.selectedIndex]?.textContent?.trim() || 'Select task';
-    taskOverlayName.textContent = selectedTask;
     taskOverlayItem.textContent = '';
     taskOverlayItem.style.display = 'none';
     setTaskOverlayMode('prestart');
@@ -895,6 +879,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await updateItemSelection();
     await updateTaskDataSelection();
     syncTaskOverlaySelectors();
+    updateTaskOverlayTaskName();
   });
 
   taskOverlayItemSelect?.addEventListener('change', () => {
