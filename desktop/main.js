@@ -505,45 +505,18 @@ ipcMain.handle('login-with-code', async (event, code) => {
 
 
 ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
-  const { startUnallocatedActivityLocal: startLocal, enqueueSyncPayload } = require('./api/db-local');
+  const { startUnallocatedActivityLocal: startLocal, syncQueue } = require('./api/db-local');
 
   const safeActivityId = Number(activityId) || 4;
-  const isConnected = await isOnline();
 
   try {
-    console.log('[main] start-unallocated: before local');
-    var startTime = Date.now();
-    //const { uuid } = await startLocal(userId, safeActivityId);
-    
     const uuid = crypto.randomUUID();
     await startLocal(userId, safeActivityId, uuid);
-    console.log('[main] start-unallocated: after local', Date.now() - startTime);
 
-    if (isConnected) {
-      console.log('[main] start-unallocated: before server');
-      try {
-        const res = await dataApi.startUnallocatedActivityGlobal({ uuid, user_id: userId, activity_id: safeActivityId });
-        console.log('[main] start-unallocated: after server', res);
-        if (!res.success) {
-          console.warn('[main] Start unallocated remote failed:', res.error || 'Unknown remote error');
-          await enqueueSyncPayload({
-            type: 'start',
-            uuid,
-            user_id: userId,
-            activity_id: safeActivityId,
-            timestamp: new Date().toISOString()
-          });
-        }
-      } catch (remoteErr) {
-        console.warn('[main] Start unallocated remote fallback:', remoteErr.message);
-        await enqueueSyncPayload({
-          type: 'start',
-          uuid,
-          user_id: userId,
-          activity_id: safeActivityId,
-          timestamp: new Date().toISOString()
-        });
-      }
+    if (await isOnline()) {
+      syncQueue().catch((err) => {
+        console.warn('[main] Start unallocated outbox sync failed:', err.message);
+      });
     }
 
     return { success: true, uuid };
@@ -554,7 +527,7 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
 });
 
 ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId, itemId }) => {
-  const { startTaskActivityLocal: startLocal, enqueueSyncPayload } = require('./api/db-local');
+  const { startTaskActivityLocal: startLocal, syncQueue } = require('./api/db-local');
   const lockKey = String(userId ?? '');
   if (taskStartInFlight.has(lockKey)) {
     return { success: false, error: 'Already starting' };
@@ -562,47 +535,16 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
   taskStartInFlight.add(lockKey);
 
   try {
-    const isConnected = await isOnline();
     if (mainWindow && mainWindow.isMinimized()) {
       mainWindow.restore();
       mainWindow.focus();
     }
     const { uuid } = await startLocal(userId, projectId, taskId, itemId);
 
-    if (isConnected) {
-      try {
-        const res = await dataApi.startTaskActivityGlobal({
-          uuid,
-          user_id: userId,
-          project_id: projectId,
-          task_id: taskId,
-          item_id: itemId ?? null,
-          timestamp: new Date().toISOString()
-        });
-        if (!res.success) {
-          console.warn('[main] Start task activity remote failed:', res.error || 'Unknown remote error');
-          await enqueueSyncPayload({
-            type: 'start-task',
-            uuid,
-            user_id: userId,
-            project_id: projectId,
-            task_id: taskId,
-            item_id: itemId ?? null,
-            timestamp: new Date().toISOString()
-          });
-        }
-      } catch (remoteErr) {
-        console.warn('[main] Start task activity remote fallback:', remoteErr.message);
-        await enqueueSyncPayload({
-          type: 'start-task',
-          uuid,
-          user_id: userId,
-          project_id: projectId,
-          task_id: taskId,
-          item_id: itemId ?? null,
-          timestamp: new Date().toISOString()
-        });
-      }
+    if (await isOnline()) {
+      syncQueue().catch((err) => {
+        console.warn('[main] Start task outbox sync failed:', err.message);
+      });
     }
 
     return { success: true, uuid };
@@ -625,8 +567,7 @@ ipcMain.handle('sync-queue', async () => {
 });
 
 ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskCompleted, note, taskData }) => {
-  const { completeActiveActivityLocal: completeLocal } = require('./api/db-local');
-  const isConnected = await isOnline();
+  const { completeActiveActivityLocal: completeLocal, syncQueue } = require('./api/db-local');
 
   try {
     const localResult = await completeLocal({
@@ -641,23 +582,10 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
       throw new Error(localResult.error || 'Local completion failed');
     }
 
-    if (isConnected) {
-      try {
-        const result = await dataApi.completeActiveActivityGlobal({
-          uuid: localResult.uuid,
-          user_id: userId,
-          is_completed_project_task: isTaskCompleted,
-          timestamp: localResult.endTime.toISOString(),
-          note,
-          taskData
-        });
-
-        if (!result.success) {
-          console.warn('[main] Complete activity remote failed:', result.error || 'Unknown remote error');
-        }
-      } catch (remoteErr) {
-        console.warn('[main] Complete activity remote fallback:', remoteErr.message);
-      }
+    if (await isOnline()) {
+      syncQueue().catch((err) => {
+        console.warn('[main] Complete activity outbox sync failed:', err.message);
+      });
     }
 
     return { success: true };
@@ -754,20 +682,21 @@ ipcMain.handle('get-item-status-rule', async (event, { projectId, taskId, applyA
 });
 
 ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
-  const { enqueueSyncPayload } = require('./api/db-local');
+  const { enqueueSyncPayload, syncQueue } = require('./api/db-local');
 
   try {
-    const online = await isOnline();
-    if (!online) {
-      await enqueueSyncPayload({
-        type: 'item-status',
-        item_id: itemId,
-        status_id: statusId,
-        timestamp: new Date().toISOString()
-      });
-      return { success: true, queued: true };
+    await enqueueSyncPayload({
+      type: 'item-status',
+      item_id: itemId,
+      status_id: statusId,
+      timestamp: new Date().toISOString()
+    });
+
+    if (await isOnline()) {
+      const syncResult = await syncQueue();
+      return { success: true, queued: (syncResult.failed || 0) > 0 };
     }
-    return await dataApi.updateItemStatusGlobal(itemId, statusId);
+    return { success: true, queued: true };
   } catch (error) {
     console.warn('[main] Updating item status failed:', error.message);
     return { success: false, error: error.message };

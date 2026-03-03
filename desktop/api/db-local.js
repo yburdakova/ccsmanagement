@@ -2289,56 +2289,58 @@ function startTaskActivityLocal(userId, projectId, taskId, itemId) {
   const dateStr = startTime.toISOString().split('T')[0];
   const timeStr = formatMySQLDatetime(startTime);
   const uuid = crypto.randomUUID();
+  const payload = {
+    type: 'start-task',
+    uuid,
+    user_id: userId,
+    project_id: projectId,
+    task_id: taskId,
+    item_id: itemId ?? null,
+    timestamp: startTime.toISOString()
+  };
 
   return new Promise((resolve, reject) => {
-    db.run(`
-      INSERT INTO users_time_tracking (  
-        uuid, user_id, date, project_id, activity_id, task_id, item_id,
-        start_time, end_time, duration, is_finished, note
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
-    `, [uuid, userId, dateStr, projectId, 2, taskId, itemId ?? null, timeStr], (err) => {
-      if (err) {
-        console.error('[local-db] Task start failed:', err.message);
-        return reject(err);
+    db.run('BEGIN IMMEDIATE', (txErr) => {
+      if (txErr) {
+        console.error('[local-db] Failed to begin transaction for task start:', txErr.message);
+        return reject(txErr);
       }
 
-      console.log(`[local-db] Task start recorded (uuid=${uuid}, project=${projectId}, task=${taskId})`);
-
-      (async () => {
-        try {
-          const { isOnline } = require('../utils/network-status');
-          const online = await isOnline();
-          if (!online) {
-            const payload = {
-              type: 'start-task',
-              uuid,
-              user_id: userId,
-              project_id: projectId,
-              task_id: taskId,
-              item_id: itemId ?? null,
-              timestamp: startTime.toISOString()
-            };
-            db.run(
-              `INSERT INTO sync_queue (payload) VALUES (?)`,
-              [JSON.stringify(payload)],
-              (err2) => {
-                if (err2) {
-                  console.error('[local-db] Failed to queue task start:', err2.message);
-                  return reject(err2);
-                }
-                console.log('[local-db] Offline mode: queued task start');
-                resolve({ uuid });
-              }
-            );
-            return;
+      db.run(
+        `
+          INSERT INTO users_time_tracking (
+            uuid, user_id, date, project_id, activity_id, task_id, item_id,
+            start_time, end_time, duration, is_finished, note
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
+        `,
+        [uuid, userId, dateStr, projectId, 2, taskId, itemId ?? null, timeStr],
+        (insertErr) => {
+          if (insertErr) {
+            console.error('[local-db] Task start failed:', insertErr.message);
+            return db.run('ROLLBACK', () => reject(insertErr));
           }
-          console.log('[local-db] Online mode: skipping sync_queue for task start');
-          resolve({ uuid });
-        } catch (err2) {
-          console.warn('[local-db] Task start online check failed, continuing with local record:', err2.message);
-          resolve({ uuid });
+
+          db.run(
+            `INSERT INTO sync_queue (payload) VALUES (?)`,
+            [JSON.stringify(payload)],
+            (queueErr) => {
+              if (queueErr) {
+                console.error('[local-db] Failed to queue task start:', queueErr.message);
+                return db.run('ROLLBACK', () => reject(queueErr));
+              }
+
+              db.run('COMMIT', (commitErr) => {
+                if (commitErr) {
+                  console.error('[local-db] Failed to commit task start:', commitErr.message);
+                  return db.run('ROLLBACK', () => reject(commitErr));
+                }
+                console.log(`[local-db] Task start recorded and queued (uuid=${uuid}, project=${projectId}, task=${taskId})`);
+                resolve({ uuid, queued: true });
+              });
+            }
+          );
         }
-      })();
+      );
     });
   });
 }
@@ -2347,53 +2349,56 @@ function startUnallocatedActivityLocal(userId, activityId, uuid) {
   const startTime = new Date();
   const dateStr = startTime.toISOString().split('T')[0];
   const timeStr = formatMySQLDatetime(startTime);
-  //const uuid = crypto.randomUUID();
+  const payload = {
+    type: 'start',
+    uuid,
+    user_id: userId,
+    activity_id: activityId,
+    timestamp: startTime.toISOString()
+  };
 
   return new Promise((resolve, reject) => {
-    db.run(`
-      INSERT INTO users_time_tracking (  
-        uuid, user_id, date, project_id, activity_id, task_id, item_id,
-        start_time, end_time, duration, is_finished, note
-      ) VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
-    `, [uuid, userId, dateStr, activityId, timeStr], (err) => {
-      if (err) {
-        console.error('[local-db] Clock-in failed:', err.message);
-        return reject(err);
+    db.run('BEGIN IMMEDIATE', (txErr) => {
+      if (txErr) {
+        console.error('[local-db] Failed to begin transaction for clock-in:', txErr.message);
+        return reject(txErr);
       }
-      console.log(`[local-db] Clock-in recorded (uuid=${uuid})`);
-      (async () => {
-        try {
-          const { isOnline } = require('../utils/network-status');
-          const online = await isOnline();
-          if (!online) {
-            const payload = {
-              type: 'start',
-              uuid,
-              user_id: userId,
-              activity_id: activityId,
-              timestamp: startTime.toISOString()
-            };
-            db.run(
-              `INSERT INTO sync_queue (payload) VALUES (?)`,
-              [JSON.stringify(payload)],
-              (err2) => {
-                if (err2) {
-                  console.error('[local-db] Failed to queue clock-in:', err2.message);
-                  return reject(err2);
-                }
-                console.log('[local-db] Offline mode: queued clock-in');
-                resolve({ uuid });
-              }
-            );
-            return;
+
+      db.run(
+        `
+          INSERT INTO users_time_tracking (
+            uuid, user_id, date, project_id, activity_id, task_id, item_id,
+            start_time, end_time, duration, is_finished, note
+          ) VALUES (?, ?, ?, NULL, ?, NULL, NULL, ?, NULL, NULL, NULL, NULL)
+        `,
+        [uuid, userId, dateStr, activityId, timeStr],
+        (insertErr) => {
+          if (insertErr) {
+            console.error('[local-db] Clock-in failed:', insertErr.message);
+            return db.run('ROLLBACK', () => reject(insertErr));
           }
-          console.log('[local-db] Online mode: skipping sync_queue');
-          resolve({ uuid });
-        } catch (err2) {
-          console.warn('[local-db] Clock-in online check failed, continuing with local record:', err2.message);
-          resolve({ uuid });
+
+          db.run(
+            `INSERT INTO sync_queue (payload) VALUES (?)`,
+            [JSON.stringify(payload)],
+            (queueErr) => {
+              if (queueErr) {
+                console.error('[local-db] Failed to queue clock-in:', queueErr.message);
+                return db.run('ROLLBACK', () => reject(queueErr));
+              }
+
+              db.run('COMMIT', (commitErr) => {
+                if (commitErr) {
+                  console.error('[local-db] Failed to commit clock-in:', commitErr.message);
+                  return db.run('ROLLBACK', () => reject(commitErr));
+                }
+                console.log(`[local-db] Clock-in recorded and queued (uuid=${uuid})`);
+                resolve({ uuid, queued: true });
+              });
+            }
+          );
         }
-      })();
+      );
     });
   });
 }
