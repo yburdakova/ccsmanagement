@@ -318,7 +318,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     itemsLoadedProjectId = null;
     currentProject = null;
 
-    document.getElementById('login-screen').style.display = 'block';
+    document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('main-screen').style.display = 'none';
     authInput.value = '';
     authInput.focus();

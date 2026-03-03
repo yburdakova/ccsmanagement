@@ -101,7 +101,10 @@ function createWindow(screenWidth) {
     x: screenWidth - 400,
     y: 10,
     alwaysOnTop: true,
-    // resizable: false,
+    resizable: false,
+    minimizable: true,
+    maximizable: false,
+    fullscreenable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

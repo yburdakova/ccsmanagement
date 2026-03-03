@@ -22,6 +22,10 @@ body {
     justify-content: space-between;
 }
 
+#authcode-input {
+  margin-bottom: 12px; /* space between input and Start button */
+}
+
 #login-screen {
   display: flex;
   flex-direction: column;
