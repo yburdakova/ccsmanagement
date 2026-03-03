@@ -2075,80 +2075,97 @@ function saveTaskDataValueLocal({ projectId, taskId, dataDefId, valueType, value
               value_json = NULL
             `;
 
-            const finish = (result) => {
-              const payload = {
-                type: 'task-data',
-                project_id: projectId,
-                task_id: taskId,
-                data_def_id: dataDefId,
-                value_type: valueType,
-                value: parsedValue
-              };
-
-              db.run(
-                `INSERT INTO sync_queue (payload) VALUES (?)`,
-                [JSON.stringify(payload)],
-                (err3) => {
-                  if (err3) {
-                    console.error('[local-db] Failed to queue task data update:', err3.message);
-                    return reject(err3);
-                  }
-                  console.log('[local-db] Queued task data update');
-                  resolve(result);
-                  const { isOnline } = require('../utils/network-status');
-                  isOnline().then((online) => {
-                    if (online) {
-                      const { syncQueue } = require('./db-local');
-                      syncQueue().catch((err) => {
-                        console.error('[local-db] Failed to sync queue after task data update:', err.message);
-                      });
-                    }
-                  });
-                }
-              );
+            const payload = {
+              type: 'task-data',
+              project_id: projectId,
+              task_id: taskId,
+              data_def_id: dataDefId,
+              value_type: valueType,
+              value: parsedValue
             };
 
-            if (existing) {
+            db.run('BEGIN IMMEDIATE', (txErr) => {
+              if (txErr) {
+                console.error('[local-db] Failed to begin transaction for task data save:', txErr.message);
+                return reject(txErr);
+              }
+
+              const rollbackAndReject = (error, logMessage) => {
+                console.error(logMessage, error.message);
+                db.run('ROLLBACK', () => reject(error));
+              };
+
+              const enqueueAndCommit = (result) => {
+                db.run(
+                  `INSERT INTO sync_queue (payload) VALUES (?)`,
+                  [JSON.stringify(payload)],
+                  (queueErr) => {
+                    if (queueErr) {
+                      return rollbackAndReject(queueErr, '[local-db] Failed to queue task data update:');
+                    }
+
+                    db.run('COMMIT', (commitErr) => {
+                      if (commitErr) {
+                        return rollbackAndReject(commitErr, '[local-db] Failed to commit task data save:');
+                      }
+
+                      console.log('[local-db] Saved and queued task data update');
+                      resolve(result);
+
+                      const { isOnline } = require('../utils/network-status');
+                      isOnline().then((online) => {
+                        if (online) {
+                          const { syncQueue } = require('./db-local');
+                          syncQueue().catch((err) => {
+                            console.error('[local-db] Failed to sync queue after task data update:', err.message);
+                          });
+                        }
+                      });
+                    });
+                  }
+                );
+              };
+
+              if (existing) {
+                db.run(
+                  `
+                    UPDATE project_task_data
+                    SET ${clearColumns},
+                        ${column} = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                  `,
+                  [parsedValue, existing.id],
+                  (updateErr) => {
+                    if (updateErr) {
+                      return rollbackAndReject(updateErr, '[local-db] Failed to update project_task_data:');
+                    }
+                    enqueueAndCommit({ success: true, updated: true });
+                  }
+                );
+                return;
+              }
+
               db.run(
                 `
-                  UPDATE project_task_data
-                  SET ${clearColumns},
-                      ${column} = ?,
-                      updated_at = CURRENT_TIMESTAMP
-                  WHERE id = ?
+                  INSERT INTO project_task_data (
+                    project_task_id,
+                    data_def_id,
+                    ${column},
+                    created_at,
+                    updated_at
+                  )
+                  VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 `,
-                [parsedValue, existing.id],
-                (err3) => {
-                  if (err3) {
-                    console.error('[local-db] Failed to update project_task_data:', err3.message);
-                    return reject(err3);
+                [projectTaskId, dataDefId, parsedValue],
+                (insertErr) => {
+                  if (insertErr) {
+                    return rollbackAndReject(insertErr, '[local-db] Failed to insert project_task_data:');
                   }
-                  finish({ success: true, updated: true });
+                  enqueueAndCommit({ success: true, created: true });
                 }
               );
-              return;
-            }
-
-            db.run(
-              `
-                INSERT INTO project_task_data (
-                  project_task_id,
-                  data_def_id,
-                  ${column},
-                  created_at,
-                  updated_at
-                )
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-              `,
-              [projectTaskId, dataDefId, parsedValue],
-              (err3) => {
-                if (err3) {
-                  console.error('[local-db] Failed to insert project_task_data:', err3.message);
-                  return reject(err3);
-                }
-                finish({ success: true, created: true });
-              }
-            );
+            });
           }
         );
       }
