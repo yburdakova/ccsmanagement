@@ -619,7 +619,7 @@ async function getAssignmentsByUser(userId) {
 
 async function markUnfinishedTaskFinished(recordId) {
   try {
-    await pool.query(
+    const [result] = await pool.query(
       `
         UPDATE users_time_tracking
         SET is_finished = 1
@@ -627,7 +627,9 @@ async function markUnfinishedTaskFinished(recordId) {
       `,
       [recordId]
     );
-    return { success: true };
+    const updated = Number(result?.affectedRows || 0);
+    if (updated <= 0) return { success: false, updated: 0, error: 'Tracking row not found' };
+    return { success: true, updated };
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
       console.warn('[server-db] Missing users_time_tracking table.');
@@ -639,7 +641,7 @@ async function markUnfinishedTaskFinished(recordId) {
 
 async function markUnfinishedTaskFinishedByUuid(uuid) {
   try {
-    await pool.query(
+    const [result] = await pool.query(
       `
         UPDATE users_time_tracking
         SET is_finished = 1
@@ -647,7 +649,9 @@ async function markUnfinishedTaskFinishedByUuid(uuid) {
       `,
       [uuid]
     );
-    return { success: true };
+    const updated = Number(result?.affectedRows || 0);
+    if (updated <= 0) return { success: false, updated: 0, error: 'Tracking row not found' };
+    return { success: true, updated };
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ER_BAD_TABLE_ERROR') {
       console.warn('[server-db] Missing users_time_tracking table.');

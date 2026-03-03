@@ -731,13 +731,26 @@ ipcMain.handle('get-assignments', async (event, { userId }) => {
 
 ipcMain.handle('mark-unfinished-finished', async (event, { recordId, uuid }) => {
   const { isOnline } = require('./utils/network-status');
+  const { syncQueue } = require('./api/db-local');
 
   try {
     const online = await isOnline();
     if (!online) return { success: false, error: 'Offline mode' };
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
     if (uuid) {
-      return await dataApi.markUnfinishedTaskFinishedByUuid(uuid);
+      let result = await dataApi.markUnfinishedTaskFinishedByUuid(uuid);
+      if (result?.success) return result;
+
+      // Race guard: unfinished row may not be on backend yet if its start event
+      // is still in outbox. Flush queue then retry once.
+      await syncQueue();
+      await sleep(250);
+      result = await dataApi.markUnfinishedTaskFinishedByUuid(uuid);
+      return result;
     }
+
     return await dataApi.markUnfinishedTaskFinished(recordId);
   } catch (error) {
     console.warn('[main] Updating unfinished task failed:', error.message);
