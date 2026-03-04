@@ -55,6 +55,7 @@ let lastWsConnected = false;
 let syncLock = Promise.resolve();
 let syncQueued = false;
 const taskStartInFlight = new Set();
+let pendingCloseCompletionNote = null;
 
 async function getConnectionState() {
   if (profile === 'backend') {
@@ -226,14 +227,20 @@ ipcMain.handle('show-user-message', async (_event, payload) => {
   }
 });
 
-ipcMain.handle('confirm-app-close', async (event, { approved }) => {
+ipcMain.handle('confirm-app-close', async (event, { approved, note }) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win || win.isDestroyed()) return { success: false };
 
   if (!approved) {
+    pendingCloseCompletionNote = null;
     win.focus();
     return { success: true, closed: false };
   }
+
+  pendingCloseCompletionNote =
+    note != null && String(note).trim().length
+      ? String(note)
+      : null;
 
   BrowserWindow.getAllWindows().forEach((w) => {
     if (!w.isDestroyed()) w.__allowClose = true;
@@ -598,7 +605,7 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
   }
 });
 
-ipcMain.handle('logout', async (event) => {
+ipcMain.handle('logout', async (event, payload = {}) => {
   const { completeActiveActivityLocal: completeLocal, syncQueue } = require('./api/db-local');
 
   try {
@@ -611,10 +618,15 @@ ipcMain.handle('logout', async (event) => {
     if (profile === 'backend') {
       disconnectDesktopWs();
     }
+    const logoutNote =
+      payload?.note != null && String(payload.note).trim().length
+        ? String(payload.note)
+        : null;
     const result = await completeLocal({
       uuid: null,
       is_completed_project_task: false,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      note: logoutNote
     });
 
     if (result.success) {
@@ -786,8 +798,10 @@ app.on('will-quit', async (event) => {
     const result = await completeLocal({
       uuid: null,
       is_completed_project_task: false,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      note: pendingCloseCompletionNote
     });
+    pendingCloseCompletionNote = null;
 
     if (result.success) {
       console.log(`[main] Queued auto-complete for uuid=${result.uuid}`);

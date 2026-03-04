@@ -180,7 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let loadTaskDataToken = 0;
   let mutatingIpcRetryBlockedUntil = 0;
   let hasPendingItemStatusSync = false;
-  const unfinishedTaskNoteCache = new Map();
+  let unfinishedTaskNoteCache = new Map();
 
   async function loadReferenceDataForCurrentUser() {
     if (!currentUser) return;
@@ -275,6 +275,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (user && user.id) {
       currentUser = user;
+      unfinishedTaskNoteCache = loadUnfinishedTaskNoteCache(currentUser.id);
       await loadReferenceDataForCurrentUser();
       errorEl.style.display = 'none';
       document.getElementById('login-screen').style.display = 'none';
@@ -293,7 +294,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ==================
   logoutButton.addEventListener('click', async () => {
     if (currentUser) {
-      await window.electronAPI.logout({ userId: currentUser.id });
+      await window.electronAPI.logout({
+        userId: currentUser.id,
+        note: getCurrentActiveNoteForClose()
+      });
     }
 
     
@@ -592,8 +596,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const updateTaskOverlayContinueButton = () => {
     if (!taskOverlayContinueButton) return;
-    const hasProject = !!projectSelect.value;
-    const hasTask = !!taskSelect.value && taskSelect.selectedIndex > 0;
+    const hasProject = !!taskOverlayProjectSelect?.value;
+    const hasTask = !!taskOverlayTaskSelect?.value && (taskOverlayTaskSelect?.selectedIndex || 0) > 0;
     taskOverlayContinueButton.textContent = pendingUnfinishedTask ? 'CONTINUE' : 'START';
     taskOverlayContinueButton.disabled = !(hasProject && hasTask);
   };
@@ -652,6 +656,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     taskOverlayItem.style.display = 'none';
     setTaskOverlayMode('prestart');
     syncTaskOverlaySelectors();
+    const shouldPrefillSelection = !!pendingUnfinishedTask || !!pendingAssignment;
+    if (!shouldPrefillSelection) {
+      if (taskOverlayProjectSelect) taskOverlayProjectSelect.value = '';
+      if (taskOverlayTaskSelect) {
+        taskOverlayTaskSelect.value = '';
+        taskOverlayTaskSelect.disabled = true;
+      }
+      if (taskOverlayItemSelect) taskOverlayItemSelect.value = '';
+      updateTaskOverlayTaskName();
+      updateTaskOverlayContinueButton();
+    }
     taskOverlay.style.display = 'flex';
   };
 
@@ -689,6 +704,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   const startSelectedTaskFromCurrentSelection = async () => {
     if (!taskOverlay || !taskOverlayName || !taskOverlayTimer) return;
     if (!currentUser) return;
+    if (taskOverlayProjectSelect && projectSelect) {
+      const overlayProjectId = String(taskOverlayProjectSelect.value || '');
+      if (String(projectSelect.value || '') !== overlayProjectId) {
+        projectSelect.value = overlayProjectId;
+        await applyProjectSelection(overlayProjectId);
+      }
+    }
+    if (taskOverlayTaskSelect && taskSelect) {
+      taskSelect.value = String(taskOverlayTaskSelect.value || '');
+      userSelectedTask = taskSelect.selectedIndex > 0;
+      await updateItemSelection();
+      await updateTaskDataSelection();
+    }
+    if (taskOverlayItemSelect && itemSelect) {
+      itemSelect.value = String(taskOverlayItemSelect.value || '');
+    }
+
     const selectedTask = taskSelect.options[taskSelect.selectedIndex]?.textContent?.trim() || '';
     if (!selectedTask || taskSelect.value === '' || !projectSelect.value) {
       alertAndRestoreFocus('Please select project and task.', projectSelect.value ? taskSelect : projectSelect);
@@ -1657,8 +1689,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (input) input.value = '';
   }
 
+  function normalizeTaskKeyPart(value) {
+    if (value == null) return '';
+    const str = String(value).trim();
+    if (!str) return '';
+    const lowered = str.toLowerCase();
+    if (lowered === 'null' || lowered === 'undefined' || lowered === 'nan') return '';
+    return str;
+  }
+
   function getTaskSelectionKey(projectId, taskId, itemId) {
-    return `${String(projectId || '')}:${String(taskId || '')}:${String(itemId || '')}`;
+    return [
+      normalizeTaskKeyPart(projectId),
+      normalizeTaskKeyPart(taskId),
+      normalizeTaskKeyPart(itemId),
+    ].join(':');
+  }
+
+  function getUnfinishedTaskNoteStorageKey(userId) {
+    return `unfinishedTaskNoteCache:${String(userId || 'anon')}`;
+  }
+
+  function persistUnfinishedTaskNoteCache() {
+    if (!currentUser?.id) return;
+    try {
+      const storageKey = getUnfinishedTaskNoteStorageKey(currentUser.id);
+      const payload = Object.fromEntries(unfinishedTaskNoteCache.entries());
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch (err) {
+      console.warn('[renderer] Persist unfinished note cache failed:', err?.message || err);
+    }
+  }
+
+  function loadUnfinishedTaskNoteCache(userId) {
+    try {
+      const storageKey = getUnfinishedTaskNoteStorageKey(userId);
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return new Map();
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return new Map();
+      return new Map(
+        Object.entries(parsed).filter(([k, v]) => typeof k === 'string' && typeof v === 'string')
+      );
+    } catch (err) {
+      console.warn('[renderer] Load unfinished note cache failed:', err?.message || err);
+      return new Map();
+    }
   }
 
   function cacheUnfinishedTaskNote(projectId, taskId, itemId, note) {
@@ -1667,11 +1743,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const normalized = String(note ?? '').trim();
     if (normalized) unfinishedTaskNoteCache.set(key, normalized);
     else unfinishedTaskNoteCache.delete(key);
+    persistUnfinishedTaskNoteCache();
   }
 
   function getCachedUnfinishedTaskNote(projectId, taskId, itemId) {
     const key = getTaskSelectionKey(projectId, taskId, itemId);
     return unfinishedTaskNoteCache.get(key) || '';
+  }
+
+  function getCurrentActiveNoteForClose() {
+    if (currentTaskUuid) {
+      return getNoteValue(taskOverlayNote);
+    }
+    if (currentSessionUuid) {
+      return getNoteValue(activityOverlayNote);
+    }
+    return null;
   }
 
   function showExitConfirmOverlay() {
@@ -1801,7 +1888,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   exitConfirmCloseButton?.addEventListener('click', async () => {
-    await window.electronAPI?.confirmAppClose?.(true);
+    await window.electronAPI?.confirmAppClose?.(true, {
+      note: getCurrentActiveNoteForClose()
+    });
   });
 
   function startTaskTimer() {
