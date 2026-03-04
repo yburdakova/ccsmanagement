@@ -326,9 +326,15 @@ button.icon-btn{
 
 #start-task-button,
 #finish-activity-button {
+  margin-top: 10;
   margin-top: 10px;
   font-weight: 600;
 }
+
+#task-overlay-active-actions {
+  margin-top: 12px; /* adjust as needed */
+}
+
 
 #start-task-button {
   width: 100%;
@@ -355,11 +361,11 @@ button.icon-btn{
 }
 
 .task-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  background: #f4f4f4;
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   z-index: 5;
 }
@@ -405,6 +411,7 @@ button.icon-btn{
 .exit-confirm__message {
   font-size: 13px;
   color: #384249;
+  
   margin-bottom: 12px;
 }
 

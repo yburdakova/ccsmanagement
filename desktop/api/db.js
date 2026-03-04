@@ -561,6 +561,7 @@ async function getUnfinishedTasksByUser(userId) {
                utt.project_id AS projectId,
                utt.start_time AS startedAt,
                utt.end_time AS stoppedAt,
+               utt.note AS note,
                p.name AS projectName,
                t.description AS taskName,
                i.label AS itemName
@@ -856,10 +857,10 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
     await conn.query(
       `
       UPDATE users_time_tracking
-      SET end_time = ?, duration = ?, is_finished = ?
+      SET end_time = ?, duration = ?, is_finished = ?, note = ?
       WHERE uuid = ?
       `,
-      [endStr, safeDurationMin, isFinished, uuid]
+      [endStr, safeDurationMin, isFinished, safeNote, uuid]
     );
 
     if (Array.isArray(taskData) && taskData.length > 0) {
@@ -889,11 +890,6 @@ async function completeActiveActivityGlobal({ uuid, is_completed_project_task, t
             safeNote,
             activity.project_id ?? null
           ]
-        );
-      } else {
-        await conn.query(
-          `UPDATE users_time_tracking SET note = ? WHERE uuid = ?`,
-          [safeNote, uuid]
         );
       }
     }

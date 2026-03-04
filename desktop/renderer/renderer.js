@@ -64,6 +64,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const exitConfirmOverlay = document.getElementById('exit-confirm-overlay');
   const exitConfirmCancelButton = document.getElementById('exit-confirm-cancel');
   const exitConfirmCloseButton = document.getElementById('exit-confirm-close');
+  const appMessageModal = document.getElementById('app-message-modal');
+  const appMessageTitle = document.getElementById('app-message-title');
+  const appMessageBody = document.getElementById('app-message-body');
+  const appMessageOk = document.getElementById('app-message-ok');
   const timerEl = document.querySelector('.timer');
   const savedProjectKey = 'rememberedProject';
   //const workTimerStateKey = 'workTimerState';
@@ -92,19 +96,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function showUserMessageAndRestoreFocus(message, refocusEl) {
+    const safeMessage = String(message || 'Validation failed');
     try {
-      if (window.electronAPI?.showUserMessage) {
-        await window.electronAPI.showUserMessage({
-          level: 'warning',
-          title: 'Validation',
-          message: String(message || 'Validation failed'),
-          dedupeKey: null,
+      if (appMessageModal && appMessageBody && appMessageOk) {
+        if (appMessageTitle) appMessageTitle.textContent = 'Validation';
+        appMessageBody.textContent = safeMessage;
+        appMessageModal.style.display = 'flex';
+
+        await new Promise((resolve) => {
+          const closeModal = () => {
+            appMessageModal.style.display = 'none';
+            appMessageOk.removeEventListener('click', onOkClick);
+            appMessageModal.removeEventListener('click', onBackdropClick);
+            resolve();
+          };
+          const onOkClick = () => closeModal();
+          const onBackdropClick = (event) => {
+            if (event.target === appMessageModal) {
+              closeModal();
+            }
+          };
+          appMessageOk.addEventListener('click', onOkClick);
+          appMessageModal.addEventListener('click', onBackdropClick);
+          setTimeout(() => {
+            if (typeof appMessageOk.focus === 'function') appMessageOk.focus();
+          }, 0);
         });
       } else {
-        alert(message);
+        alert(safeMessage);
       }
     } catch {
-      alert(message);
+      alert(safeMessage);
     }
     restoreRendererFocus(refocusEl);
   }
@@ -158,6 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let loadTaskDataToken = 0;
   let mutatingIpcRetryBlockedUntil = 0;
   let hasPendingItemStatusSync = false;
+  const unfinishedTaskNoteCache = new Map();
 
   async function loadReferenceDataForCurrentUser() {
     if (!currentUser) return;
@@ -468,12 +491,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!currentUser) return;
 
     if (currentTaskUuid) {
-      pendingUnfinishedTask = { id: currentTaskUuid, isUuid: true };
+      const pausedTaskNote = getNoteValue(taskOverlayNote);
+      pendingUnfinishedTask = { id: currentTaskUuid, isUuid: true, note: pausedTaskNote };
       pendingTaskSelection = {
         projectId: String(projectSelect.value),
         taskId: String(taskSelect.value),
         itemId: String(itemSelect?.value || ''),
       };
+      cacheUnfinishedTaskNote(
+        pendingTaskSelection.projectId,
+        pendingTaskSelection.taskId,
+        pendingTaskSelection.itemId,
+        pausedTaskNote
+      );
       if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
       const pauseTaskData = taskOverlayDataList ? collectTaskDataValues(taskOverlayDataList) : [];
       const result = await runMutatingIpcWithTimeout(
@@ -481,6 +511,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           uuid: currentTaskUuid,
           userId: currentUser.id,
           isTaskCompleted: false,
+          note: pausedTaskNote,
           taskData: pauseTaskData
         }),
         'Task stop failed. Please try again.'
@@ -624,7 +655,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     taskOverlay.style.display = 'flex';
   };
 
-  const showInProgressOverlay = (selectedTask, selectedItemId) => {
+  const showInProgressOverlay = (selectedTask, selectedItemId, initialNote = '') => {
     taskOverlayName.textContent = selectedTask;
     if (taskOverlayItem) {
       if (selectedItemId && projectItems.length) {
@@ -639,6 +670,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     setTaskOverlayMode('in-progress');
     clearNoteInput(taskOverlayNote);
+    if (taskOverlayNote) {
+      taskOverlayNote.value = typeof initialNote === 'string' ? initialNote : '';
+    }
     taskOverlay.style.display = 'flex';
     if (startTaskButton) startTaskButton.disabled = true;
     startTaskTimer();
@@ -807,7 +841,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         await refreshItemOptions(currentTaskItemId);
       }
     }
-    showInProgressOverlay(selectedTask, selectedItemId);
+    const carryNote =
+      typeof taskToMark?.note === 'string' && taskToMark.note.trim()
+        ? taskToMark.note
+        : getCachedUnfinishedTaskNote(projectSelect.value, taskSelect.value, itemSelect?.value || '');
+    showInProgressOverlay(selectedTask, selectedItemId, carryNote);
   };
 
   startTaskButton?.addEventListener('click', () => {
@@ -1141,6 +1179,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const finalizeTask = async (applyStatus, note, dataContainer) => {
+    const selectionSnapshot = {
+      projectId: String(projectSelect?.value || ''),
+      taskId: String(taskSelect?.value || ''),
+      itemId: String(itemSelect?.value || ''),
+    };
+    if (!applyStatus) {
+      cacheUnfinishedTaskNote(
+        selectionSnapshot.projectId,
+        selectionSnapshot.taskId,
+        selectionSnapshot.itemId,
+        note
+      );
+    }
+
     let taskData = null;
     if (dataContainer) {
       taskData = collectTaskDataValues(dataContainer);
@@ -1168,6 +1220,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (!result?.success) {
       return false;
+    }
+    if (applyStatus) {
+      cacheUnfinishedTaskNote(
+        selectionSnapshot.projectId,
+        selectionSnapshot.taskId,
+        selectionSnapshot.itemId,
+        ''
+      );
     }
 
     const itemIdToRefresh = currentTaskItemId;
@@ -1597,6 +1657,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (input) input.value = '';
   }
 
+  function getTaskSelectionKey(projectId, taskId, itemId) {
+    return `${String(projectId || '')}:${String(taskId || '')}:${String(itemId || '')}`;
+  }
+
+  function cacheUnfinishedTaskNote(projectId, taskId, itemId, note) {
+    const key = getTaskSelectionKey(projectId, taskId, itemId);
+    if (!key) return;
+    const normalized = String(note ?? '').trim();
+    if (normalized) unfinishedTaskNoteCache.set(key, normalized);
+    else unfinishedTaskNoteCache.delete(key);
+  }
+
+  function getCachedUnfinishedTaskNote(projectId, taskId, itemId) {
+    const key = getTaskSelectionKey(projectId, taskId, itemId);
+    return unfinishedTaskNoteCache.get(key) || '';
+  }
+
   function showExitConfirmOverlay() {
     if (!exitConfirmOverlay) return;
     exitConfirmOverlay.style.display = 'flex';
@@ -1824,6 +1901,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           itemId: String(itemSelect?.value || ''),
         };
         pendingUnfinishedTask = task;
+        if (!pendingUnfinishedTask.note) {
+          pendingUnfinishedTask.note = getCachedUnfinishedTaskNote(
+            task.projectId,
+            task.taskId,
+            task.itemId
+          );
+        }
         pendingTaskSelection = {
           projectId: String(task.projectId),
           taskId: String(task.taskId ?? ''),
