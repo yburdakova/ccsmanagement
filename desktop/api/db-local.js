@@ -113,6 +113,8 @@ const db = new sqlite3.Database(dbPath, (err) => {
   }
 });
 let syncInProgress = false;
+let syncRerunRequested = false;
+let syncRunPromise = null;
 
 db.serialize(() => {
   db.run(`
@@ -2190,11 +2192,14 @@ function enqueueSyncPayload(payload) {
 }
 
 async function syncQueue() {
+  if (syncRunPromise) {
+    syncRerunRequested = true;
+    return syncRunPromise;
+  }
+
   const dataApi = require('./data-provider');
 
-  if (syncInProgress) return { success: true, synced: 0, failed: 0 };
-  syncInProgress = true;
-  try {
+  const runSinglePass = async () => {
     const rows = await new Promise((resolve, reject) => {
       db.all(`SELECT * FROM sync_queue ORDER BY id ASC`, (err, queueRows) => {
         if (err) {
@@ -2287,10 +2292,28 @@ async function syncQueue() {
       }
     }
 
-    return { success: true, synced: syncedCount, failed: failedCount };
-  } finally {
-    syncInProgress = false;
-  }
+    return { synced: syncedCount, failed: failedCount };
+  };
+
+  syncRunPromise = (async () => {
+    syncInProgress = true;
+    let totalSynced = 0;
+    let totalFailed = 0;
+    try {
+      do {
+        syncRerunRequested = false;
+        const passResult = await runSinglePass();
+        totalSynced += passResult.synced || 0;
+        totalFailed += passResult.failed || 0;
+      } while (syncRerunRequested);
+      return { success: true, synced: totalSynced, failed: totalFailed };
+    } finally {
+      syncInProgress = false;
+      syncRunPromise = null;
+    }
+  })();
+
+  return syncRunPromise;
 }
 function startTaskActivityLocal(userId, projectId, taskId, itemId) {
   const startTime = new Date();
