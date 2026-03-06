@@ -71,7 +71,7 @@ async function publishConnectionState() {
   mainWindow.webContents.send('backend-connection-status', state);
 }
 
-function syncAfterBackendReconnect() {
+function syncAfterBackendReconnect({ fullRefresh = false } = {}) {
   if (syncQueued) return;  // one already queued — coalesce
   syncQueued = true;
   syncLock = syncLock.catch(() => {}).then(async () => {
@@ -82,8 +82,10 @@ function syncAfterBackendReconnect() {
       }
       const queueResult = await syncQueue();
       console.log(`[main] Reconnect syncQueue: ${queueResult.synced || 0} record(s) synced`);
-      await initializeLocalDb();
-      console.log('[main] Reconnect initializeLocalDb completed');
+      if (fullRefresh) {
+        await initializeLocalDb();
+        console.log('[main] Reconnect initializeLocalDb completed');
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('backend-data-refreshed', { at: new Date().toISOString() });
       }
@@ -134,18 +136,19 @@ function createWindow(screenWidth) {
       }
     } catch {
       // Fallback only when renderer channel cannot be used.
-      const choice = dialog.showMessageBoxSync(win, {
+      dialog.showMessageBox(win, {
         type: 'warning',
         buttons: ['Cancel', 'Stop Work Time and Close the App'],
         defaultId: 0,
         cancelId: 0,
         title: 'Confirm Exit',
         message: 'Are you sure you want to close the App? Your work time will be stopped!',
-      });
-      if (choice === 1) {
-        win.__allowClose = true;
-        app.quit();
-      }
+      }).then(({ response }) => {
+        if (response === 1) {
+          win.__allowClose = true;
+          app.quit();
+        }
+      }).catch(() => {});
     }
   });
 }
@@ -158,12 +161,12 @@ app.whenReady().then(async () => {
     initializeLocalDb().catch((err) => {
       console.error('[main] Startup local DB initialization failed:', err.message);
       try {
-        dialog.showMessageBoxSync({
+        dialog.showMessageBox({
           type: 'error',
           title: 'Startup Error',
           message: 'Failed to initialize local database. The app may not work correctly.',
           detail: String(err?.message || err),
-        });
+        }).catch(() => {});
       } catch {}
     });
   }
@@ -183,8 +186,8 @@ app.whenReady().then(async () => {
   if (profile === 'backend') {
     setDesktopWsMessageListener((event) => {
       if (event?.type !== 'db-changed') return;
-      console.log('[main] WS db-changed event received, refreshing local cache');
-      syncAfterBackendReconnect();
+      console.log('[main] WS db-changed event received, syncing queue + notifying renderer');
+      syncAfterBackendReconnect({ fullRefresh: false });
     });
 
     setDesktopWsStatusListener(({ connected }) => {
@@ -193,7 +196,7 @@ app.whenReady().then(async () => {
       });
       const nextConnected = Boolean(connected);
       if (nextConnected && !lastWsConnected) {
-        syncAfterBackendReconnect();
+        syncAfterBackendReconnect({ fullRefresh: true });
       }
       lastWsConnected = nextConnected;
     });
@@ -523,11 +526,9 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
     const uuid = crypto.randomUUID();
     await startLocal(userId, safeActivityId, uuid);
 
-    if (await isOnline()) {
-      syncQueue().catch((err) => {
-        console.warn('[main] Start unallocated outbox sync failed:', err.message);
-      });
-    }
+    syncQueue().catch((err) => {
+      console.warn('[main] Start unallocated outbox sync failed:', err.message);
+    });
 
     return { success: true, uuid };
   } catch (error) {
@@ -551,11 +552,9 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
     }
     const { uuid } = await startLocal(userId, projectId, taskId, itemId);
 
-    if (await isOnline()) {
-      syncQueue().catch((err) => {
-        console.warn('[main] Start task outbox sync failed:', err.message);
-      });
-    }
+    syncQueue().catch((err) => {
+      console.warn('[main] Start task outbox sync failed:', err.message);
+    });
 
     return { success: true, uuid };
   } catch (error) {
@@ -592,11 +591,9 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
       throw new Error(localResult.error || 'Local completion failed');
     }
 
-    if (await isOnline()) {
-      syncQueue().catch((err) => {
-        console.warn('[main] Complete activity outbox sync failed:', err.message);
-      });
-    }
+    syncQueue().catch((err) => {
+      console.warn('[main] Complete activity outbox sync failed:', err.message);
+    });
 
     return { success: true };
   } catch (error) {
@@ -707,11 +704,11 @@ ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
       timestamp: new Date().toISOString()
     });
 
-    if (await isOnline()) {
-      const syncResult = await syncQueue();
-      return { success: true, queued: (syncResult.failed || 0) > 0 };
-    }
-    return { success: true, queued: true };
+    const syncResult = await syncQueue();
+    return {
+      success: true,
+      queued: Boolean(syncResult?.queued) || (syncResult?.failed || 0) > 0
+    };
   } catch (error) {
     console.warn('[main] Updating item status failed:', error.message);
     return { success: false, error: error.message };
@@ -745,28 +742,27 @@ ipcMain.handle('get-assignments', async (event, { userId }) => {
 });
 
 ipcMain.handle('mark-unfinished-finished', async (event, { recordId, uuid }) => {
-  const { isOnline } = require('./utils/network-status');
-  const { syncQueue } = require('./api/db-local');
+  const { enqueueSyncPayload, syncQueue } = require('./api/db-local');
 
   try {
-    const online = await isOnline();
-    if (!online) return { success: false, error: 'Offline mode' };
-
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    if (uuid) {
-      let result = await dataApi.markUnfinishedTaskFinishedByUuid(uuid);
-      if (result?.success) return result;
-
-      // Race guard: unfinished row may not be on backend yet if its start event
-      // is still in outbox. Flush queue then retry once.
-      await syncQueue();
-      await sleep(250);
-      result = await dataApi.markUnfinishedTaskFinishedByUuid(uuid);
-      return result;
+    const hasUuid = uuid != null && String(uuid).trim().length > 0;
+    const hasRecordId = recordId != null && String(recordId).trim().length > 0;
+    if (!hasUuid && !hasRecordId) {
+      return { success: false, error: 'Missing recordId/uuid' };
     }
 
-    return await dataApi.markUnfinishedTaskFinished(recordId);
+    await enqueueSyncPayload({
+      type: 'unfinished-finished',
+      uuid: hasUuid ? String(uuid) : null,
+      record_id: hasRecordId ? Number(recordId) : null,
+      timestamp: new Date().toISOString()
+    });
+
+    const syncResult = await syncQueue();
+    return {
+      success: true,
+      queued: Boolean(syncResult?.queued) || (syncResult?.failed || 0) > 0
+    };
   } catch (error) {
     console.warn('[main] Updating unfinished task failed:', error.message);
     return { success: false, error: error.message };
@@ -774,12 +770,24 @@ ipcMain.handle('mark-unfinished-finished', async (event, { recordId, uuid }) => 
 });
 
 ipcMain.handle('mark-assignment-accepted', async (event, { assignmentId }) => {
-  const { isOnline } = require('./utils/network-status');
+  const { enqueueSyncPayload, syncQueue } = require('./api/db-local');
 
   try {
-    const online = await isOnline();
-    if (!online) return { success: false, error: 'Offline mode' };
-    return await dataApi.markAssignmentAccepted(assignmentId);
+    if (assignmentId == null || String(assignmentId).trim().length === 0) {
+      return { success: false, error: 'Missing assignmentId' };
+    }
+
+    await enqueueSyncPayload({
+      type: 'assignment-accepted',
+      assignment_id: Number(assignmentId),
+      timestamp: new Date().toISOString()
+    });
+
+    const syncResult = await syncQueue();
+    return {
+      success: true,
+      queued: Boolean(syncResult?.queued) || (syncResult?.failed || 0) > 0
+    };
   } catch (error) {
     console.warn('[main] Updating assignment failed:', error.message);
     return { success: false, error: error.message };

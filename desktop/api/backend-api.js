@@ -22,6 +22,7 @@ function resolveBaseUrls(rawValue) {
 
 const baseUrls = resolveBaseUrls(process.env.BACKEND_BASE_URL);
 let preferredBaseUrl = baseUrls[0];
+const REQUEST_TIMEOUT_MS = Number(process.env.BACKEND_REQUEST_TIMEOUT_MS) || 8000;
 
 let bootstrapCache = null;
 let accessToken = null;
@@ -43,10 +44,27 @@ async function request(path, options = {}) {
     const baseUrl = candidates[i];
     const url = `${baseUrl}${path}`;
     const isLastCandidate = i === candidates.length - 1;
-    const response = await fetch(url, {
-      headers: requestHeaders,
-      ...options,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    let response;
+    try {
+      response = await fetch(url, {
+        headers: requestHeaders,
+        ...options,
+        signal: controller.signal,
+      });
+    } catch (err) {
+      const reason =
+        err?.name === 'AbortError'
+          ? `Request timeout after ${REQUEST_TIMEOUT_MS}ms`
+          : (err?.message || 'Network request failed');
+      lastError = new Error(`[backend-api] ${reason} (${url})`);
+      if (!isLastCandidate) continue;
+      throw lastError;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (response.ok) {
       preferredBaseUrl = baseUrl;

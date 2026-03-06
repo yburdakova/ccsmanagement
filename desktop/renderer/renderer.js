@@ -75,9 +75,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const itemInputLabel = document.getElementById('item-input-label');
   const START_NEW_TASK_LABEL = 'Start NEW TASK';
 
-  // After a native alert() Electron's webContents loses focus. This helper
-  // calls alert() then immediately re-focuses the given element so the renderer
-  // remains interactive without requiring the user to click outside and back in.
+  // Keep renderer focus stable after warning/info popups.
   function restoreRendererFocus(refocusEl) {
     try {
       window.focus();
@@ -90,9 +88,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 0);
   }
 
+  function showInlineAppMessage(message, title = 'Notice', refocusEl = null) {
+    const safeMessage = String(message || 'Unexpected message');
+    if (!appMessageModal || !appMessageBody || !appMessageOk) {
+      window.electronAPI?.showUserMessage?.({
+        level: 'warning',
+        title,
+        message: safeMessage
+      }).catch(() => {});
+      restoreRendererFocus(refocusEl);
+      return;
+    }
+
+    if (appMessageTitle) appMessageTitle.textContent = title;
+    appMessageBody.textContent = safeMessage;
+    appMessageModal.style.display = 'flex';
+
+    const closeModal = () => {
+      appMessageModal.style.display = 'none';
+      appMessageOk.onclick = null;
+      appMessageModal.onclick = null;
+      restoreRendererFocus(refocusEl);
+    };
+    const onOkClick = () => closeModal();
+    const onBackdropClick = (event) => {
+      if (event.target === appMessageModal) closeModal();
+    };
+    appMessageOk.onclick = onOkClick;
+    appMessageModal.onclick = onBackdropClick;
+    setTimeout(() => {
+      if (typeof appMessageOk.focus === 'function') appMessageOk.focus();
+    }, 0);
+  }
+
   function alertAndRestoreFocus(message, refocusEl) {
-    alert(message);
-    restoreRendererFocus(refocusEl);
+    showInlineAppMessage(message, 'Notice', refocusEl);
   }
 
   async function showUserMessageAndRestoreFocus(message, refocusEl) {
@@ -123,10 +153,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           }, 0);
         });
       } else {
-        alert(safeMessage);
+        showInlineAppMessage(safeMessage, 'Validation', refocusEl);
+        return;
       }
     } catch {
-      alert(safeMessage);
+      showInlineAppMessage(safeMessage, 'Validation', refocusEl);
+      return;
     }
     restoreRendererFocus(refocusEl);
   }
@@ -181,6 +213,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   let mutatingIpcRetryBlockedUntil = 0;
   let hasPendingItemStatusSync = false;
   let unfinishedTaskNoteCache = new Map();
+  let lastLoadedUnfinishedTasks = [];
+  let lastLoadedAssignments = [];
 
   async function loadReferenceDataForCurrentUser() {
     if (!currentUser) return;
@@ -276,6 +310,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (user && user.id) {
       currentUser = user;
       unfinishedTaskNoteCache = loadUnfinishedTaskNoteCache(currentUser.id);
+      lastLoadedUnfinishedTasks = [];
+      lastLoadedAssignments = [];
       await loadReferenceDataForCurrentUser();
       errorEl.style.display = 'none';
       document.getElementById('login-screen').style.display = 'none';
@@ -311,6 +347,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentTaskDataRows = [];
     pendingAssignment = null;
     pendingAssignmentSelection = null;
+    lastLoadedUnfinishedTasks = [];
+    lastLoadedAssignments = [];
     setItemStatusSyncPending(false);
     stopTimer(true);
     stopTaskTimer(true);
@@ -794,13 +832,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // New task started successfully — now safely mark the old task as done
     if (taskToMark) {
+      let markResult;
       if (taskToMark.isUuid) {
-        await window.electronAPI.markUnfinishedFinished(null, taskToMark.id);
+        markResult = await runMutatingIpcWithTimeout(
+          () => window.electronAPI.markUnfinishedFinished(null, taskToMark.id),
+          'Failed to update unfinished task. Please try again.'
+        );
       } else {
-        const markResult = await window.electronAPI.markUnfinishedFinished(taskToMark.id);
-        if (!markResult?.success) {
-          console.warn('[renderer] Mark unfinished task finished failed:', markResult?.error || 'Unknown error');
-        }
+        markResult = await runMutatingIpcWithTimeout(
+          () => window.electronAPI.markUnfinishedFinished(taskToMark.id),
+          'Failed to update unfinished task. Please try again.'
+        );
+      }
+      if (!markResult?.success) {
+        console.warn('[renderer] Mark unfinished task finished failed:', markResult?.error || 'Unknown error');
       }
       await refreshUnfinishedTasksCount();
       if (unfinishedList && unfinishedList.style.display !== 'none') {
@@ -816,8 +861,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         String(pendingAssignmentSelection.taskId) === String(taskSelect.value) &&
         String(pendingAssignmentSelection.itemId || '') === String(itemSelect?.value || '');
       if (sameSelection) {
-        const acceptResult = await window.electronAPI.markAssignmentAccepted(
-          pendingAssignment.id
+        const acceptResult = await runMutatingIpcWithTimeout(
+          () => window.electronAPI.markAssignmentAccepted(pendingAssignment.id),
+          'Failed to accept assignment. Please try again.'
         );
         if (!acceptResult?.success) {
           console.warn('[renderer] Accept assignment failed:', acceptResult?.error || 'Unknown error');
@@ -1922,22 +1968,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function loadUnfinishedTasks() {
     if (!currentUser) return [];
     try {
-      const tasks = await window.electronAPI.getUnfinishedTasks(currentUser.id);
-      return Array.isArray(tasks) ? tasks : [];
+      const tasks = await withIpcTimeout(window.electronAPI.getUnfinishedTasks(currentUser.id), 8000);
+      if (Array.isArray(tasks)) {
+        lastLoadedUnfinishedTasks = tasks;
+        return tasks;
+      }
+      return lastLoadedUnfinishedTasks;
     } catch (err) {
       console.warn('[renderer] Load unfinished tasks failed:', err?.message || err);
-      return [];
+      return lastLoadedUnfinishedTasks;
     }
   }
 
   async function loadAssignments() {
     if (!currentUser) return [];
     try {
-      const assignments = await window.electronAPI.getAssignments(currentUser.id);
-      return Array.isArray(assignments) ? assignments : [];
+      const assignments = await withIpcTimeout(window.electronAPI.getAssignments(currentUser.id), 8000);
+      if (Array.isArray(assignments)) {
+        lastLoadedAssignments = assignments;
+        return assignments;
+      }
+      return lastLoadedAssignments;
     } catch (err) {
       console.warn('[renderer] Load assignments failed:', err?.message || err);
-      return [];
+      return lastLoadedAssignments;
     }
   }
 

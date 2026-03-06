@@ -114,7 +114,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
 });
 let syncInProgress = false;
 let syncRerunRequested = false;
-let syncRunPromise = null;
+let initializeInProgressPromise = null;
 
 db.serialize(() => {
   db.run(`
@@ -329,95 +329,107 @@ db.serialize(() => {
 });
 
 async function initializeLocalDb() {
-  const { isOnline } = require('../utils/network-status');
-  const dataApi = require('./data-provider');
+  if (initializeInProgressPromise) {
+    return initializeInProgressPromise;
+  }
 
-  const online = await isOnline();
+  initializeInProgressPromise = (async () => {
+    const { isOnline } = require('../utils/network-status');
+    const dataApi = require('./data-provider');
 
-  if (online) {
-    console.log('[init] Online mode: syncing from global DB');
+    const online = await isOnline();
 
-    try {
-      const settled = await Promise.allSettled([
-        dataApi.getAllUsers(),
-        dataApi.getAllProjects(),
-        dataApi.getAllProjectUsers(),
-        dataApi.getAllProjectRoles(),
-        dataApi.getAllTasks(),
-        dataApi.getAllCustomers(),
-        dataApi.getAllItemTypes(),
-        dataApi.getAllProjectTasks(),
-        dataApi.getAllProjectTaskRoles(),
-        dataApi.getAllTaskDataDefinitions(),
-        dataApi.getAllProjectTaskData(),
-        dataApi.getAllRefItemStatus(),
-        dataApi.getAllCfsItems(),
-        dataApi.getAllImItems(),
-      ]);
+    if (online) {
+      console.log('[init] Online mode: syncing from global DB');
 
-      const [
-        usersRes,
-        projectsRes,
-        projectUsersRes,
-        rolesRes,
-        tasksRes,
-        customersRes,
-        itemTypesRes,
-        projectTasksRes,
-        projectTaskRolesRes,
-        taskDataDefinitionsRes,
-        projectTaskDataRes,
-        refItemStatusRes,
-        cfsItemsRes,
-        imItemsRes,
-      ] = settled;
+      try {
+        const settled = await Promise.allSettled([
+          dataApi.getAllUsers(),
+          dataApi.getAllProjects(),
+          dataApi.getAllProjectUsers(),
+          dataApi.getAllProjectRoles(),
+          dataApi.getAllTasks(),
+          dataApi.getAllCustomers(),
+          dataApi.getAllItemTypes(),
+          dataApi.getAllProjectTasks(),
+          dataApi.getAllProjectTaskRoles(),
+          dataApi.getAllTaskDataDefinitions(),
+          dataApi.getAllProjectTaskData(),
+          dataApi.getAllRefItemStatus(),
+          dataApi.getAllCfsItems(),
+          dataApi.getAllImItems(),
+        ]);
 
-      const readSnapshot = (result, name) => {
-        if (result.status === 'fulfilled') {
-          return { ok: true, data: result.value || [] };
-        }
-        console.warn(`[init] Failed to fetch ${name}:`, result.reason?.message || result.reason);
-        return { ok: false, data: null };
-      };
+        const [
+          usersRes,
+          projectsRes,
+          projectUsersRes,
+          rolesRes,
+          tasksRes,
+          customersRes,
+          itemTypesRes,
+          projectTasksRes,
+          projectTaskRolesRes,
+          taskDataDefinitionsRes,
+          projectTaskDataRes,
+          refItemStatusRes,
+          cfsItemsRes,
+          imItemsRes,
+        ] = settled;
 
-      const refItemStatusSnapshot = readSnapshot(refItemStatusRes, 'ref_item_status');
-      const cfsItemsSnapshot = readSnapshot(cfsItemsRes, 'cfs_items');
-      const imItemsSnapshot = readSnapshot(imItemsRes, 'im_items');
-      const usersSnapshot = readSnapshot(usersRes, 'users');
-      const projectsSnapshot = readSnapshot(projectsRes, 'projects');
-      const projectUsersSnapshot = readSnapshot(projectUsersRes, 'project_users');
-      const rolesSnapshot = readSnapshot(rolesRes, 'ref_project_roles');
-      const tasksSnapshot = readSnapshot(tasksRes, 'tasks');
-      const customersSnapshot = readSnapshot(customersRes, 'customers');
-      const itemTypesSnapshot = readSnapshot(itemTypesRes, 'ref_item_types');
-      const projectTasksSnapshot = readSnapshot(projectTasksRes, 'project_tasks');
-      const projectTaskRolesSnapshot = readSnapshot(projectTaskRolesRes, 'project_task_roles');
-      const taskDataDefinitionsSnapshot = readSnapshot(taskDataDefinitionsRes, 'task_data_definitions');
-      const projectTaskDataSnapshot = readSnapshot(projectTaskDataRes, 'project_task_data');
+        const readSnapshot = (result, name) => {
+          if (result.status === 'fulfilled') {
+            return { ok: true, data: result.value || [] };
+          }
+          console.warn(`[init] Failed to fetch ${name}:`, result.reason?.message || result.reason);
+          return { ok: false, data: null };
+        };
 
-      if (refItemStatusSnapshot.ok) saveRefItemStatusToLocal(refItemStatusSnapshot.data);
-      if (cfsItemsSnapshot.ok) saveCfsItemsToLocal(cfsItemsSnapshot.data);
-      if (imItemsSnapshot.ok) saveImItemsToLocal(imItemsSnapshot.data);
-      if (usersSnapshot.ok) saveUsersToLocal(usersSnapshot.data);
-      if (projectsSnapshot.ok) saveProjectsToLocal(projectsSnapshot.data);
-      if (projectUsersSnapshot.ok) saveProjectUsersToLocal(projectUsersSnapshot.data);
-      if (rolesSnapshot.ok) saveRefProjectRolesToLocal(rolesSnapshot.data);
-      if (tasksSnapshot.ok) saveTasksToLocal(tasksSnapshot.data);
-      if (customersSnapshot.ok) saveCustomersToLocal(customersSnapshot.data);
-      if (itemTypesSnapshot.ok) saveItemTypesToLocal(itemTypesSnapshot.data);
-      if (projectTasksSnapshot.ok) saveProjectTasksToLocal(projectTasksSnapshot.data);
-      if (projectTaskRolesSnapshot.ok) saveProjectTaskRolesToLocal(projectTaskRolesSnapshot.data);
-      if (taskDataDefinitionsSnapshot.ok) saveTaskDataDefinitionsToLocal(taskDataDefinitionsSnapshot.data);
-      if (projectTaskDataSnapshot.ok) saveProjectTaskDataToLocal(projectTaskDataSnapshot.data);
+        const refItemStatusSnapshot = readSnapshot(refItemStatusRes, 'ref_item_status');
+        const cfsItemsSnapshot = readSnapshot(cfsItemsRes, 'cfs_items');
+        const imItemsSnapshot = readSnapshot(imItemsRes, 'im_items');
+        const usersSnapshot = readSnapshot(usersRes, 'users');
+        const projectsSnapshot = readSnapshot(projectsRes, 'projects');
+        const projectUsersSnapshot = readSnapshot(projectUsersRes, 'project_users');
+        const rolesSnapshot = readSnapshot(rolesRes, 'ref_project_roles');
+        const tasksSnapshot = readSnapshot(tasksRes, 'tasks');
+        const customersSnapshot = readSnapshot(customersRes, 'customers');
+        const itemTypesSnapshot = readSnapshot(itemTypesRes, 'ref_item_types');
+        const projectTasksSnapshot = readSnapshot(projectTasksRes, 'project_tasks');
+        const projectTaskRolesSnapshot = readSnapshot(projectTaskRolesRes, 'project_task_roles');
+        const taskDataDefinitionsSnapshot = readSnapshot(taskDataDefinitionsRes, 'task_data_definitions');
+        const projectTaskDataSnapshot = readSnapshot(projectTaskDataRes, 'project_task_data');
 
-      console.log('[init] Local DB refreshed from global DB');
-      const syncResult = await syncQueue();
-      console.log(`[init] Sync queue processed: ${syncResult.synced} record(s) synced`);
-    } catch (err) {
-      console.error('[init] Failed to sync local DB from global:', err.message);
+        if (refItemStatusSnapshot.ok) saveRefItemStatusToLocal(refItemStatusSnapshot.data);
+        if (cfsItemsSnapshot.ok) saveCfsItemsToLocal(cfsItemsSnapshot.data);
+        if (imItemsSnapshot.ok) saveImItemsToLocal(imItemsSnapshot.data);
+        if (usersSnapshot.ok) saveUsersToLocal(usersSnapshot.data);
+        if (projectsSnapshot.ok) saveProjectsToLocal(projectsSnapshot.data);
+        if (projectUsersSnapshot.ok) saveProjectUsersToLocal(projectUsersSnapshot.data);
+        if (rolesSnapshot.ok) saveRefProjectRolesToLocal(rolesSnapshot.data);
+        if (tasksSnapshot.ok) saveTasksToLocal(tasksSnapshot.data);
+        if (customersSnapshot.ok) saveCustomersToLocal(customersSnapshot.data);
+        if (itemTypesSnapshot.ok) saveItemTypesToLocal(itemTypesSnapshot.data);
+        if (projectTasksSnapshot.ok) saveProjectTasksToLocal(projectTasksSnapshot.data);
+        if (projectTaskRolesSnapshot.ok) saveProjectTaskRolesToLocal(projectTaskRolesSnapshot.data);
+        if (taskDataDefinitionsSnapshot.ok) saveTaskDataDefinitionsToLocal(taskDataDefinitionsSnapshot.data);
+        if (projectTaskDataSnapshot.ok) saveProjectTaskDataToLocal(projectTaskDataSnapshot.data);
+
+        console.log('[init] Local DB refreshed from global DB');
+        const syncResult = await syncQueue();
+        console.log(`[init] Sync queue processed: ${syncResult.synced} record(s) synced`);
+      } catch (err) {
+        console.error('[init] Failed to sync local DB from global:', err.message);
+      }
+    } else {
+      console.log('[init] Offline mode: using cached local DB');
     }
-  } else {
-    console.log('[init] Offline mode: using cached local DB');
+  })();
+
+  try {
+    return await initializeInProgressPromise;
+  } finally {
+    initializeInProgressPromise = null;
   }
 }
 
@@ -2114,14 +2126,9 @@ function saveTaskDataValueLocal({ projectId, taskId, dataDefId, valueType, value
                       console.log('[local-db] Saved and queued task data update');
                       resolve(result);
 
-                      const { isOnline } = require('../utils/network-status');
-                      isOnline().then((online) => {
-                        if (online) {
-                          const { syncQueue } = require('./db-local');
-                          syncQueue().catch((err) => {
-                            console.error('[local-db] Failed to sync queue after task data update:', err.message);
-                          });
-                        }
+                      const { syncQueue } = require('./db-local');
+                      syncQueue().catch((err) => {
+                        console.error('[local-db] Failed to sync queue after task data update:', err.message);
                       });
                     });
                   }
@@ -2192,9 +2199,9 @@ function enqueueSyncPayload(payload) {
 }
 
 async function syncQueue() {
-  if (syncRunPromise) {
+  if (syncInProgress) {
     syncRerunRequested = true;
-    return syncRunPromise;
+    return { success: true, synced: 0, failed: 0, queued: true };
   }
 
   const dataApi = require('./data-provider');
@@ -2242,16 +2249,32 @@ async function syncQueue() {
           });
         } else if (type === 'item-status') {
           result = await dataApi.updateItemStatusGlobal(payload.item_id, payload.status_id);
+        } else if (type === 'unfinished-finished') {
+          if (payload.uuid) {
+            result = await dataApi.markUnfinishedTaskFinishedByUuid(payload.uuid);
+          } else {
+            result = await dataApi.markUnfinishedTaskFinished(payload.record_id);
+          }
+        } else if (type === 'assignment-accepted') {
+          result = await dataApi.markAssignmentAccepted(payload.assignment_id);
         } else {
           failedCount++;
           console.warn('[syncQueue] Unknown payload type:', type);
           continue;
         }
 
+        const isIdempotentUnfinishedMiss =
+          type === 'unfinished-finished' &&
+          (
+            Number(result?.updated || 0) === 0 ||
+            /not found/i.test(String(result?.error || ''))
+          );
+
         if (
           result.success ||
           result.duplicate ||
-          result.error?.includes('ER_DUP_ENTRY')
+          result.error?.includes('ER_DUP_ENTRY') ||
+          isIdempotentUnfinishedMiss
         ) {
           try {
             await new Promise((resolve, reject) => {
@@ -2295,25 +2318,20 @@ async function syncQueue() {
     return { synced: syncedCount, failed: failedCount };
   };
 
-  syncRunPromise = (async () => {
-    syncInProgress = true;
-    let totalSynced = 0;
-    let totalFailed = 0;
-    try {
-      do {
-        syncRerunRequested = false;
-        const passResult = await runSinglePass();
-        totalSynced += passResult.synced || 0;
-        totalFailed += passResult.failed || 0;
-      } while (syncRerunRequested);
-      return { success: true, synced: totalSynced, failed: totalFailed };
-    } finally {
-      syncInProgress = false;
-      syncRunPromise = null;
-    }
-  })();
-
-  return syncRunPromise;
+  syncInProgress = true;
+  let totalSynced = 0;
+  let totalFailed = 0;
+  try {
+    do {
+      syncRerunRequested = false;
+      const passResult = await runSinglePass();
+      totalSynced += passResult.synced || 0;
+      totalFailed += passResult.failed || 0;
+    } while (syncRerunRequested);
+    return { success: true, synced: totalSynced, failed: totalFailed };
+  } finally {
+    syncInProgress = false;
+  }
 }
 function startTaskActivityLocal(userId, projectId, taskId, itemId) {
   const startTime = new Date();

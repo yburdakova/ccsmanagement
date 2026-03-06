@@ -25,8 +25,6 @@ window.network = {
       } else {
         if (window.desktopError?.warn) {
           await window.desktopError.warn('Network sync', result.error || 'Unknown sync error');
-        } else {
-          alert(`Network sync: ${String(result.error || 'Unknown sync error')}`);
         }
       }
 
