@@ -162,6 +162,11 @@ button.icon-btn{
     gap: 8px 20px;
 }
 
+.activity-section {
+  position: relative;
+  z-index: 10;
+}
+
 .work-sections {
   position: relative;
   flex: 1;
@@ -592,6 +597,11 @@ button.icon-btn{
   background: #0078d4;
   border-color: #0078d4;
   color: #ffffff;
+}
+
+/* Keep native select hidden at all times; style.display is used only as a visibility signal */
+select[data-searchable="true"] {
+  display: none !important;
 }
 
 /* Searchable Select */

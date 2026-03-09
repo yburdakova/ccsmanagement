@@ -29,7 +29,6 @@
       placeholderLabel: '',
       renderedOptions: [],
       _suppressSync: false,
-      _enforcingNativeHide: false,
       _pendingOptionsSync: false,
       _ignoreFirstClickToggle: false
     };
@@ -57,15 +56,7 @@
     dropdownEl.style.display = 'none';
     document.body.appendChild(dropdownEl);
 
-    const ensureNativeHidden = () => {
-      state._enforcingNativeHide = true;
-      selectEl.style.display = 'none';
-      queueMicrotask(() => {
-        state._enforcingNativeHide = false;
-      });
-    };
-
-    ensureNativeHidden();
+    selectEl.tabIndex = -1;
 
     const rebuildCache = () => {
       state.cachedOptions = [];
@@ -256,14 +247,7 @@
 
       if (styleChanged) {
         const displayValue = String(selectEl.style.display || '');
-        if (displayValue === 'none') {
-          if (!state._enforcingNativeHide) {
-            wrapperEl.style.display = 'none';
-          }
-        } else {
-          wrapperEl.style.display = '';
-          ensureNativeHidden();
-        }
+        wrapperEl.style.display = displayValue === 'none' ? 'none' : '';
       }
     });
 
@@ -365,6 +349,10 @@
     window.addEventListener('scroll', () => {
       if (state.isOpen) positionDropdown();
     }, true);
+
+    if (selectEl.style.display === 'none') {
+      wrapperEl.style.display = 'none';
+    }
 
     rebuildCache();
     syncDisplay();
