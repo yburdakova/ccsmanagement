@@ -701,7 +701,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         taskOverlayTaskSelect.value = '';
         taskOverlayTaskSelect.disabled = true;
       }
-      if (taskOverlayItemSelect) taskOverlayItemSelect.value = '';
+      if (taskOverlayItemSelect) {
+        taskOverlayItemSelect.value = '';
+        taskOverlayItemSelect.style.display = 'none';
+      }
       updateTaskOverlayTaskName();
       updateTaskOverlayContinueButton();
     }
@@ -981,6 +984,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   taskOverlayProjectSelect?.addEventListener('change', async () => {
     if (!projectSelect) return;
+    if (taskOverlayTaskSelect) taskOverlayTaskSelect.disabled = true;
     projectSelect.value = taskOverlayProjectSelect.value;
     await applyProjectSelection(projectSelect.value);
     await updateItemSelection();
@@ -1525,6 +1529,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   projectSelect.addEventListener('change', async (e) => {
     await applyProjectSelection(e.target.value);
+    await updateItemSelection();
     if (pendingUnfinishedTask) {
       pendingUnfinishedTask = null;
       pendingTaskSelection = null;
