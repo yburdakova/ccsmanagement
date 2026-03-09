@@ -20,6 +20,8 @@ body {
 .header{
     display: flex;
     justify-content: space-between;
+    position: relative;
+    z-index: 10;
 }
 
 #authcode-input {
@@ -60,6 +62,8 @@ button {
   grid-template-columns: repeat(2, 1fr);
   align-items: center;
   margin: 20px 0px;
+  position: relative;
+  z-index: 10;
 }
 
 button#clockin-button{
@@ -377,9 +381,12 @@ button.icon-btn{
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 5;
+  padding: 160px 12px 24px;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .task-finish__content {
