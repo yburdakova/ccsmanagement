@@ -75,15 +75,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   const itemInputLabel = document.getElementById('item-input-label');
   const START_NEW_TASK_LABEL = 'Start NEW TASK';
 
+  if (typeof window.makeSearchable === 'function') {
+    window.makeSearchable(projectSelect);
+    window.makeSearchable(taskOverlayProjectSelect);
+    window.makeSearchable(taskOverlayTaskSelect);
+    window.makeSearchable(taskOverlayItemSelect);
+  }
+
   // Keep renderer focus stable after warning/info popups.
   function restoreRendererFocus(refocusEl) {
+    const resolveFocusableElement = (candidate) => {
+      if (!candidate || typeof candidate.focus !== 'function') return null;
+      if (candidate.dataset?.searchable === 'true') {
+        const input = candidate.nextElementSibling?.querySelector?.('.searchable-select__input');
+        if (input && typeof input.focus === 'function') return input;
+      }
+      return candidate;
+    };
     try {
       window.focus();
     } catch {}
     // Defer element focus until after native dialog / pointer handling settles.
     setTimeout(() => {
-      if (refocusEl && typeof refocusEl.focus === 'function') {
-        refocusEl.focus();
+      const focusTarget = resolveFocusableElement(refocusEl);
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        focusTarget.focus();
       }
     }, 0);
   }
