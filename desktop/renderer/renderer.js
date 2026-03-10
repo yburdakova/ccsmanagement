@@ -68,6 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const appMessageTitle = document.getElementById('app-message-title');
   const appMessageBody = document.getElementById('app-message-body');
   const appMessageOk = document.getElementById('app-message-ok');
+  const appMessageRetry = document.getElementById('app-message-retry');
   const timerEl = document.querySelector('.timer');
   const savedProjectKey = 'rememberedProject';
   //const workTimerStateKey = 'workTimerState';
@@ -118,11 +119,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (appMessageTitle) appMessageTitle.textContent = title;
     appMessageBody.textContent = safeMessage;
+    if (appMessageRetry) appMessageRetry.style.display = 'none';
     appMessageModal.style.display = 'flex';
 
     const closeModal = () => {
       appMessageModal.style.display = 'none';
       appMessageOk.onclick = null;
+      if (appMessageRetry) appMessageRetry.onclick = null;
       appMessageModal.onclick = null;
       restoreRendererFocus(refocusEl);
     };
@@ -147,6 +150,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (appMessageModal && appMessageBody && appMessageOk) {
         if (appMessageTitle) appMessageTitle.textContent = 'Validation';
         appMessageBody.textContent = safeMessage;
+        if (appMessageRetry) appMessageRetry.style.display = 'none';
         appMessageModal.style.display = 'flex';
 
         await new Promise((resolve) => {
@@ -177,6 +181,46 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     restoreRendererFocus(refocusEl);
+  }
+
+  async function showRetryableError(message, refocusEl) {
+    const safeMessage = String(message || 'Operation failed');
+    if (!appMessageModal || !appMessageBody || !appMessageOk || !appMessageRetry) {
+      showInlineAppMessage(safeMessage, 'Notice', refocusEl);
+      return false;
+    }
+
+    if (appMessageTitle) appMessageTitle.textContent = 'Notice';
+    appMessageBody.textContent = safeMessage;
+    appMessageRetry.style.display = '';
+    appMessageModal.style.display = 'flex';
+
+    const choice = await new Promise((resolve) => {
+      const closeModal = (shouldRetry) => {
+        appMessageModal.style.display = 'none';
+        appMessageOk.removeEventListener('click', onOkClick);
+        appMessageRetry.removeEventListener('click', onRetryClick);
+        appMessageModal.removeEventListener('click', onBackdropClick);
+        appMessageRetry.style.display = 'none';
+        resolve(shouldRetry);
+      };
+      const onOkClick = () => closeModal(false);
+      const onRetryClick = () => closeModal(true);
+      const onBackdropClick = (event) => {
+        if (event.target === appMessageModal) {
+          closeModal(false);
+        }
+      };
+      appMessageOk.addEventListener('click', onOkClick);
+      appMessageRetry.addEventListener('click', onRetryClick);
+      appMessageModal.addEventListener('click', onBackdropClick);
+      setTimeout(() => {
+        if (typeof appMessageRetry.focus === 'function') appMessageRetry.focus();
+      }, 0);
+    });
+
+    if (!choice) restoreRendererFocus(refocusEl);
+    return choice;
   }
 
   authInput.focus();
@@ -231,16 +275,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   let unfinishedTaskNoteCache = new Map();
   let lastLoadedUnfinishedTasks = [];
   let lastLoadedAssignments = [];
+  let isRefreshingProjectData = false;
 
   async function loadReferenceDataForCurrentUser() {
     if (!currentUser) return;
     const [projectsRes, projectUsersRes, rolesRes, customersRes, itemTypesRes] =
       await Promise.allSettled([
-        window.electronAPI.getAllProjects(),
-        window.electronAPI.getAllProjectUsers(),
-        window.electronAPI.getAllProjectRoles(),
-        window.electronAPI.getAllCustomers(),
-        window.electronAPI.getItemTypes(),
+        withIpcTimeout(window.electronAPI.getAllProjects()),
+        withIpcTimeout(window.electronAPI.getAllProjectUsers()),
+        withIpcTimeout(window.electronAPI.getAllProjectRoles()),
+        withIpcTimeout(window.electronAPI.getAllCustomers()),
+        withIpcTimeout(window.electronAPI.getItemTypes()),
       ]);
     if (projectsRes.status === 'fulfilled')
       allProjects = Array.isArray(projectsRes.value) ? projectsRes.value : [];
@@ -294,16 +339,27 @@ document.addEventListener('DOMContentLoaded', async () => {
       alertAndRestoreFocus(`Operation is still being confirmed. Please wait ${secondsLeft} second(s) before retrying.`, activeEl);
       return null;
     }
-    try {
-      return await withIpcTimeout(executor());
-    } catch (err) {
-      if (isIpcTimeoutError(err)) {
-        mutatingIpcRetryBlockedUntil = Date.now() + 5000;
-        alertAndRestoreFocus('Operation took too long. Please check your connection before retrying in 5 seconds.', activeEl);
-      } else {
+    let hasRetried = false;
+    while (true) {
+      try {
+        return await withIpcTimeout(executor());
+      } catch (err) {
+        if (isIpcTimeoutError(err)) {
+          mutatingIpcRetryBlockedUntil = Date.now() + 5000;
+          alertAndRestoreFocus('Operation took too long. Please check your connection before retrying in 5 seconds.', activeEl);
+          return null;
+        }
+        if (!hasRetried) {
+          const wantsRetry = await showRetryableError(fallbackMessage, activeEl);
+          if (wantsRetry) {
+            hasRetried = true;
+            continue;
+          }
+          return null;
+        }
         alertAndRestoreFocus(fallbackMessage, activeEl);
+        return null;
       }
-      return null;
     }
   }
 
@@ -328,7 +384,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       unfinishedTaskNoteCache = loadUnfinishedTaskNoteCache(currentUser.id);
       lastLoadedUnfinishedTasks = [];
       lastLoadedAssignments = [];
-      await loadReferenceDataForCurrentUser();
+      try {
+        await loadReferenceDataForCurrentUser();
+      } catch (err) {
+        errorEl.textContent = 'Failed to load reference data. Please try again.';
+        errorEl.style.display = 'block';
+        alertAndRestoreFocus('Failed to load reference data. Please try again.', authInput);
+        return;
+      }
       errorEl.style.display = 'none';
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('main-screen').style.display = 'flex';
@@ -345,11 +408,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Logout
   // ==================
   logoutButton.addEventListener('click', async () => {
+    const logoutUserId = currentUser?.id ?? null;
     if (currentUser) {
-      await window.electronAPI.logout({
-        userId: currentUser.id,
-        note: getCurrentActiveNoteForClose()
-      });
+      try {
+        await withIpcTimeout(window.electronAPI.logout({
+          userId: currentUser.id,
+          note: getCurrentActiveNoteForClose()
+        }));
+      } catch (err) {
+        alertAndRestoreFocus('Logout request failed. The app will continue signing you out locally.', authInput);
+        console.warn('[renderer] Logout request failed:', err?.message || err);
+      }
     }
 
     
@@ -404,8 +473,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     authInput.value = '';
     authInput.focus();
 
-    if (currentUser?.id) {
-      localStorage.removeItem(getWorkTimerStateKey(currentUser.id));
+    if (logoutUserId) {
+      localStorage.removeItem(getWorkTimerStateKey(logoutUserId));
     }
 
 
@@ -416,118 +485,127 @@ document.addEventListener('DOMContentLoaded', async () => {
   // CLOCK-IN / CLOCK-OUT
   // ==================
   clockinButton.addEventListener('click', async () => {
-    if (clockinButton.textContent === 'CLOCK-IN') {
-      currentSessionUuid = await handleClockIn(currentUser.id);
-      if (!currentSessionUuid) return;
+    clockinButton.disabled = true;
+    try {
+      if (clockinButton.textContent === 'CLOCK-IN') {
+        currentSessionUuid = await handleClockIn(currentUser.id);
+        if (!currentSessionUuid) return;
 
-      window.electronAPI.initLocalDb();
+        try {
+          window.electronAPI.initLocalDb();
+        } catch (err) {
+          console.warn('[renderer] Local DB init failed:', err?.message || err);
+        }
 
-      await refreshProjectDataIfOnline({ updateOptions: false });
-      
+        await refreshProjectDataIfOnline({ updateOptions: false });
+        
 
-      clockinButton.textContent = 'CLOCK-OUT';
-      //alert(`Clock-in successful! (uuid=${currentSessionUuid})`);
-      updateStartButton();
-      resumeOrStartWorkTimer();
-      if (activitySection) activitySection.style.display = '';
-      if (productionSection) productionSection.style.display = '';
-      if (notesSection) notesSection.style.display = '';
-      await refreshUnfinishedTasksCount();
+        clockinButton.textContent = 'CLOCK-OUT';
+        //alert(`Clock-in successful! (uuid=${currentSessionUuid})`);
+        updateStartButton();
+        resumeOrStartWorkTimer();
+        if (activitySection) activitySection.style.display = '';
+        if (productionSection) productionSection.style.display = '';
+        if (notesSection) notesSection.style.display = '';
+        await refreshUnfinishedTasksCount();
 
-      // projects for user
-      userProjects = buildProjectList(allProjects, allProjectUsers, projectRoles, currentUser.id);
-      projectSelect.innerHTML = '<option value="">— Select Project —</option>';
-      userProjects.forEach(p => {
-        const option = document.createElement('option');
-        option.value = p.project_id;
-        option.textContent = p.name;
-        projectSelect.appendChild(option);
-      });
+        // projects for user
+        userProjects = buildProjectList(allProjects, allProjectUsers, projectRoles, currentUser.id);
+        projectSelect.innerHTML = '<option value="">— Select Project —</option>';
+        userProjects.forEach(p => {
+          const option = document.createElement('option');
+          option.value = p.project_id;
+          option.textContent = p.name;
+          projectSelect.appendChild(option);
+        });
 
-      projectSection.style.display = 'none';
+        projectSection.style.display = 'none';
 
-      const saved = getSavedProject();
-      if (saved) {
-        const matched = userProjects.find(
-          (p) => Number(p.project_id) === Number(saved.projectId)
-        );
-        if (matched && Number(matched.role_id) === Number(saved.roleId)) {
-          projectSelect.value = String(matched.project_id);
-          updateBookmarkButtons(true);
-          projectSelect.dispatchEvent(new Event('change'));
+        const saved = getSavedProject();
+        if (saved) {
+          const matched = userProjects.find(
+            (p) => Number(p.project_id) === Number(saved.projectId)
+          );
+          if (matched && Number(matched.role_id) === Number(saved.roleId)) {
+            projectSelect.value = String(matched.project_id);
+            updateBookmarkButtons(true);
+            projectSelect.dispatchEvent(new Event('change'));
+          } else {
+            clearSavedProject();
+            updateBookmarkButtons(false);
+          }
         } else {
-          clearSavedProject();
           updateBookmarkButtons(false);
         }
       } else {
-        updateBookmarkButtons(false);
-      }
-    } else {
-      // CLOCK-OUT
-      const activeUuid = currentTaskUuid || currentSessionUuid;
-      if (!activeUuid) {
-        alertAndRestoreFocus('No active session UUID found!', clockinButton);
-        return;
-      }
+        // CLOCK-OUT
+        const activeUuid = currentTaskUuid || currentSessionUuid;
+        if (!activeUuid) {
+          alertAndRestoreFocus('No active session UUID found!', clockinButton);
+          return;
+        }
 
-      const clockOutTaskData = currentTaskUuid && taskOverlayDataList
-        ? collectTaskDataValues(taskOverlayDataList)
-        : [];
-      const result = await runMutatingIpcWithTimeout(
-        () => window.electronAPI.completeActiveActivity({
-          uuid: activeUuid,
-          userId: currentUser.id,
-          isTaskCompleted: false,
-          taskData: clockOutTaskData
-        }),
-        'Clock-out failed. Please try again.'
-      );
-      if (!result?.success) {
-        return;
+        const clockOutTaskData = currentTaskUuid && taskOverlayDataList
+          ? collectTaskDataValues(taskOverlayDataList)
+          : [];
+        const result = await runMutatingIpcWithTimeout(
+          () => window.electronAPI.completeActiveActivity({
+            uuid: activeUuid,
+            userId: currentUser.id,
+            isTaskCompleted: false,
+            taskData: clockOutTaskData
+          }),
+          'Clock-out failed. Please try again.'
+        );
+        if (!result?.success) {
+          return;
+        }
+
+        clockinButton.textContent = 'CLOCK-IN';
+        //alert(`Clock-out successful! (uuid=${activeUuid})`);
+        persistWorkTimerState();
+        currentSessionUuid = null;
+        currentTaskUuid = null;
+        currentTaskItemId = null;
+        currentTaskStatusRule = null;
+        currentTaskDataRows = [];
+        pendingAssignment = null;
+        pendingAssignmentSelection = null;
+        setItemStatusSyncPending(false);
+        stopTimer(true);
+        stopTaskTimer(true);
+        workTimerPausedElapsedMs = null;
+        if (timerEl) timerEl.style.color = '';
+        if (taskOverlay) taskOverlay.style.display = 'none';
+        if (activityOverlay) activityOverlay.style.display = 'none';
+        stopActivityTimer(true);
+
+        // reset UI after clock-out
+        projectSection.style.display = 'none';
+        taskSection.style.display = 'none';
+        if (activitySection) activitySection.style.display = 'none';
+        if (productionSection) productionSection.style.display = 'none';
+        if (notesSection) notesSection.style.display = 'none';
+        if (unfinishedCount) unfinishedCount.textContent = '0';
+        if (unfinishedList) unfinishedList.style.display = 'none';
+        if (unfinishedList) unfinishedList.innerHTML = '';
+        if (assignmentsCount) assignmentsCount.textContent = '0';
+        if (assignmentsList) assignmentsList.style.display = 'none';
+        if (assignmentsList) assignmentsList.innerHTML = '';
+        assignmentsTotal = 0;
+        projectSelect.innerHTML = '<option value="">— Select Project —</option>';
+        roleText.textContent = '';
+        taskSelect.innerHTML = '<option value="">— Select Task —</option>';
+        taskSelect.disabled = true;
+      updateStartButton();
+        if (itemSection) itemSection.style.display = 'none';
+        if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
+        if (itemInputLabel) itemInputLabel.textContent = 'Item';
+        if (taskDataSection) taskDataSection.style.display = 'none';
+        if (taskDataList) taskDataList.innerHTML = '';
       }
-
-      clockinButton.textContent = 'CLOCK-IN';
-      //alert(`Clock-out successful! (uuid=${activeUuid})`);
-      persistWorkTimerState();
-      currentSessionUuid = null;
-      currentTaskUuid = null;
-      currentTaskItemId = null;
-      currentTaskStatusRule = null;
-      currentTaskDataRows = [];
-      pendingAssignment = null;
-      pendingAssignmentSelection = null;
-      setItemStatusSyncPending(false);
-      stopTimer(true);
-      stopTaskTimer(true);
-      workTimerPausedElapsedMs = null;
-      if (timerEl) timerEl.style.color = '';
-      if (taskOverlay) taskOverlay.style.display = 'none';
-      if (activityOverlay) activityOverlay.style.display = 'none';
-      stopActivityTimer(true);
-
-      // reset UI after clock-out
-      projectSection.style.display = 'none';
-      taskSection.style.display = 'none';
-      if (activitySection) activitySection.style.display = 'none';
-      if (productionSection) productionSection.style.display = 'none';
-      if (notesSection) notesSection.style.display = 'none';
-      if (unfinishedCount) unfinishedCount.textContent = '0';
-      if (unfinishedList) unfinishedList.style.display = 'none';
-      if (unfinishedList) unfinishedList.innerHTML = '';
-      if (assignmentsCount) assignmentsCount.textContent = '0';
-      if (assignmentsList) assignmentsList.style.display = 'none';
-      if (assignmentsList) assignmentsList.innerHTML = '';
-      assignmentsTotal = 0;
-      projectSelect.innerHTML = '<option value="">— Select Project —</option>';
-      roleText.textContent = '';
-      taskSelect.innerHTML = '<option value="">— Select Task —</option>';
-      taskSelect.disabled = true;
-    updateStartButton();
-      if (itemSection) itemSection.style.display = 'none';
-      if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
-      if (itemInputLabel) itemInputLabel.textContent = 'Item';
-      if (taskDataSection) taskDataSection.style.display = 'none';
-      if (taskDataList) taskDataList.innerHTML = '';
+    } finally {
+      clockinButton.disabled = false;
     }
   });
 
@@ -546,89 +624,115 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   const handleActivityClick = async (activityId, label) => {
-    if (!currentUser) return;
-
-    if (currentTaskUuid) {
-      const pausedTaskNote = getNoteValue(taskOverlayNote);
-      pendingUnfinishedTask = { id: currentTaskUuid, isUuid: true, note: pausedTaskNote };
-      pendingTaskSelection = {
-        projectId: String(projectSelect.value),
-        taskId: String(taskSelect.value),
-        itemId: String(itemSelect?.value || ''),
-      };
-      cacheUnfinishedTaskNote(
-        pendingTaskSelection.projectId,
-        pendingTaskSelection.taskId,
-        pendingTaskSelection.itemId,
-        pausedTaskNote
-      );
-      if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
-      const pauseTaskData = taskOverlayDataList ? collectTaskDataValues(taskOverlayDataList) : [];
-      const result = await runMutatingIpcWithTimeout(
-        () => window.electronAPI.completeActiveActivity({
-          uuid: currentTaskUuid,
-          userId: currentUser.id,
-          isTaskCompleted: false,
-          note: pausedTaskNote,
-          taskData: pauseTaskData
-        }),
-        'Task stop failed. Please try again.'
-      );
-      if (!result?.success) {
-        return;
-      }
-
-      currentTaskUuid = null;
-      if (taskOverlay) taskOverlay.style.display = 'none';
-      stopTaskTimer(true);
-      updateStartButton();
-
-    }
-
-    if (currentSessionUuid) {
-      const result = await runMutatingIpcWithTimeout(
-        () => window.electronAPI.completeActiveActivity({
-          uuid: currentSessionUuid,
-          userId: currentUser.id,
-          isTaskCompleted: false
-        }),
-        'Failed to stop current activity. Please try again.'
-      );
-      if (!result?.success) {
-        return;
-      }
-      currentSessionUuid = null;
-    }
-
-    let activityResult;
+    const activityButtons = [breakButton, lunchButton, meetingButton, adminButton];
+    activityButtons.forEach((button) => {
+      if (button) button.disabled = true;
+    });
     try {
-      activityResult = await withIpcTimeout(window.electronAPI.startUnallocated(currentUser.id, activityId));
-    } catch {
-      alertAndRestoreFocus(`Failed to start ${label.toLowerCase()}. Please try again.`, clockinButton);
-      return;
-    }
-    if (!activityResult.success) {
-      alertAndRestoreFocus(`Failed to start ${label.toLowerCase()}. Please try again.`, clockinButton);
-      return;
-    }
+      if (!currentUser) return;
 
-    currentSessionUuid = activityResult.uuid;
-    if (activityId === 1) {
-      pauseWorkTimerForLunch();
+      if (currentTaskUuid) {
+        const pausedTaskNote = getNoteValue(taskOverlayNote);
+        pendingUnfinishedTask = { id: currentTaskUuid, isUuid: true, note: pausedTaskNote };
+        pendingTaskSelection = {
+          projectId: String(projectSelect.value),
+          taskId: String(taskSelect.value),
+          itemId: String(itemSelect?.value || ''),
+        };
+        cacheUnfinishedTaskNote(
+          pendingTaskSelection.projectId,
+          pendingTaskSelection.taskId,
+          pendingTaskSelection.itemId,
+          pausedTaskNote
+        );
+        if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
+        const pauseTaskData = taskOverlayDataList ? collectTaskDataValues(taskOverlayDataList) : [];
+        const result = await runMutatingIpcWithTimeout(
+          () => window.electronAPI.completeActiveActivity({
+            uuid: currentTaskUuid,
+            userId: currentUser.id,
+            isTaskCompleted: false,
+            note: pausedTaskNote,
+            taskData: pauseTaskData
+          }),
+          'Task stop failed. Please try again.'
+        );
+        if (!result?.success) {
+          return;
+        }
+
+        currentTaskUuid = null;
+        if (taskOverlay) taskOverlay.style.display = 'none';
+        stopTaskTimer(true);
+        updateStartButton();
+
+      }
+
+      if (currentSessionUuid) {
+        const result = await runMutatingIpcWithTimeout(
+          () => window.electronAPI.completeActiveActivity({
+            uuid: currentSessionUuid,
+            userId: currentUser.id,
+            isTaskCompleted: false
+          }),
+          'Failed to stop current activity. Please try again.'
+        );
+        if (!result?.success) {
+          return;
+        }
+        currentSessionUuid = null;
+      }
+
+      let activityResult;
+      try {
+        activityResult = await withIpcTimeout(window.electronAPI.startUnallocated(currentUser.id, activityId));
+      } catch {
+        alertAndRestoreFocus(`Failed to start ${label.toLowerCase()}. Please try again.`, clockinButton);
+        return;
+      }
+      if (!activityResult.success) {
+        alertAndRestoreFocus(`Failed to start ${label.toLowerCase()}. Please try again.`, clockinButton);
+        return;
+      }
+
+      currentSessionUuid = activityResult.uuid;
+      if (activityId === 1) {
+        pauseWorkTimerForLunch();
+      }
+      showActivityOverlay(label);
+      await refreshUnfinishedTasksCount();
+      if (unfinishedList && unfinishedList.style.display !== 'none') {
+        const tasks = await loadUnfinishedTasks();
+        renderUnfinishedTasks(tasks);
+      }
+      await refreshAssignmentsListIfOpen();
+    } finally {
+      activityButtons.forEach((button) => {
+        if (button) button.disabled = false;
+      });
     }
-    showActivityOverlay(label);
-    await refreshUnfinishedTasksCount();
-    if (unfinishedList && unfinishedList.style.display !== 'none') {
-      const tasks = await loadUnfinishedTasks();
-      renderUnfinishedTasks(tasks);
-    }
-    await refreshAssignmentsListIfOpen();
   };
 
-  const handleBreakClick = () => handleActivityClick(3, 'Break');
-  const handleLunchClick = () => handleActivityClick(1, 'Lunch');
-  const handleMeetingClick = () => handleActivityClick(5, 'Meeting');
-  const handleAdministrationClick = () => handleActivityClick(8, 'Administration');
+  const handleBreakClick = () => {
+    handleActivityClick(3, 'Break').catch((err) => {
+      console.warn('[renderer] Break handler failed:', err?.message || err);
+    });
+  };
+  const handleLunchClick = () => {
+    handleActivityClick(1, 'Lunch').catch((err) => {
+      console.warn('[renderer] Lunch handler failed:', err?.message || err);
+    });
+  };
+  const handleMeetingClick = () => {
+    handleActivityClick(5, 'Meeting').catch((err) => {
+      console.warn('[renderer] Meeting handler failed:', err?.message || err);
+    });
+  };
+  const handleAdministrationClick = () => {
+    handleActivityClick(8, 'Administration').catch((err) => {
+      console.warn('[renderer] Administrative handler failed:', err?.message || err);
+    });
+  };
 
   breakButton?.addEventListener('click', handleBreakClick);
   lunchButton?.addEventListener('click', handleLunchClick);
@@ -864,6 +968,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
       }
       if (!markResult?.success) {
+        alertAndRestoreFocus('Failed to update task status. Please try again.', taskOverlayNote || startTaskButton);
         console.warn('[renderer] Mark unfinished task finished failed:', markResult?.error || 'Unknown error');
       }
       await refreshUnfinishedTasksCount();
@@ -885,6 +990,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           'Failed to accept assignment. Please try again.'
         );
         if (!acceptResult?.success) {
+          alertAndRestoreFocus('Failed to update task status. Please try again.', taskOverlayNote || startTaskButton);
           console.warn('[renderer] Accept assignment failed:', acceptResult?.error || 'Unknown error');
         }
         pendingAssignment = null;
@@ -900,22 +1006,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const taskId = Number(taskSelect.value);
     currentTaskStatusRule = null;
     try {
-      currentTaskStatusRule = await window.electronAPI.getItemStatusRule(
+      currentTaskStatusRule = await withIpcTimeout(window.electronAPI.getItemStatusRule(
         projectId,
         taskId,
         0
-      );
+      ));
     } catch (err) {
       currentTaskStatusRule = null;
       console.warn('[renderer] Load start status rule failed:', err?.message || err);
     }
     finishStatusRule = null;
     try {
-      finishStatusRule = await window.electronAPI.getItemStatusRule(
+      finishStatusRule = await withIpcTimeout(window.electronAPI.getItemStatusRule(
         projectId,
         taskId,
         1
-      );
+      ));
     } catch (err) {
       finishStatusRule = null;
       console.warn('[renderer] Load finish status rule failed:', err?.message || err);
@@ -924,7 +1030,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let savedTrackingRows = null;
     if (taskToMarkUuid) {
       try {
-        const data = await window.electronAPI.getTrackingData(taskToMarkUuid);
+        const data = await withIpcTimeout(window.electronAPI.getTrackingData(taskToMarkUuid));
         if (Array.isArray(data) && data.length > 0) savedTrackingRows = data;
       } catch (err) {
         console.warn('[renderer] Pre-fetch tracking data failed:', err?.message || err);
@@ -942,10 +1048,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentTaskStatusRule.statusId != null
     ) {
       try {
-        const statusResult = await window.electronAPI.updateItemStatus(
+        const statusResult = await withIpcTimeout(window.electronAPI.updateItemStatus(
           currentTaskItemId,
           currentTaskStatusRule.statusId
-        );
+        ));
         if (!statusResult?.success) {
           console.warn('[renderer] Update item status on start failed:', statusResult?.error || 'Unknown error');
         } else if (statusResult.queued) {
@@ -982,32 +1088,37 @@ document.addEventListener('DOMContentLoaded', async () => {
       pendingAssignment = null;
       pendingAssignmentSelection = null;
       if (hadPendingSelection) {
-        const snapshot = pendingSelectionSnapshot;
-        pendingSelectionSnapshot = null;
-        if (snapshot) {
-          if (projectSelect) {
-            projectSelect.value = String(snapshot.projectId || '');
+        try {
+          const snapshot = pendingSelectionSnapshot;
+          pendingSelectionSnapshot = null;
+          if (snapshot) {
+            if (projectSelect) {
+              projectSelect.value = String(snapshot.projectId || '');
+            }
+            await applyProjectSelection(String(snapshot.projectId || ''));
+            if (taskSelect) {
+              taskSelect.value = String(snapshot.taskId || '');
+              userSelectedTask = taskSelect.selectedIndex > 0;
+            }
+            await updateItemSelection();
+            await updateTaskDataSelection();
+            if (itemSelect) {
+              itemSelect.value = String(snapshot.itemId || '');
+            }
+          } else {
+            if (taskSelect) {
+              taskSelect.value = '';
+              userSelectedTask = false;
+            }
+            if (itemSelect) {
+              itemSelect.value = '';
+            }
+            await updateItemSelection();
+            await updateTaskDataSelection();
           }
-          await applyProjectSelection(String(snapshot.projectId || ''));
-          if (taskSelect) {
-            taskSelect.value = String(snapshot.taskId || '');
-            userSelectedTask = taskSelect.selectedIndex > 0;
-          }
-          await updateItemSelection();
-          await updateTaskDataSelection();
-          if (itemSelect) {
-            itemSelect.value = String(snapshot.itemId || '');
-          }
-        } else {
-          if (taskSelect) {
-            taskSelect.value = '';
-            userSelectedTask = false;
-          }
-          if (itemSelect) {
-            itemSelect.value = '';
-          }
-          await updateItemSelection();
-          await updateTaskDataSelection();
+        } catch (err) {
+          console.warn('[renderer] Restore pending selection failed:', err?.message || err);
+          alertAndRestoreFocus('Failed to restore previous selection. Please try again.', projectSelect);
         }
       }
       updateStartButton();
@@ -1028,23 +1139,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   taskOverlayProjectSelect?.addEventListener('change', async () => {
-    if (!projectSelect) return;
-    if (taskOverlayTaskSelect) taskOverlayTaskSelect.disabled = true;
-    projectSelect.value = taskOverlayProjectSelect.value;
-    await applyProjectSelection(projectSelect.value);
-    await updateItemSelection();
-    await updateTaskDataSelection();
-    syncTaskOverlaySelectors();
+    try {
+      if (!projectSelect) return;
+      if (taskOverlayTaskSelect) taskOverlayTaskSelect.disabled = true;
+      projectSelect.value = taskOverlayProjectSelect.value;
+      await applyProjectSelection(projectSelect.value);
+      await updateItemSelection();
+      await updateTaskDataSelection();
+      syncTaskOverlaySelectors();
+    } catch (err) {
+      console.warn('[renderer] Overlay project change failed:', err?.message || err);
+      alertAndRestoreFocus('Failed to change project. Please try again.', taskOverlayProjectSelect);
+    }
   });
 
   taskOverlayTaskSelect?.addEventListener('change', async () => {
-    if (!taskSelect) return;
-    taskSelect.value = taskOverlayTaskSelect.value;
-    userSelectedTask = taskSelect.selectedIndex > 0;
-    await updateItemSelection();
-    await updateTaskDataSelection();
-    syncTaskOverlaySelectors();
-    updateTaskOverlayTaskName();
+    try {
+      if (!taskSelect) return;
+      taskSelect.value = taskOverlayTaskSelect.value;
+      userSelectedTask = taskSelect.selectedIndex > 0;
+      await updateItemSelection();
+      await updateTaskDataSelection();
+      syncTaskOverlaySelectors();
+      updateTaskOverlayTaskName();
+    } catch (err) {
+      console.warn('[renderer] Overlay task change failed:', err?.message || err);
+      alertAndRestoreFocus('Failed to change task. Please try again.', taskOverlayTaskSelect);
+    }
   });
 
   taskOverlayItemSelect?.addEventListener('change', () => {
@@ -1276,7 +1397,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let rows = [];
     try {
-      rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
+      rows = await withIpcTimeout(window.electronAPI.getProjectTaskData(projectId, taskId));
     } catch (err) {
       console.warn('[renderer] Load task data for finish modal failed:', err?.message || err);
       alertAndRestoreFocus('Could not load task data. Please check your connection and try again.', taskOverlayNote);
@@ -1365,17 +1486,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       finishStatusRule &&
       finishStatusRule.statusId != null
     ) {
-      const statusResult = await window.electronAPI.updateItemStatus(
-        currentTaskItemId,
-        finishStatusRule.statusId
-      );
-      if (!statusResult?.success) {
-        console.warn('[renderer] Update item status on finish failed:', statusResult?.error || 'Unknown error');
-      } else if (statusResult.queued) {
-        setItemStatusSyncPending(true);
-      } else {
-        setItemStatusSyncPending(false);
-        await refreshItemOptions(currentTaskItemId);
+      try {
+        const statusResult = await withIpcTimeout(window.electronAPI.updateItemStatus(
+          currentTaskItemId,
+          finishStatusRule.statusId
+        ));
+        if (!statusResult?.success) {
+          console.warn('[renderer] Update item status on finish failed:', statusResult?.error || 'Unknown error');
+        } else if (statusResult.queued) {
+          setItemStatusSyncPending(true);
+        } else {
+          setItemStatusSyncPending(false);
+          await refreshItemOptions(currentTaskItemId);
+        }
+      } catch (err) {
+        console.warn('[renderer] Update item status on finish threw:', err?.message || err);
       }
     }
 
@@ -1423,29 +1548,44 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const handleFinishTask = async (applyStatus) => {
-    if (!currentUser || !currentTaskUuid) {
-      if (taskOverlay) taskOverlay.style.display = 'none';
-      clearNoteInput(taskOverlayNote);
-      if (taskOverlayData) taskOverlayData.style.display = 'none';
-      if (taskOverlayDataList) taskOverlayDataList.innerHTML = '';
-      currentTaskDataRows = [];
-      setItemStatusSyncPending(false);
-      stopTaskTimer(true);
-      updateStartButton();
-      return;
-    }
+    if (finishTaskButton) finishTaskButton.disabled = true;
+    if (stopTaskButton) stopTaskButton.disabled = true;
+    try {
+      if (!currentUser || !currentTaskUuid) {
+        if (taskOverlay) taskOverlay.style.display = 'none';
+        clearNoteInput(taskOverlayNote);
+        if (taskOverlayData) taskOverlayData.style.display = 'none';
+        if (taskOverlayDataList) taskOverlayDataList.innerHTML = '';
+        currentTaskDataRows = [];
+        setItemStatusSyncPending(false);
+        stopTaskTimer(true);
+        updateStartButton();
+        return;
+      }
 
-    const note = getNoteValue(taskOverlayNote);
-    if (applyStatus) {
-      await finalizeTask(true, note, taskOverlayDataList);
-      return;
-    }
+      const note = getNoteValue(taskOverlayNote);
+      if (applyStatus) {
+        await finalizeTask(true, note, taskOverlayDataList);
+        return;
+      }
 
-    await finalizeTask(false, note, taskOverlayDataList);
+      await finalizeTask(false, note, taskOverlayDataList);
+    } finally {
+      if (finishTaskButton) finishTaskButton.disabled = false;
+      if (stopTaskButton) stopTaskButton.disabled = false;
+    }
   };
 
-  finishTaskButton?.addEventListener('click', () => handleFinishTask(true));
-  stopTaskButton?.addEventListener('click', () => handleFinishTask(false));
+  finishTaskButton?.addEventListener('click', () => {
+    handleFinishTask(true).catch((err) => {
+      console.warn('[renderer] Finish task handler failed:', err?.message || err);
+    });
+  });
+  stopTaskButton?.addEventListener('click', () => {
+    handleFinishTask(false).catch((err) => {
+      console.warn('[renderer] Stop task handler failed:', err?.message || err);
+    });
+  });
 
 
   finishActivityButton?.addEventListener('click', async () => {
@@ -1470,43 +1610,52 @@ document.addEventListener('DOMContentLoaded', async () => {
       resumeWorkTimerAfterLunch();
     }
     hideActivityOverlay();
-    await startUnallocatedForCurrentUser();
-    await refreshUnfinishedTasksCount();
-    if (unfinishedList && unfinishedList.style.display !== 'none') {
-      const tasks = await loadUnfinishedTasks();
-      renderUnfinishedTasks(tasks);
+    try {
+      await startUnallocatedForCurrentUser();
+      await refreshUnfinishedTasksCount();
+      if (unfinishedList && unfinishedList.style.display !== 'none') {
+        const tasks = await loadUnfinishedTasks();
+        renderUnfinishedTasks(tasks);
+      }
+      await refreshAssignmentsListIfOpen();
+    } catch (err) {
+      console.warn('[renderer] Post-activity refresh failed:', err?.message || err);
     }
-    await refreshAssignmentsListIfOpen();
   });
 
   taskSelect?.addEventListener('change', async () => {
-    userSelectedTask = taskSelect.selectedIndex > 0;
-    updateStartButton();
-    await updateItemSelection();
-    await updateTaskDataSelection();
-    if (pendingUnfinishedTask && pendingTaskSelection) {
-      const sameSelection =
-        String(pendingTaskSelection.projectId) === String(projectSelect.value) &&
-        String(pendingTaskSelection.taskId) === String(taskSelect.value) &&
-        String(pendingTaskSelection.itemId || '') === String(itemSelect?.value || '');
-      if (!sameSelection) {
-        pendingUnfinishedTask = null;
-        pendingTaskSelection = null;
-        if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
+    try {
+      userSelectedTask = taskSelect.selectedIndex > 0;
+      updateStartButton();
+      await updateItemSelection();
+      await updateTaskDataSelection();
+      if (pendingUnfinishedTask && pendingTaskSelection) {
+        const sameSelection =
+          String(pendingTaskSelection.projectId) === String(projectSelect.value) &&
+          String(pendingTaskSelection.taskId) === String(taskSelect.value) &&
+          String(pendingTaskSelection.itemId || '') === String(itemSelect?.value || '');
+        if (!sameSelection) {
+          pendingUnfinishedTask = null;
+          pendingTaskSelection = null;
+          if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
+        }
       }
-    }
-    if (pendingAssignment && pendingAssignmentSelection) {
-      const sameSelection =
-        String(pendingAssignmentSelection.projectId) === String(projectSelect.value) &&
-        String(pendingAssignmentSelection.taskId) === String(taskSelect.value) &&
-        String(pendingAssignmentSelection.itemId || '') === String(itemSelect?.value || '');
-      if (!sameSelection) {
-        pendingAssignment = null;
-        pendingAssignmentSelection = null;
+      if (pendingAssignment && pendingAssignmentSelection) {
+        const sameSelection =
+          String(pendingAssignmentSelection.projectId) === String(projectSelect.value) &&
+          String(pendingAssignmentSelection.taskId) === String(taskSelect.value) &&
+          String(pendingAssignmentSelection.itemId || '') === String(itemSelect?.value || '');
+        if (!sameSelection) {
+          pendingAssignment = null;
+          pendingAssignmentSelection = null;
+        }
       }
-    }
-    if (taskOverlayStart && taskOverlayStart.style.display !== 'none') {
-      syncTaskOverlaySelectors();
+      if (taskOverlayStart && taskOverlayStart.style.display !== 'none') {
+        syncTaskOverlaySelectors();
+      }
+    } catch (err) {
+      console.warn('[renderer] Task selection change failed:', err?.message || err);
+      alertAndRestoreFocus('Failed to update task selection. Please try again.', taskSelect);
     }
   });
 
@@ -1561,7 +1710,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       await updateTaskDataSelection();
     }
 
-    const trackingTasks = await window.electronAPI.getItemTrackingTasks(selected.project_id);
+    let trackingTasks = [];
+    try {
+      const loadedTrackingTasks = await withIpcTimeout(
+        window.electronAPI.getItemTrackingTasks(selected.project_id)
+      );
+      trackingTasks = Array.isArray(loadedTrackingTasks) ? loadedTrackingTasks : [];
+    } catch (err) {
+      trackingTasks = [];
+      console.warn('[renderer] Load item-tracking tasks failed:', err?.message || err);
+    }
     itemTrackingTaskIds = new Set(trackingTasks.map((id) => Number(id)));
     if (itemSection) itemSection.style.display = 'none';
     if (itemSelect) itemSelect.innerHTML = '<option value="">Select item</option>';
@@ -1573,55 +1731,78 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   projectSelect.addEventListener('change', async (e) => {
-    await applyProjectSelection(e.target.value);
-    await updateItemSelection();
-    if (pendingUnfinishedTask) {
-      pendingUnfinishedTask = null;
-      pendingTaskSelection = null;
-      if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
-    }
-    if (pendingAssignment) {
-      pendingAssignment = null;
-      pendingAssignmentSelection = null;
-    }
-    if (taskOverlayStart && taskOverlayStart.style.display !== 'none') {
-      syncTaskOverlaySelectors();
+    try {
+      await applyProjectSelection(e.target.value);
+      await updateItemSelection();
+      if (pendingUnfinishedTask) {
+        pendingUnfinishedTask = null;
+        pendingTaskSelection = null;
+        if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
+      }
+      if (pendingAssignment) {
+        pendingAssignment = null;
+        pendingAssignmentSelection = null;
+      }
+      if (taskOverlayStart && taskOverlayStart.style.display !== 'none') {
+        syncTaskOverlaySelectors();
+      }
+    } catch (err) {
+      console.warn('[renderer] Project change failed:', err?.message || err);
+      alertAndRestoreFocus('Failed to change project. Please try again.', projectSelect);
     }
   });
 
   projectSelect.addEventListener('focus', async () => {
-    await refreshProjectDataIfOnline();
+    try {
+      await refreshProjectDataIfOnline();
+    } catch (err) {
+      console.warn('[renderer] Project refresh on focus failed:', err?.message || err);
+    }
   });
 
   projectSelect.addEventListener('mousedown', async () => {
-    await refreshProjectDataIfOnline();
+    try {
+      await refreshProjectDataIfOnline();
+    } catch (err) {
+      console.warn('[renderer] Project refresh on mousedown failed:', err?.message || err);
+    }
   });
 
   unfinishedButton?.addEventListener('click', async () => {
-    if (!currentUser || !unfinishedList || !unfinishedCount) return;
-    if (Number(unfinishedCount.textContent || 0) === 0) return;
-    if (assignmentsList) assignmentsList.style.display = 'none';
-    const shouldShow = unfinishedList.style.display === 'none';
-    if (shouldShow) {
-      const tasks = await loadUnfinishedTasks();
-      renderUnfinishedTasks(tasks);
-      unfinishedList.style.display = 'flex';
-    } else {
-      unfinishedList.style.display = 'none';
+    try {
+      if (!currentUser || !unfinishedList || !unfinishedCount) return;
+      if (Number(unfinishedCount.textContent || 0) === 0) return;
+      if (assignmentsList) assignmentsList.style.display = 'none';
+      const shouldShow = unfinishedList.style.display === 'none';
+      if (shouldShow) {
+        const tasks = await loadUnfinishedTasks();
+        renderUnfinishedTasks(tasks);
+        unfinishedList.style.display = 'flex';
+      } else {
+        unfinishedList.style.display = 'none';
+      }
+    } catch (err) {
+      alertAndRestoreFocus('Failed to load unfinished tasks. Please try again.', unfinishedButton);
+      console.warn('[renderer] Unfinished list toggle failed:', err?.message || err);
     }
   });
 
   assignmentsButton?.addEventListener('click', async () => {
-    if (!currentUser || !assignmentsList || !assignmentsCount) return;
-    if (Number(assignmentsCount.textContent || 0) === 0) return;
-    if (unfinishedList) unfinishedList.style.display = 'none';
-    const shouldShow = assignmentsList.style.display === 'none';
-    if (shouldShow) {
-      const assignments = await loadAssignments();
-      renderAssignments(assignments);
-      assignmentsList.style.display = 'flex';
-    } else {
-      assignmentsList.style.display = 'none';
+    try {
+      if (!currentUser || !assignmentsList || !assignmentsCount) return;
+      if (Number(assignmentsCount.textContent || 0) === 0) return;
+      if (unfinishedList) unfinishedList.style.display = 'none';
+      const shouldShow = assignmentsList.style.display === 'none';
+      if (shouldShow) {
+        const assignments = await loadAssignments();
+        renderAssignments(assignments);
+        assignmentsList.style.display = 'flex';
+      } else {
+        assignmentsList.style.display = 'none';
+      }
+    } catch (err) {
+      alertAndRestoreFocus('Failed to load assignments. Please try again.', assignmentsButton);
+      console.warn('[renderer] Assignments list toggle failed:', err?.message || err);
     }
   });
 
@@ -1911,16 +2092,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function refreshProjectDataIfOnline({ updateOptions = true } = {}) {
     if (!currentUser || !window.network?.isOnline?.()) return;
+    if (isRefreshingProjectData) return;
+    isRefreshingProjectData = true;
 
     try {
       const selectedProjectId = projectSelect.value;
       const [projectsRes, projectUsersRes, rolesRes, customersRes, itemTypesRes] =
         await Promise.allSettled([
-          window.electronAPI.getAllProjects(),
-          window.electronAPI.getAllProjectUsers(),
-          window.electronAPI.getAllProjectRoles(),
-          window.electronAPI.getAllCustomers(),
-          window.electronAPI.getItemTypes(),
+          withIpcTimeout(window.electronAPI.getAllProjects()),
+          withIpcTimeout(window.electronAPI.getAllProjectUsers()),
+          withIpcTimeout(window.electronAPI.getAllProjectRoles()),
+          withIpcTimeout(window.electronAPI.getAllCustomers()),
+          withIpcTimeout(window.electronAPI.getItemTypes()),
         ]);
       if (projectsRes.status === 'fulfilled')
         allProjects = Array.isArray(projectsRes.value) ? projectsRes.value : [];
@@ -1962,13 +2145,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (err) {
       console.warn('[renderer] Refresh project data failed:', err?.message || err);
+    } finally {
+      isRefreshingProjectData = false;
     }
   }
 
   if (window.electronAPI?.onBackendDataRefreshed) {
     window.electronAPI.onBackendDataRefreshed(async () => {
-      await refreshProjectDataIfOnline({ updateOptions: true });
-      await refreshActiveTaskOverlayAfterReconnect();
+      try {
+        await refreshProjectDataIfOnline({ updateOptions: true });
+        await refreshActiveTaskOverlayAfterReconnect();
+      } catch (err) {
+        console.warn('[renderer] Backend refresh callback failed:', err?.message || err);
+      }
     });
   }
 
@@ -1980,13 +2169,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   exitConfirmCancelButton?.addEventListener('click', async () => {
     hideExitConfirmOverlay();
-    await window.electronAPI?.confirmAppClose?.(false);
+    try {
+      await window.electronAPI?.confirmAppClose?.(false);
+    } catch (err) {
+      console.warn('[renderer] Cancel app close confirmation failed:', err?.message || err);
+      restoreRendererFocus(exitConfirmCancelButton);
+    }
   });
 
   exitConfirmCloseButton?.addEventListener('click', async () => {
-    await window.electronAPI?.confirmAppClose?.(true, {
-      note: getCurrentActiveNoteForClose()
-    });
+    try {
+      await window.electronAPI?.confirmAppClose?.(true, {
+        note: getCurrentActiveNoteForClose()
+      });
+    } catch (err) {
+      console.warn('[renderer] Confirm app close request failed:', err?.message || err);
+    }
   });
 
   function startTaskTimer() {
@@ -2088,11 +2286,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       const item = document.createElement('div');
       item.className = 'notes-item';
       item.addEventListener('click', async () => {
-        pendingSelectionSnapshot = {
+        const snapshotForRetry = {
           projectId: String(projectSelect?.value || ''),
           taskId: String(taskSelect?.value || ''),
           itemId: String(itemSelect?.value || ''),
         };
+        pendingSelectionSnapshot = snapshotForRetry;
         pendingUnfinishedTask = task;
         if (!pendingUnfinishedTask.note) {
           pendingUnfinishedTask.note = getCachedUnfinishedTaskNote(
@@ -2111,20 +2310,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (projectSelect) {
           projectSelect.value = String(task.projectId);
         }
-        await applyProjectSelection(String(task.projectId));
-        if (taskSelect) {
-          taskSelect.value = String(task.taskId ?? '');
-          userSelectedTask = !!taskSelect.value;
-          updateStartButton();
+        try {
+          await applyProjectSelection(String(task.projectId));
+          if (taskSelect) {
+            taskSelect.value = String(task.taskId ?? '');
+            userSelectedTask = !!taskSelect.value;
+            updateStartButton();
+          }
+          await updateItemSelection();
+          await updateTaskDataSelection();
+          if (itemSelect && task.itemId) {
+            itemSelect.value = String(task.itemId);
+          }
+          if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
+          unfinishedList.style.display = 'none';
+          openTaskStartOverlay();
+        } catch (err) {
+          pendingUnfinishedTask = null;
+          pendingTaskSelection = null;
+          pendingSelectionSnapshot = snapshotForRetry;
+          if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
+          alertAndRestoreFocus('Failed to prepare unfinished task. Please try again.', projectSelect);
+          console.warn('[renderer] Prepare unfinished task failed:', err?.message || err);
         }
-        await updateItemSelection();
-        await updateTaskDataSelection();
-        if (itemSelect && task.itemId) {
-          itemSelect.value = String(task.itemId);
-        }
-        if (startTaskButton) startTaskButton.textContent = 'CONTINUE';
-        unfinishedList.style.display = 'none';
-        openTaskStartOverlay();
       });
       const project = document.createElement('div');
       project.className = 'notes-item__project';
@@ -2195,35 +2403,44 @@ document.addEventListener('DOMContentLoaded', async () => {
       const item = document.createElement('div');
       item.className = 'notes-item';
       item.addEventListener('click', async () => {
-        pendingSelectionSnapshot = {
+        const snapshotForRetry = {
           projectId: String(projectSelect?.value || ''),
           taskId: String(taskSelect?.value || ''),
           itemId: String(itemSelect?.value || ''),
         };
+        pendingSelectionSnapshot = snapshotForRetry;
         pendingUnfinishedTask = null;
         pendingTaskSelection = null;
         if (projectSelect) {
           projectSelect.value = String(assignment.projectId);
         }
-        await applyProjectSelection(String(assignment.projectId));
-        if (taskSelect) {
-          taskSelect.value = String(assignment.taskId ?? '');
-          userSelectedTask = !!taskSelect.value;
-          updateStartButton();
+        try {
+          await applyProjectSelection(String(assignment.projectId));
+          if (taskSelect) {
+            taskSelect.value = String(assignment.taskId ?? '');
+            userSelectedTask = !!taskSelect.value;
+            updateStartButton();
+          }
+          await updateItemSelection();
+          await updateTaskDataSelection();
+          if (itemSelect && assignment.itemId) {
+            itemSelect.value = String(assignment.itemId);
+          }
+          if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
+          pendingAssignment = assignment;
+          pendingAssignmentSelection = {
+            projectId: String(assignment.projectId),
+            taskId: String(assignment.taskId ?? ''),
+            itemId: String(assignment.itemId ?? ''),
+          };
+          assignmentsList.style.display = 'none';
+        } catch (err) {
+          pendingAssignment = null;
+          pendingAssignmentSelection = null;
+          pendingSelectionSnapshot = snapshotForRetry;
+          alertAndRestoreFocus('Failed to prepare assignment. Please try again.', projectSelect);
+          console.warn('[renderer] Prepare assignment failed:', err?.message || err);
         }
-        await updateItemSelection();
-        await updateTaskDataSelection();
-        if (itemSelect && assignment.itemId) {
-          itemSelect.value = String(assignment.itemId);
-        }
-        if (startTaskButton) startTaskButton.textContent = START_NEW_TASK_LABEL;
-        pendingAssignment = assignment;
-        pendingAssignmentSelection = {
-          projectId: String(assignment.projectId),
-          taskId: String(assignment.taskId ?? ''),
-          itemId: String(assignment.itemId ?? ''),
-        };
-        assignmentsList.style.display = 'none';
       });
       const project = document.createElement('div');
       project.className = 'notes-item__project';
@@ -2304,7 +2521,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function populateTasks(currentUser, project) {
-    const tasks = await window.electronAPI.getAvailableTasks(currentUser.id, project.project_id);
+    let tasks = [];
+    try {
+      const loadedTasks = await withIpcTimeout(
+        window.electronAPI.getAvailableTasks(currentUser.id, project.project_id)
+      );
+      tasks = Array.isArray(loadedTasks) ? loadedTasks : [];
+    } catch (err) {
+      alertAndRestoreFocus('Failed to load tasks. Please try again.', taskSelect);
+      tasks = [];
+      console.warn('[renderer] Load available tasks failed:', err?.message || err);
+    }
     const uniqueTasks = [];
     const seen = new Set();
     tasks.forEach(t => {
@@ -2332,7 +2559,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function populateItems(project) {
     if (!itemSelect) return;
-    const items = await window.electronAPI.getProjectItems(project.project_id, project.project_type_id);
+    let items = [];
+    try {
+      const loadedItems = await withIpcTimeout(
+        window.electronAPI.getProjectItems(project.project_id, project.project_type_id)
+      );
+      items = Array.isArray(loadedItems) ? loadedItems : [];
+    } catch (err) {
+      alertAndRestoreFocus('Failed to load items. Please try again.', itemSelect || projectSelect);
+      items = [];
+      console.warn('[renderer] Load project items failed:', err?.message || err);
+    }
     console.log('[renderer] Available items:', items);
     projectItems = items;
     itemSelect.innerHTML = '<option value="">Select item</option>';
@@ -2578,14 +2815,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!taskOverlayData || !taskOverlayDataList) return;
     const token = ++loadTaskDataToken;
     try {
-      const rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
+      const rows = await withIpcTimeout(window.electronAPI.getProjectTaskData(projectId, taskId));
       if (token !== loadTaskDataToken) return;
       const base = rows && rows.length ? rows : (currentTaskDataRows || []);
       renderTaskDataOverlay(mergeTrackingValues(base, savedTrackingRows), { skipAutoFocus });
     } catch (err) {
       if (token !== loadTaskDataToken) return;
+      alertAndRestoreFocus('Failed to load task data. Please try again.', taskOverlayNote);
       console.warn('[renderer] Load task data overlay failed:', err?.message || err);
-      renderTaskDataOverlay(mergeTrackingValues(currentTaskDataRows || [], savedTrackingRows), { skipAutoFocus });
+      renderTaskDataOverlay(mergeTrackingValues([], savedTrackingRows), { skipAutoFocus });
     }
   }
 
@@ -2612,11 +2850,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     try {
-      const rows = await window.electronAPI.getProjectTaskData(projectId, taskId);
+      const rows = await withIpcTimeout(window.electronAPI.getProjectTaskData(projectId, taskId));
       currentTaskDataRows = rows || [];
       taskDataSection.style.display = 'none';
       taskDataList.innerHTML = '';
     } catch (err) {
+      alertAndRestoreFocus('Failed to load task data. Please try again.', taskSelect);
       console.warn('[renderer] Load task data failed:', err?.message || err);
       taskDataSection.style.display = 'none';
       taskDataList.innerHTML = '';
