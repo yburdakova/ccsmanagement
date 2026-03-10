@@ -898,16 +898,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentTaskItemId = selectedItemId;
     const projectId = Number(projectSelect.value);
     const taskId = Number(taskSelect.value);
-    currentTaskStatusRule = await window.electronAPI.getItemStatusRule(
-      projectId,
-      taskId,
-      0
-    );
-    finishStatusRule = await window.electronAPI.getItemStatusRule(
-      projectId,
-      taskId,
-      1
-    );
+    currentTaskStatusRule = null;
+    try {
+      currentTaskStatusRule = await window.electronAPI.getItemStatusRule(
+        projectId,
+        taskId,
+        0
+      );
+    } catch (err) {
+      currentTaskStatusRule = null;
+      console.warn('[renderer] Load start status rule failed:', err?.message || err);
+    }
+    finishStatusRule = null;
+    try {
+      finishStatusRule = await window.electronAPI.getItemStatusRule(
+        projectId,
+        taskId,
+        1
+      );
+    } catch (err) {
+      finishStatusRule = null;
+      console.warn('[renderer] Load finish status rule failed:', err?.message || err);
+    }
     const taskToMarkUuid = taskToMark?.uuid || (taskToMark?.isUuid ? taskToMark.id : null);
     let savedTrackingRows = null;
     if (taskToMarkUuid) {
@@ -918,24 +930,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.warn('[renderer] Pre-fetch tracking data failed:', err?.message || err);
       }
     }
-    await loadTaskDataOverlay(projectId, taskId, savedTrackingRows);
+    try {
+      await loadTaskDataOverlay(projectId, taskId, savedTrackingRows);
+    } catch (err) {
+      console.warn('[renderer] Load task data overlay failed:', err?.message || err);
+    }
 
     if (
       currentTaskItemId &&
       currentTaskStatusRule &&
       currentTaskStatusRule.statusId != null
     ) {
-      const statusResult = await window.electronAPI.updateItemStatus(
-        currentTaskItemId,
-        currentTaskStatusRule.statusId
-      );
-      if (!statusResult?.success) {
-        console.warn('[renderer] Update item status on start failed:', statusResult?.error || 'Unknown error');
-      } else if (statusResult.queued) {
-        setItemStatusSyncPending(true);
-      } else {
-        setItemStatusSyncPending(false);
-        await refreshItemOptions(currentTaskItemId);
+      try {
+        const statusResult = await window.electronAPI.updateItemStatus(
+          currentTaskItemId,
+          currentTaskStatusRule.statusId
+        );
+        if (!statusResult?.success) {
+          console.warn('[renderer] Update item status on start failed:', statusResult?.error || 'Unknown error');
+        } else if (statusResult.queued) {
+          setItemStatusSyncPending(true);
+        } else {
+          setItemStatusSyncPending(false);
+          await refreshItemOptions(currentTaskItemId);
+        }
+      } catch (err) {
+        console.warn('[renderer] Update item status on start threw:', err?.message || err);
       }
     }
     const carryNote =
@@ -951,6 +971,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   taskOverlayCancelButton?.addEventListener('click', async () => {
+    if (currentTaskUuid && taskOverlayStart && taskOverlayStart.style.display !== 'none') {
+      setTaskOverlayMode('in-progress');
+      return;
+    }
     if (!currentTaskUuid && taskOverlay) {
       const hadPendingSelection = !!pendingUnfinishedTask || !!pendingAssignment;
       pendingUnfinishedTask = null;
@@ -995,7 +1019,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   taskOverlayContinueButton?.addEventListener('click', async () => {
-    await startSelectedTaskFromCurrentSelection();
+    if (taskOverlayContinueButton) taskOverlayContinueButton.disabled = true;
+    try {
+      await startSelectedTaskFromCurrentSelection();
+    } finally {
+      updateTaskOverlayContinueButton();
+    }
   });
 
   taskOverlayProjectSelect?.addEventListener('change', async () => {
