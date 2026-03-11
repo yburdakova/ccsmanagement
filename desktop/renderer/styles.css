@@ -383,7 +383,7 @@ button.icon-btn{
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  z-index: 5;
+  z-index: 10000;
   padding: clamp(220px, 34vh, 320px) 12px 24px;
   box-sizing: border-box;
   overflow-y: auto;

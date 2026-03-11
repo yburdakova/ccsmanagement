@@ -810,6 +810,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const openTaskStartOverlay = () => {
     if (!taskOverlay) return;
+    if (unfinishedList) unfinishedList.style.display = 'none';
+    if (assignmentsList) assignmentsList.style.display = 'none';
     taskOverlayItem.textContent = '';
     taskOverlayItem.style.display = 'none';
     setTaskOverlayMode('prestart');
@@ -2457,6 +2459,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function showActivityOverlay(label) {
     if (!activityOverlay || !activityOverlayName || !activityOverlayTimer) return;
+    if (unfinishedList) unfinishedList.style.display = 'none';
+    if (assignmentsList) assignmentsList.style.display = 'none';
     activityOverlayName.textContent = label;
     clearNoteInput(activityOverlayNote);
     activitySectionDisplay = activitySection?.style.display ?? '';
