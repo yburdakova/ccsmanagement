@@ -463,6 +463,20 @@ function loginByAuthCodeLocal(code) {
   });
 }
 
+function getAuthcodeForUser(userId) {
+  const { db } = module.exports;
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT authcode FROM local_users WHERE id = ? AND is_active = 1 LIMIT 1`,
+      [Number(userId)],
+      (err, row) => {
+        if (err) return reject(err);
+        resolve(row?.authcode || null);
+      }
+    );
+  });
+}
+
 function clearTableContents(tableName, label) {
   db.run(`DELETE FROM ${tableName}`, (err) => {
     if (err) {
@@ -2553,6 +2567,7 @@ function completeActiveActivityLocal({ uuid, is_completed_project_task, timestam
 module.exports = {
   db,
   loginByAuthCodeLocal,
+  getAuthcodeForUser,
   cacheSuccessfulLoginLocal,
   saveUsersToLocal,
   saveProjectsToLocal,

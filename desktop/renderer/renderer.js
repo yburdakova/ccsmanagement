@@ -407,22 +407,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ==================
   // Logout
   // ==================
-  logoutButton.addEventListener('click', async () => {
-    const logoutUserId = currentUser?.id ?? null;
-    if (currentUser) {
-      try {
-        await withIpcTimeout(window.electronAPI.logout({
-          userId: currentUser.id,
-          note: getCurrentActiveNoteForClose()
-        }));
-      } catch (err) {
-        alertAndRestoreFocus('Logout request failed. The app will continue signing you out locally.', authInput);
-        console.warn('[renderer] Logout request failed:', err?.message || err);
-      }
-    }
-
-    
-
+  function resetToLoginScreen(message) {
+    const prevUserId = currentUser?.id ?? null;
 
     currentUser = null;
     currentSessionUuid = null;
@@ -473,11 +459,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     authInput.value = '';
     authInput.focus();
 
-    if (logoutUserId) {
-      localStorage.removeItem(getWorkTimerStateKey(logoutUserId));
+    if (prevUserId) {
+      localStorage.removeItem(getWorkTimerStateKey(prevUserId));
     }
 
+    if (message) {
+      alertAndRestoreFocus(message, authInput);
+    }
+  }
 
+  logoutButton.addEventListener('click', async () => {
+    if (currentUser) {
+      try {
+        await withIpcTimeout(window.electronAPI.logout({
+          userId: currentUser.id,
+          note: getCurrentActiveNoteForClose()
+        }));
+      } catch (err) {
+        alertAndRestoreFocus('Logout request failed. The app will continue signing you out locally.', authInput);
+        console.warn('[renderer] Logout request failed:', err?.message || err);
+      }
+    }
+
+    resetToLoginScreen();
     console.log('[renderer] User logged out and UI reset');
   });
 
@@ -2159,6 +2163,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         await refreshActiveTaskOverlayAfterReconnect();
       } catch (err) {
         console.warn('[renderer] Backend refresh callback failed:', err?.message || err);
+      }
+    });
+  }
+
+  if (window.electronAPI?.onSessionExpired) {
+    window.electronAPI.onSessionExpired(() => {
+      if (currentUser) {
+        resetToLoginScreen('Session expired. Please log in again.');
       }
     });
   }

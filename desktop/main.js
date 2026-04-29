@@ -52,6 +52,9 @@ const {
 
 let mainWindow = null;
 let lastWsConnected = false;
+let currentDesktopUserId = null;
+let reAuthInFlight = false;
+let syncRetryInterval = null;
 let syncLock = Promise.resolve();
 let syncQueued = false;
 const taskStartInFlight = new Set();
@@ -86,11 +89,12 @@ function syncAfterBackendReconnect({ fullRefresh = false } = {}) {
         await initializeLocalDb();
         console.log('[main] Reconnect initializeLocalDb completed');
       }
+    } catch (err) {
+      console.warn('[main] Reconnect synchronization failed:', err.message);
+    } finally {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('backend-data-refreshed', { at: new Date().toISOString() });
       }
-    } catch (err) {
-      console.warn('[main] Reconnect synchronization failed:', err.message);
     }
   });
 }
@@ -190,16 +194,53 @@ app.whenReady().then(async () => {
       syncAfterBackendReconnect({ fullRefresh: false });
     });
 
-    setDesktopWsStatusListener(({ connected }) => {
+    setDesktopWsStatusListener(async ({ connected, authFailed }) => {
       publishConnectionState().catch((err) => {
         console.warn('[main] Failed to publish WS connection state:', err.message);
       });
+
+      if (authFailed) {
+        if (reAuthInFlight) return;
+        reAuthInFlight = true;
+        lastWsConnected = false;
+        try {
+          const { getAuthcodeForUser, cacheSuccessfulLoginLocal } = require('./api/db-local');
+          const authcode = await getAuthcodeForUser(currentDesktopUserId);
+          if (authcode) {
+            const user = await dataApi.loginByAuthCode(authcode);
+            const wsToken = user?.ws_token || user?.access_token || user?.accessToken;
+            if (wsToken) {
+              currentDesktopUserId = user.id;
+              connectDesktopWs(user.id, wsToken);
+              cacheSuccessfulLoginLocal(user, authcode).catch((err) => {
+                console.warn('[main] Failed to cache re-auth login:', err.message);
+              });
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('[main] Silent re-auth failed:', err.message);
+        } finally {
+          reAuthInFlight = false;
+        }
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('session-expired');
+        }
+        return;
+      }
+
       const nextConnected = Boolean(connected);
       if (nextConnected && !lastWsConnected) {
         syncAfterBackendReconnect({ fullRefresh: true });
       }
       lastWsConnected = nextConnected;
     });
+
+    syncRetryInterval = setInterval(() => {
+      if (isDesktopWsConnected()) {
+        syncAfterBackendReconnect({ fullRefresh: false });
+      }
+    }, 60000);
   }
 });
 
@@ -476,6 +517,7 @@ ipcMain.handle('login-with-code', async (event, code) => {
             : null;
           if (wsToken) {
             connectDesktopWs(user.id, wsToken);
+            currentDesktopUserId = user.id;
           } else {
             console.warn('[main] Skipping WS connect: missing access token');
           }

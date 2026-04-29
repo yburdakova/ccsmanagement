@@ -140,14 +140,18 @@ function connectDesktopWs(userId, accessToken) {
     const reason = Buffer.isBuffer(reasonBuffer) ? reasonBuffer.toString('utf8') : String(reasonBuffer || '');
     console.warn(`[desktop-ws] Connection closed (code=${code}, reason=${reason})`);
     clearPingInterval();
-    emitStatus(false);
-    clearStableTimer();
     socket = null;
     if (code === 4401 || code === 4403) {
-      // Auth-related closure should not reconnect in a loop.
       shouldReconnect = false;
+      connected = false;
+      clearStableTimer();
+      if (typeof statusListener === 'function') {
+        statusListener({ connected: false, authFailed: true });
+      }
       return;
     }
+    emitStatus(false);
+    clearStableTimer();
     scheduleReconnect();
   });
 

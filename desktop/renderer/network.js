@@ -88,8 +88,9 @@ window.network = {
     this.updateConnectionIndicator();
 
     if (window.electronAPI?.onBackendDataRefreshed) {
-      window.electronAPI.onBackendDataRefreshed(() => {
+      this.unsubscribeBackendDataRefreshed = window.electronAPI.onBackendDataRefreshed(() => {
         this.wasOnline = true;
+        this.updateConnectionIndicator();
       });
     }
 

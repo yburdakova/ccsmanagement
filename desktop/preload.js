@@ -54,6 +54,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('backend-data-refreshed', listener);
     return () => ipcRenderer.removeListener('backend-data-refreshed', listener);
   },
+  onSessionExpired: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = () => callback();
+    ipcRenderer.on('session-expired', listener);
+    return () => ipcRenderer.removeListener('session-expired', listener);
+  },
   onAppCloseRequested: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = () => callback();
