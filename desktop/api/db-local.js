@@ -110,6 +110,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.error('Failed to connect to local SQLite:', err);
   } else {
     console.log('Connected to local SQLite database.');
+    db.run('PRAGMA busy_timeout = 5000');
   }
 });
 let syncInProgress = false;

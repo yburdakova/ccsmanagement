@@ -568,10 +568,6 @@ ipcMain.handle('start-unallocated', async (event, { userId, activityId }) => {
     const uuid = crypto.randomUUID();
     await startLocal(userId, safeActivityId, uuid);
 
-    syncQueue().catch((err) => {
-      console.warn('[main] Start unallocated outbox sync failed:', err.message);
-    });
-
     return { success: true, uuid };
   } catch (error) {
     console.error('[main] Start unallocated local failed:', error.message);
@@ -593,10 +589,6 @@ ipcMain.handle('start-task-activity', async (event, { userId, projectId, taskId,
       mainWindow.focus();
     }
     const { uuid } = await startLocal(userId, projectId, taskId, itemId);
-
-    syncQueue().catch((err) => {
-      console.warn('[main] Start task outbox sync failed:', err.message);
-    });
 
     return { success: true, uuid };
   } catch (error) {
@@ -632,10 +624,6 @@ ipcMain.handle('complete-activity', async (event, { uuid, userId, isTaskComplete
     if (!localResult.success) {
       throw new Error(localResult.error || 'Local completion failed');
     }
-
-    syncQueue().catch((err) => {
-      console.warn('[main] Complete activity outbox sync failed:', err.message);
-    });
 
     return { success: true };
   } catch (error) {
