@@ -12,3 +12,6 @@ out/
 
 # logs
 logs/
+*.log
+
+*.md
