@@ -1507,8 +1507,15 @@ function saveRefItemStatusToLocal(statuses) {
 // }
 
 // UPSERT version
-function saveCfsItemsToLocal(items) {
-  if (!items || items.length === 0) return;
+function saveCfsItemsToLocal(items, projectId = null) {
+  if (!items || items.length === 0) {
+    if (projectId != null) {
+      db.run('DELETE FROM cfs_items WHERE project_id = ?', [projectId]);
+    } else {
+      clearTableContents('cfs_items', 'cfs_items');
+    }
+    return;
+  }
 
   db.serialize(() => {
     console.log('[local-db] Updating cfs_items...');
@@ -1536,15 +1543,23 @@ function saveCfsItemsToLocal(items) {
       const ids = items.map(i => i.id);
       if (ids.length > 0) {
         const placeholders = ids.map(() => '?').join(',');
-        db.run(
-          `DELETE FROM cfs_items WHERE id NOT IN (${placeholders})`,
-          ids,
-          (err) => {
-            if (err) {
-              console.error('[local-db] Failed to delete obsolete cfs_items:', err.message);
+        if (projectId != null) {
+          db.run(
+            `DELETE FROM cfs_items WHERE project_id = ? AND id NOT IN (${placeholders})`,
+            [projectId, ...ids],
+            (err) => {
+              if (err) console.error('[local-db] Failed to delete obsolete cfs_items:', err.message);
             }
-          }
-        );
+          );
+        } else {
+          db.run(
+            `DELETE FROM cfs_items WHERE id NOT IN (${placeholders})`,
+            ids,
+            (err) => {
+              if (err) console.error('[local-db] Failed to delete obsolete cfs_items:', err.message);
+            }
+          );
+        }
       }
     });
   });
@@ -1574,8 +1589,15 @@ function saveCfsItemsToLocal(items) {
 // }
 
 // UPSERT version
-function saveImItemsToLocal(items) {
-  if (!items || items.length === 0) return;
+function saveImItemsToLocal(items, projectId = null) {
+  if (!items || items.length === 0) {
+    if (projectId != null) {
+      db.run('DELETE FROM im_items WHERE project_id = ?', [projectId]);
+    } else {
+      clearTableContents('im_items', 'im_items');
+    }
+    return;
+  }
 
   db.serialize(() => {
     console.log('[local-db] Updating im_items...');
@@ -1603,18 +1625,31 @@ function saveImItemsToLocal(items) {
       const ids = items.map(i => i.id);
       if (ids.length > 0) {
         const placeholders = ids.map(() => '?').join(',');
-        db.run(
-          `DELETE FROM im_items WHERE id NOT IN (${placeholders})`,
-          ids,
-          (err) => {
-            if (err) {
-              console.error('[local-db] Failed to delete obsolete im_items:', err.message);
+        if (projectId != null) {
+          db.run(
+            `DELETE FROM im_items WHERE project_id = ? AND id NOT IN (${placeholders})`,
+            [projectId, ...ids],
+            (err) => {
+              if (err) console.error('[local-db] Failed to delete obsolete im_items:', err.message);
             }
-          }
-        );
+          );
+        } else {
+          db.run(
+            `DELETE FROM im_items WHERE id NOT IN (${placeholders})`,
+            ids,
+            (err) => {
+              if (err) console.error('[local-db] Failed to delete obsolete im_items:', err.message);
+            }
+          );
+        }
       }
     });
   });
+}
+
+function updateItemStatusLocal(itemId, statusId) {
+  db.run('UPDATE cfs_items SET task_status_id = ? WHERE id = ?', [statusId, itemId]);
+  db.run('UPDATE im_items SET task_status_id = ? WHERE id = ?', [statusId, itemId]);
 }
 
 function getAvailableTasksForUser(userId, projectId) {
@@ -1634,6 +1669,45 @@ function getAvailableTasksForUser(userId, projectId) {
       }
       resolve(rows);
     });
+  });
+}
+
+function getTasksForUser(userId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT DISTINCT t.id, t.name, t.description
+        FROM project_users pu
+        JOIN project_task_roles ptr
+          ON ptr.project_id = pu.project_id AND ptr.role_id = pu.project_role_id
+        JOIN tasks t ON t.id = ptr.task_id
+        WHERE pu.user_id = ?
+        ORDER BY t.name`,
+      [Number(userId)],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      }
+    );
+  });
+}
+
+function getProjectsForUserTask(userId, taskId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT DISTINCT p.id, p.name, p.type_id
+        FROM project_users pu
+        JOIN projects p ON p.id = pu.project_id
+        JOIN project_task_roles ptr
+          ON ptr.project_id = pu.project_id
+          AND ptr.role_id = pu.project_role_id
+        WHERE pu.user_id = ? AND ptr.task_id = ?
+        ORDER BY p.name`,
+      [Number(userId), Number(taskId)],
+      (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows || []);
+      }
+    );
   });
 }
 
@@ -2587,7 +2661,10 @@ module.exports = {
   saveRefItemStatusToLocal,
   saveCfsItemsToLocal,
   saveImItemsToLocal,
+  updateItemStatusLocal,
   getAvailableTasksForUser,
+  getTasksForUser,
+  getProjectsForUserTask,
   getAllProjectsLocal,
   getAllProjectUsersLocal,
   getAllProjectRolesLocal,

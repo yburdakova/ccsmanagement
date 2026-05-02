@@ -22,7 +22,7 @@
       </div>
 
       <div class="clockin-section">
-        <button id="clockin-button">CLOCK-IN</button>
+        <button id="clockin-button" title="Start Work"></button>
         <div class="timer">00:00</div>
       </div>
       
@@ -105,11 +105,11 @@
               <div id="task-overlay-name" class="task-overlay__name"></div>
               <div id="task-overlay-item" class="task-overlay__item"></div>
               <div id="task-overlay-start" class="task-overlay__start" style="display: none;">
-                <select id="task-overlay-project-select">
-                  <option value="">Select Project</option>
-                </select>
-                <select id="task-overlay-task-select" disabled>
+                <select id="task-overlay-task-select">
                   <option value="">Select Task</option>
+                </select>
+                <select id="task-overlay-project-select" style="display: none;">
+                  <option value="">Select Project</option>
                 </select>
                 <div id="task-overlay-task-buttons" class="task-overlay__task-buttons" style="display: none;"></div>
                 <select id="task-overlay-item-select" style="display: none;">

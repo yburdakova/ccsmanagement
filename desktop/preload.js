@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getTrackingData: (uuid) => ipcRenderer.invoke('get-tracking-data', { uuid }),
   saveTaskData: (payload) => ipcRenderer.invoke('save-task-data', payload),
   getAvailableTasks: (userId, projectId) => ipcRenderer.invoke('get-available-tasks', { userId, projectId }),
+  getTasksForUser: (userId) => ipcRenderer.invoke('get-tasks-for-user', { userId }),
+  getProjectsForUserTask: (userId, taskId) => ipcRenderer.invoke('get-projects-for-user-task', { userId, taskId }),
   getProjectItems: (projectId, projectTypeId) => ipcRenderer.invoke('get-project-items', { projectId, projectTypeId }),
   getItemTrackingTasks: (projectId) => ipcRenderer.invoke('get-item-tracking-tasks', { projectId }),
   getItemStatusRule: (projectId, taskId, applyAfterFinish) =>

@@ -473,6 +473,28 @@ ipcMain.handle('get-available-tasks', async (event, { userId, projectId }) => {
   }
 });
 
+ipcMain.handle('get-tasks-for-user', async (event, { userId }) => {
+  const { getTasksForUser } = require('./api/db-local');
+  try {
+    const tasks = await getTasksForUser(userId);
+return { success: true, tasks };
+  } catch (error) {
+    console.error('[main] get-tasks-for-user failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-projects-for-user-task', async (event, { userId, taskId }) => {
+  const { getProjectsForUserTask } = require('./api/db-local');
+  try {
+    const projects = await getProjectsForUserTask(userId, taskId);
+    return { success: true, projects };
+  } catch (error) {
+    console.error('[main] get-projects-for-user-task failed:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('get-item-types', async () => {
   const { saveItemTypesToLocal, getAllItemTypesLocal } = require('./api/db-local');
   const { isOnline } = require('./utils/network-status');
@@ -676,17 +698,17 @@ ipcMain.handle('get-project-items', async (event, { projectId, projectTypeId }) 
   try {
     const items = await dataApi.getItemsByProject(projectId);
     if (items.length) {
-      if (Number(projectTypeId) === 1) saveCfsItemsToLocal(items.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: null })));
-      if (Number(projectTypeId) === 2) saveImItemsToLocal(items.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: null })));
+      if (Number(projectTypeId) === 1) saveCfsItemsToLocal(items.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: null })), projectId);
+      if (Number(projectTypeId) === 2) saveImItemsToLocal(items.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: null })), projectId);
       return items;
     }
     if (projectTypeId === 1) {
       const cfsItems = await dataApi.getCfsItemsByProject(projectId);
-      saveCfsItemsToLocal(cfsItems.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: row.task_status_id ?? null })));
+      saveCfsItemsToLocal(cfsItems.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: row.task_status_id ?? null })), projectId);
       return cfsItems;
     } else if (projectTypeId === 2) {
       const imItems = await dataApi.getImItemsByProject(projectId);
-      saveImItemsToLocal(imItems.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: row.task_status_id ?? null })));
+      saveImItemsToLocal(imItems.map((row) => ({ id: row.id, project_id: projectId, label: row.name, task_status_id: row.task_status_id ?? null })), projectId);
       return imItems;
     } else {
       return await getProjectItemsLocal(projectId, projectTypeId);
@@ -724,7 +746,7 @@ ipcMain.handle('get-item-status-rule', async (event, { projectId, taskId, applyA
 });
 
 ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
-  const { enqueueSyncPayload, syncQueue } = require('./api/db-local');
+  const { enqueueSyncPayload, syncQueue, updateItemStatusLocal } = require('./api/db-local');
 
   try {
     await enqueueSyncPayload({
@@ -733,6 +755,7 @@ ipcMain.handle('update-item-status', async (event, { itemId, statusId }) => {
       status_id: statusId,
       timestamp: new Date().toISOString()
     });
+    updateItemStatusLocal(itemId, statusId);
 
     const syncResult = await syncQueue();
     return {
